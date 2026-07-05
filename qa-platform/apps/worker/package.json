@@ -1,0 +1,21 @@
+{
+  "name": "@qa/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "dotenv -e ../../.env -- tsx watch src/main.ts",
+    "start": "dotenv -e ../../.env -- node dist/main.js"
+  },
+  "dependencies": {
+    "@qa/engine": "*",
+    "@qa/shared": "*",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

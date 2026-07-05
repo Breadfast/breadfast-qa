@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE suite SYSTEM "http://testng.org/testng-1.0.dtd">
+<suite name="All Test Suite" parallel="methods" skipfailedinvocationcounts="true" thread-count="3" data-provider-thread-count="10">
+    <listeners>
+        <listener class-name="io.qameta.allure.testng.AllureTestNg"/>
+<!--        <listener class-name="helpers.factories.AllureLogListener"/>-->
+        <listener class-name="helpers.factories.RetryListener"/>
+    </listeners>
+    <test name="Sanity Tests">
+        <classes>
+            <class name="customerApp.api.OrderSanityTests">
+                <methods>
+                    <exclude name="createOrderWithFullyPayFromBalanceAndNotReceived"/>
+                    <exclude name="createOrderWithBackToWalletCouponAndTippingDuringCheckoutAndFullyPayFromBalance"/>
+                    <exclude name="createOrderWithBackToWalletFixedWithTippingDuringRatingAndPartialPayFromWalletAndCollectedAmountGreaterThanOrderAmount"/>
+                    <exclude name="createScheduleOrderWithCCAndBackToWalletPercentageCoupon"/>
+                </methods>
+            </class>
+        </classes>
+    </test>
+</suite>

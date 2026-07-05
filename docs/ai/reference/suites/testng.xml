@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE suite SYSTEM "http://testng.org/testng-1.0.dtd">
+<suite name="All Test Suite" parallel="methods" skipfailedinvocationcounts="true" thread-count="22" data-provider-thread-count="10">
+    <listeners>
+        <listener class-name="io.qameta.allure.testng.AllureTestNg"/>
+<!--        <listener class-name="helpers.factories.AllureLogListener"/>-->
+        <listener class-name="helpers.factories.RetryListener"/>
+    </listeners>
+    <test name="Smoke Tests">
+        <classes>
+            <class name="mainAdminPortal.authentication.LoginTests">
+                <methods>
+                    <include name="LoginWithByPassingGoogleLogin"/>
+                </methods>
+            </class>
+<!--            <class name="cardService.adminPanel.CardAdminPanelTests">-->
+<!--                <methods>-->
+<!--                    <include name="loginWithValidAdminAccount"/>-->
+<!--                </methods>-->
+<!--            </class>-->
+<!--            <class name="controlRoom.ControlRoomTests">-->
+<!--                <methods>-->
+<!--                    <include name="validateControlRoomOpensCorrectly"/>-->
+<!--                </methods>-->
+<!--            </class>-->
+            <class name="customerApp.api.CreateOrderApisTests">
+                <methods>
+                    <include name="createOrderWithOneProductFromApi"/>
+                </methods>
+            </class>
+<!--            <class name="customerApp.android.authentication.LoginTests">-->
+<!--                <methods>-->
+<!--                    <include name="loginWithValidLocalPhoneNumber"/>-->
+<!--                </methods>-->
+<!--            </class>-->
+        </classes>
+    </test>
+</suite>

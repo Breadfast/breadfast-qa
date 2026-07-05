@@ -1,0 +1,267 @@
+// Breadfast QA Platform — shared backend schema (PostgreSQL).
+// Mirrors packages/shared/src/domain.ts. See ARCHITECTURE.md §07 Database Design.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  // Local dev = sqlite (zero-infra). Production shared backend = postgresql:
+  // flip this to "postgresql" and point DATABASE_URL at the server.
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ── Identity & access ──────────────────────────────────────────────────────
+model User {
+  id        String   @id @default(cuid())
+  googleSub String   @unique
+  email     String   @unique
+  name      String
+  role      String   @default("tester") // tester | lead | admin
+  createdAt DateTime @default(now())
+
+  integrations Integration[]
+  stories      Story[]        @relation("StoryOwner")
+  runs         Run[]
+  approvals    Approval[]
+  auditEvents  AuditLog[]
+}
+
+// Per-user OAuth tokens for Jira / Figma / Slack (encrypted at rest).
+model Integration {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider    String // jira | figma | slack
+  encTokens   String // encrypted JSON blob
+  scopes      String?
+  accountId   String?
+  connectedAt DateTime @default(now())
+
+  @@unique([userId, provider])
+}
+
+// Shared infra credentials (BrowserStack, DB/SSH, app logins) — encrypted.
+model SharedSecret {
+  key       String   @id
+  encValue  String
+  rotatedAt DateTime @default(now())
+}
+
+// ── Projects & stories ─────────────────────────────────────────────────────
+model Project {
+  id            String   @id @default(cuid())
+  jiraKey       String   @unique // e.g. "B10"
+  name          String
+  bsProjectId   String?
+  defaultsJson  Json?
+  createdAt     DateTime @default(now())
+  stories       Story[]
+}
+
+model Story {
+  id            String   @id @default(cuid())
+  jiraKey       String   @unique // e.g. "B10-56336"
+  title         String
+  platform      String // web | android | ios | cross-platform | web-mobile
+  locales       String   @default("en-US,ar-EG") // comma-joined; sqlite has no scalar lists
+  status        String   @default("draft")
+  environment   String   @default("testing") // testing | staging | production
+  notes         String? // optional story notes from the tester
+  appUrl        String? // web app under test
+  adminUrl      String? // optional admin/web portal for mobile stories
+  bsAppIds      Json? // { android?: string, ios?: string }
+  bsFolderId    String? // per-story BrowserStack folder override
+  devices       Json? // { android?: string, ios?: string } override of defaults
+  executionType String   @default("full") // full | smoke | regression
+  credentials   Json? // { username?, password?, otpMethod?, extra?: [{key,value}] }
+  packageNumbers String? // optional existing package numbers (comma-separated)
+  testDataFile  String? // optional path to a test-data file
+  executionInstructions String? // free-text AI guidance honored across the run (parse_instructions → directives)
+  additionalInputs      String? // free-text extra data/credentials that don't fit a predefined field
+  workspacePath String? // D:\BreadfastQA\<JIRA_KEY>
+  jiraHlsUrl    String?
+  ownerId       String
+  owner         User     @relation("StoryOwner", fields: [ownerId], references: [id])
+  projectId     String?
+  project       Project? @relation(fields: [projectId], references: [id])
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  runs      Run[]
+  testCases TestCase[]
+  artifacts Artifact[]
+  defects   Defect[]
+}
+
+// ── Workflow runs ──────────────────────────────────────────────────────────
+model Run {
+  id            String    @id @default(cuid())
+  storyId       String
+  story         Story     @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  status        String    @default("queued")
+  workerId      String?
+  engineSession String? // claude --resume session id
+  triggeredById String
+  triggeredBy   User      @relation(fields: [triggeredById], references: [id])
+  totalTokens   Int       @default(0)
+  totalCostUsd  Float     @default(0)
+  startedAt     DateTime?
+  finishedAt    DateTime?
+  createdAt     DateTime  @default(now())
+
+  steps RunStep[]
+}
+
+model RunStep {
+  id         String    @id @default(cuid())
+  runId      String
+  run        Run       @relation(fields: [runId], references: [id], onDelete: Cascade)
+  name       String // matches shared MVP_NODES
+  type       String // code | ai | gate | ask
+  status     String    @default("pending")
+  ordinal    Int
+  inputJson  Json?
+  outputJson Json?
+  logs       String?
+  tokens     Int       @default(0)
+  costUsd    Float     @default(0)
+  startedAt  DateTime?
+  finishedAt DateTime?
+  // Tester feedback from a Regenerate action, threaded into this node's next
+  // AI prompt; cleared once the node consumes it on its next successful run.
+  feedback   String?
+
+  approval      Approval?
+  clarification Clarification?
+
+  @@unique([runId, ordinal])
+}
+
+model Approval {
+  id         String   @id @default(cuid())
+  runStepId  String   @unique
+  runStep    RunStep  @relation(fields: [runStepId], references: [id], onDelete: Cascade)
+  action     String // jira.push_hls | browserstack.upload_testcases | jira.file_bug
+  payload    Json
+  decision   String? // approved | rejected
+  feedback   String?
+  decidedById String?
+  decidedBy  User?    @relation(fields: [decidedById], references: [id])
+  decidedAt  DateTime?
+  createdAt  DateTime @default(now())
+}
+
+model Clarification {
+  id           String   @id @default(cuid())
+  runStepId    String   @unique
+  runStep      RunStep  @relation(fields: [runStepId], references: [id], onDelete: Cascade)
+  questionsJson Json
+  answersJson  Json?
+  answeredById String?
+  answeredAt   DateTime?
+  createdAt    DateTime @default(now())
+}
+
+// ── Artifacts, test cases, defects ─────────────────────────────────────────
+model TestCase {
+  id         String   @id @default(cuid())
+  storyId    String
+  story      Story    @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  externalId String? // BrowserStack TM id once uploaded
+  title      String
+  stepsJson  Json
+  priority   String   @default("P2")
+  status     String   @default("draft")
+  createdAt  DateTime @default(now())
+}
+
+model Artifact {
+  id        String   @id @default(cuid())
+  storyId   String
+  story     Story    @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  runId     String?
+  kind      String // report | screenshot | video | csv | trace | evidence | figma_frame
+  localPath String?
+  objectUrl String?
+  mime      String?
+  bytes     Int?
+  createdAt DateTime @default(now())
+}
+
+model Defect {
+  id        String   @id @default(cuid())
+  storyId   String
+  story     Story    @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  jiraKey   String?
+  title     String
+  severity  String // Blocker | Critical | Major | Minor | Trivial
+  priority  String // P0..P3
+  status    String   @default("open")
+  createdAt DateTime @default(now())
+}
+
+// ── Knowledge center ───────────────────────────────────────────────────────
+model KnowledgeDoc {
+  path        String   @id // e.g. docs/ai/business/business-rules.md
+  title       String
+  type        String // process | reference | business | module | framework
+  contentHash String
+  updatedById String?
+  updatedAt   DateTime @updatedAt
+
+  proposals KnowledgeProposal[]
+}
+
+model KnowledgeProposal {
+  id            String       @id @default(cuid())
+  docPath       String
+  doc           KnowledgeDoc @relation(fields: [docPath], references: [path], onDelete: Cascade)
+  diffJson      Json
+  rationale     String
+  status        String       @default("pending") // pending | approved | rejected
+  proposedByRun String?
+  reviewerId    String?
+  createdAt     DateTime     @default(now())
+}
+
+// ── Reusable configuration (Settings) ──────────────────────────────────────
+// Rarely-changing config moved out of the story wizard: Jira/BrowserStack/
+// Figma/AI/Automation/Integrations. Secrets are flagged + masked in the UI.
+model Setting {
+  key       String   @id // e.g. "browserstack.accessKey"
+  group     String // jira | browserstack | figma | ai | automation | integrations
+  value     String // string or JSON-encoded value
+  secret    Boolean  @default(false)
+  updatedAt DateTime @updatedAt
+}
+
+// ── Test data pool ──────────────────────────────────────────────────────────
+// Phone numbers, packages, accounts, cards, OTP accounts. Allocated to runs
+// automatically; lifecycle available → reserved → consumed.
+model TestDataItem {
+  id              String   @id @default(cuid())
+  type            String // phone | package | account | card | otp
+  label           String
+  value           Json // arbitrary fields per type
+  status          String   @default("available") // available | reserved | consumed
+  reservedByRunId String?
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([type, status])
+}
+
+// ── Audit ──────────────────────────────────────────────────────────────────
+model AuditLog {
+  id       String   @id @default(cuid())
+  actorId  String?
+  actor    User?    @relation(fields: [actorId], references: [id])
+  action   String
+  entity   String
+  entityId String?
+  diffJson Json?
+  at       DateTime @default(now())
+}

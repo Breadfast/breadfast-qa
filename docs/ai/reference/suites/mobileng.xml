@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE suite SYSTEM "http://testng.org/testng-1.0.dtd">
+<suite name="All Test Suite" parallel="methods" skipfailedinvocationcounts="true" configfailurepolicy="continue" data-provider-thread-count="10">
+    <listeners>
+        <listener class-name="io.qameta.allure.testng.AllureTestNg"/>
+        <!--        <listener class-name="helpers.factories.AllureLogListener"/>-->
+		<listener class-name="helpers.factories.RetryListener"/>
+    </listeners>
+    <test name="CustomerAppNative_Android">
+        <classes>
+            <class name="customerApp.androidNative.authentication.LoginTests"/>
+            <class name="customerApp.androidNative.authentication.RegisterTests"/>
+            <class name="customerApp.androidNative.homePage.HomeScreenCategoriesTests"/>
+            <class name="customerApp.androidNative.homePage.MiniTrackerTests"/>
+            <class name="customerApp.androidNative.morePage.DeleteAccountTests"/>
+            <class name="customerApp.androidNative.morePage.EmailAddressScreenTests"/>
+            <class name="customerApp.androidNative.morePage.FavouriteScreenTests"/>
+            <class name="customerApp.androidNative.morePage.GuestMoodTests"/>
+            <class name="customerApp.androidNative.morePage.MoreScreenTests"/>
+            <class name="customerApp.androidNative.morePage.SavedAddressesScreenTests"/>
+            <class name="customerApp.androidNative.morePage.UpdatePersonalInfoTests"/>
+            <class name="customerApp.androidNative.placingOrder.CollectionsTests"/>
+            <class name="customerApp.androidNative.placingOrder.PlaceOrderTests"/>
+            <class name="customerApp.androidNative.homePage.HomeCarouselsTests"/>
+            <class name="customerApp.androidNative.foodAggregators.homePage.HomeBusinessCategoriesFiltersTests"/>
+            <class name="customerApp.androidNative.foodAggregators.homePage.HomeRestaurantsLandingTests"/>
+            <class name="customerApp.androidNative.foodAggregators.CartScreenTests"/>
+            <class name="customerApp.androidNative.foodAggregators.PlaceOrderTests"/>
+            <class name="customerApp.androidNative.regressionSuite.ShoppingRegressionTests"/>
+            <class name="customerApp.androidNative.homePage.SupermarketLandingPageTests"/>
+        </classes>
+    </test>
+    <test name="CustomerAppNative_iOS">
+        <classes>
+            <class name="customerApp.iosNative.authentication.LoginTests"/>
+            <class name="customerApp.iosNative.authentication.RegisterTests"/>
+            <class name="customerApp.iosNative.homePage.CategoriesTests"/>
+            <class name="customerApp.iosNative.homePage.RecommendationsTests"/>
+            <class name="customerApp.iosNative.morePage.DeleteAccountTests"/>
+            <class name="customerApp.iosNative.morePage.GuestMoodTests"/>
+            <class name="customerApp.iosNative.morePage.EmailAddressScreenTests"/>
+            <class name="customerApp.iosNative.morePage.MoreScreenTests"/>
+            <class name="customerApp.iosNative.morePage.SavedAddressesScreenTests"/>
+            <class name="customerApp.iosNative.morePage.UpdatePersonalInfoTests"/>
+            <class name="customerApp.iosNative.placingOrder.CollectionsTests"/>
+            <class name="customerApp.iosNative.placingOrder.MiniTrackerTests"/>
+            <class name="customerApp.iosNative.placingOrder.PlaceOrderTests"/>
+            <class name="customerApp.iosNative.foodAggregators.homePage.HomeBusinessCategoriesFiltersTests"/>
+            <class name="customerApp.iosNative.foodAggregators.homePage.HomeRestaurantsLandingTests"/>
+            <class name="customerApp.iosNative.foodAggregators.CartScreenTests"/>
+            <class name="customerApp.iosNative.foodAggregators.PlaceOrderTests"/>
+            <class name="customerApp.iosNative.regressionSuite.ShoppingRegressionTests"/>
+            <class name="customerApp.iosNative.homePage.SupermarketLandingPageTests"/>
+        </classes>
+    </test>
+</suite>

@@ -1,0 +1,30 @@
+globalTimeout: 90
+testSuiteTimeout: 90
+testSuiteStep: 90
+
+runson: linux
+
+autosplit: true
+retryOnFailure: true
+
+pre:
+  # Install dependencies or run pre-test scripts here if needed
+
+post:
+  # Collect artifacts after test
+  - cp -r target/surefire-reports/ ./surefire-reports || true
+  - cp -r allure-results/ ./allure-results || true
+  - cp -r test-output/ ./test-output || true
+
+testDiscovery:
+  type: maven
+  mode: dynamic
+  command: mvn test-compile
+
+testRunnerCommand: mvn test
+
+# Optional: Specify test artifact directories for download
+uploadArtefacts:
+  - path: ./surefire-reports
+  - path: ./allure-results
+  - path: ./test-output

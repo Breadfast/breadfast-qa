@@ -1,0 +1,17 @@
+{
+    "browserstack": {
+      "user": "islamabdalazezab_tayTwh",
+      "key": "kUEKh2Z1T8UVcKbqUMy4",
+      "app": "bs://fa0a56f55e90fa5d18dba5a5d6dea97c0f2c05b1",
+      "device": "Samsung Galaxy S21",
+      "osVersion": "11.0",
+      "platformName": "Android"
+    },
+    "appium": {
+      "serverUrl": "http://localhost:4723",
+      "capabilities": {
+        "platformName": "Android",
+        "automationName": "UiAutomator2"
+      }
+    }
+  }

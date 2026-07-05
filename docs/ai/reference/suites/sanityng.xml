@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE suite SYSTEM "http://testng.org/testng-1.0.dtd">
+<suite name="All Test Suite" parallel="methods" skipfailedinvocationcounts="true" thread-count="3" data-provider-thread-count="10">
+    <listeners>
+        <listener class-name="io.qameta.allure.testng.AllureTestNg"/>
+<!--        <listener class-name="helpers.factories.AllureLogListener"/>-->
+        <listener class-name="helpers.factories.RetryListener"/>
+    </listeners>
+    <test name="Place-order Sanity Tests">
+        <classes>
+            <class name="customerApp.api.OrderSanityTests">
+                <methods>
+                    <exclude name="validateCreateOrderWithSingleProductSchema"/>
+                    <exclude name="validateCreateOrderWithMultiProductsSchema"/>
+                    <exclude name="validateProductStockAfterCreateOrderWithDeliveryFeesAndTippingAmount"/>
+                </methods>
+            </class>
+            <class name="customerApp.api.CreateOrderCcFullyPaidFromWalletSanityTests">
+                    <methods>
+                        <exclude name="CreateCCOrderFullyPaidFromWalletAndPercentageCoupon"/>
+                        <exclude name="CreateCCOrderFullyPaidFromWalletAndGratuityAfterCheckout"/>
+                        <exclude name="createOrderWithBackToWalletPercentageWithTippingDuringCheckoutAndFullyPayFromWalletAndCollectedAmountGreaterThanOrderAmount"/>
+                        <exclude name="validateProductStockAfterCreateOrderWithDeliveryFeesAndTippingAmount"/>
+                    </methods>
+            </class>
+            <class name="customerApp.api.CreateOrderCcWithTippingFullyPaidFromBalanceSanityTests">
+                    <methods>
+                        <exclude name="createOrderWithCCFullyPaidFromBalanceWithTippingDuringCheckoutThenMarkOrderAsNotReceived"/>
+                    </methods>
+            </class>
+            <class name="customerApp.api.CreateOrderCcWithTippingSanityTests">
+                    <methods>
+                        <exclude name="CreateCCOrderFullyPaidFromWalletAndTippingDuringRatingAndPartialRefundOrderThroughPaymentPanelToWallet"/>
+                    </methods>
+            </class>
+            <class name="customerApp.api.CreateOrderCodDueAmountSanityTests"/>
+            <class name="customerApp.api.CreateOrderCodSanityTests"/>
+            <class name="customerApp.api.CreateOrderWithCouponSanityTests">
+                <methods>
+                    <exclude name="createForcedScheduleOrderWithCCFullyPaidFromWalletAndBackToWalletPercentageCoupon"/>
+                </methods>
+            </class>
+        </classes>
+    </test>
+
+    <test name="Customization Order Sanity Tests" thread-count="1">
+        <classes>
+            <class name="customerApp.api.CustomizationOrderApisTests">
+            <methods>
+                <exclude name="createOrderWithCustomizationProductWithBackToWalletFixedCoupon"/>
+                <exclude name="createOrderWithCustomizationProductsWithFixedCartCoupon"/>
+                <exclude name="createOrderWithCustomizationProductsWithPercentageCartCoupon"/>
+            </methods>
+            </class>
+        </classes>
+    </test>
+</suite>

@@ -1,0 +1,28 @@
+# deps / build
+node_modules/
+dist/
+.next/
+*.tsbuildinfo
+coverage/
+
+# per-machine env (ship .env.example instead)
+.env
+.env.local
+
+# personal / runtime (belt-and-suspenders — these live in the workspace, not the repo)
+runtime/
+stories/
+**/*.db
+**/*.db-journal
+*.log
+logs/
+auth/figma-auth.json
+browser-sessions/
+
+# generated media / artifacts
+*.zip
+*.mp4
+test-results/
+playwright-report/
+.playwright-mcp/
+.history/

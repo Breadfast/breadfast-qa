@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE suite SYSTEM "http://testng.org/testng-1.0.dtd">
+<suite name="All Test Suite" parallel="methods" skipfailedinvocationcounts="true" thread-count="1" data-provider-thread-count="10">
+    <listeners>
+        <listener class-name="io.qameta.allure.testng.AllureTestNg"/>
+<!--        <listener class-name="helpers.factories.AllureLogListener"/>-->
+    </listeners>
+    <test name="Group Tests">
+        <packages>
+            <package name="Inventory.*"/>
+            <package name="Transit.*"/>
+            <package name="cardService.*"/>
+            <package name="controlRoom.*"/>
+            <package name="customerApp.*"/>
+            <package name="deliveryCapacityManagement.*"/>
+            <package name="fleetApp.*"/>
+            <package name="kitchen.*"/>
+            <package name="mainAdminPortal.*"/>
+            <package name="midMileApp.*"/>
+            <package name="midMilePortal.*"/>
+            <package name="orders.*"/>
+            <package name="pickerApp.*"/>
+            <package name="planningCenter.*"/>
+            <package name="stockTake.*"/>
+            <package name="switcher.*"/>
+        </packages>
+    </test>
+</suite>

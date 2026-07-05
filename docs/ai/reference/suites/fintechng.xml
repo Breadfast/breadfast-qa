@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE suite SYSTEM "http://testng.org/testng-1.0.dtd">
+<suite name="All Test Suite" skipfailedinvocationcounts="true" parallel="none" thread-count="1">
+    <listeners>
+        <listener class-name="io.qameta.allure.testng.AllureTestNg"/>
+<!--        <listener class-name="helpers.factories.AllureLogListener"/>-->
+        <listener class-name="helpers.factories.RetryListener"/>
+    </listeners>
+    <test name="Fintech Tests">
+        <classes>
+            <class name="customerApp.api.PaymentRegression"/>
+            <class name="cardService.adminPanel.CardAdminPanelTests"/>
+            <class name="cardService.api.CardApiTests"/>
+            <class name="cardService.api.CardActivationTests"/>
+        </classes>
+    </test>
+</suite>

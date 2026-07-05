@@ -1,0 +1,65 @@
+{
+  "$schema": "non-secret Project Profiles — see qa-platform/docs/design/project-profiles.md",
+  "profiles": [
+    {
+      "id": "card-service",
+      "name": "Card Service",
+      "jiraProject": "B10",
+      "defaultPlatform": "web",
+      "defaultEnvironment": "testing",
+      "defaultLocales": [
+        "en-US",
+        "ar-EG"
+      ],
+      "defaultExecutionType": "full",
+      "browserstack": {},
+      "frameworks": [],
+      "urls": {},
+      "notes": "Card panel / card portal web QA."
+    },
+    {
+      "id": "customer-app",
+      "name": "Customer App",
+      "jiraProject": "B10",
+      "defaultPlatform": "cross-platform",
+      "defaultEnvironment": "testing",
+      "defaultLocales": [
+        "en-US",
+        "ar-EG"
+      ],
+      "defaultExecutionType": "full",
+      "browserstack": {},
+      "frameworks": [],
+      "urls": {}
+    },
+    {
+      "id": "control-room",
+      "name": "Control Room",
+      "jiraProject": "B10",
+      "defaultPlatform": "web",
+      "defaultEnvironment": "testing",
+      "defaultLocales": [
+        "en-US"
+      ],
+      "defaultExecutionType": "full",
+      "browserstack": {},
+      "frameworks": [],
+      "urls": {}
+    },
+    {
+      "id": "chatbot",
+      "name": "Chatbot",
+      "jiraProject": "B10",
+      "defaultPlatform": "web",
+      "defaultEnvironment": "testing",
+      "defaultLocales": [
+        "en-US",
+        "ar-EG"
+      ],
+      "defaultExecutionType": "full",
+      "browserstack": {},
+      "frameworks": [],
+      "urls": {}
+    }
+  ]
+}
