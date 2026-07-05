@@ -9,6 +9,8 @@
   ],
   "scripts": {
     "build": "npm run build -w @qa/shared && npm run build -w @qa/db && npm run build -w @qa/engine && npm run build --workspaces --if-present",
+    "start": "node launcher/launch.mjs",
+    "stop": "node launcher/stop.mjs",
     "engine:smoke": "node packages/engine/smoke.mjs",
     "db:generate": "npm run generate -w @qa/db",
     "db:push": "npm run push -w @qa/db",

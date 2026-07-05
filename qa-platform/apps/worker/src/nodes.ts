@@ -277,6 +277,13 @@ async function tryPlaywrightBatchExport(
   outDir: string,
 ): Promise<FigmaExportResult> {
   const outDirEsc = outDir.replace(/\\/g, '\\\\');
+  // Cross-platform ZIP extraction: pick the command for THIS OS in Node so the
+  // agent never has to guess (no PowerShell assumption on macOS/Linux).
+  const zipFile = path.join(outDir, 'figma_export.zip');
+  const extractCmd =
+    process.platform === 'win32'
+      ? `powershell -NoProfile -Command "Expand-Archive -Path '${zipFile}' -DestinationPath '${outDir}' -Force"`
+      : `unzip -o "${zipFile}" -d "${outDir}"`;
   try {
     const { data, raw } = await runAiTask({
       instruction:
@@ -297,7 +304,7 @@ async function tryPlaywrightBatchExport(
         `   const dl = await downloadPromise;\n` +
         `   const zipPath = require('path').join(${JSON.stringify(outDir)}, 'figma_export.zip');\n` +
         `   await dl.saveAs(zipPath);\n` +
-        `8. Bash (PowerShell) → extract: Expand-Archive -Path "${outDirEsc}\\\\figma_export.zip" -DestinationPath "${outDirEsc}" -Force\n` +
+        `8. Bash → extract the ZIP with this exact command (already selected for the current OS): ${extractCmd}\n` +
         `9. Bash → list extracted PNGs and return the manifest\n\n` +
         `If any step fails, return frames:[] with the error message.`,
       schema: FigmaExportManifest,
