@@ -12,7 +12,7 @@
  * via MCP) are stubbed with clear seams — they slot into the same nodes.
  */
 import { mkdir, writeFile } from 'node:fs/promises';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import type { z } from 'zod';
@@ -1446,6 +1446,73 @@ function renderReport(ctx: NodeContext): string {
       <td>${esc(d.priority)}</td><td>${esc(d.caseTitle ?? '')}</td><td>${esc(d.expected)}</td><td>${esc(d.actual)}</td></tr>`).join('')
     : '<tr><td colspan="7" class="muted">No defects recorded.</td></tr>';
 
+  // ── Visual Testing: embed Actual screenshots + matched Figma Expected frames ──
+  const dir = (ctx.state.workspacePath as string) ?? storyDir(s.jiraKey);
+  const figmaDir = path.join(dir, 'figma-analysis');
+  const embedImg = (abs?: string): string | null => {
+    try {
+      if (!abs || !existsSync(abs)) return null;
+      const buf = readFileSync(abs);
+      if (buf.length > 6_000_000) return null; // skip oversized to keep the HTML manageable
+      const ext = abs.toLowerCase().endsWith('.jpg') || abs.toLowerCase().endsWith('.jpeg') ? 'jpeg' : 'png';
+      return `data:image/${ext};base64,${buf.toString('base64')}`;
+    } catch { return null; }
+  };
+  // Figma Expected frames available in the workspace (exclude board banners).
+  const figmaFrames: string[] = (() => {
+    try {
+      return readdirSync(figmaDir)
+        .filter((f) => /\.(png|jpe?g)$/i.test(f) && !/^(header|section)/i.test(f))
+        .map((f) => path.join(figmaDir, f));
+    } catch { return []; }
+  })();
+  const norm = (t: string) => t.toLowerCase().replace(/[^a-z0-9]+/g, ' ');
+  // Best-effort Expected match: score each Figma frame by shared keywords with the
+  // case title + evidence filenames; require a minimum overlap to avoid false pairs.
+  const matchExpected = (title: string, evidence?: string[]): string | null => {
+    const hay = norm(`${title} ${(evidence ?? []).map((e) => e.split(/[\\/]/).pop() ?? '').join(' ')}`);
+    const words = new Set(hay.split(' ').filter((w) => w.length > 3 && !['with','from','that','when','both','test','case','then','popup','page'].includes(w)));
+    let best: string | null = null, bestScore = 0;
+    for (const f of figmaFrames) {
+      const fn = new Set(norm(path.basename(f, path.extname(f))).split(' ').filter((w) => w.length > 2));
+      let score = 0;
+      for (const w of words) if (fn.has(w) || [...fn].some((x) => w.includes(x) || x.includes(w))) score++;
+      if (score > bestScore) { bestScore = score; best = f; }
+    }
+    return bestScore >= 1 ? best : null;
+  };
+  const verdictOf = (r: any): { label: string; cls: string } => {
+    const txt = `${r?.notes ?? ''} ${r?.actual ?? ''}`.toLowerCase();
+    if (/major/.test(txt) || r?.status === 'fail') return { label: 'MAJOR', cls: 'fail' };
+    if (/minor/.test(txt)) return { label: 'MINOR', cls: 'note' };
+    if (r?.status === 'pass') return { label: 'PASS', cls: 'pass' };
+    if (r?.status === 'blocked') return { label: 'BLOCKED', cls: 'noref' };
+    return { label: '—', cls: 'no' };
+  };
+  const visualResults = results.filter((r) => (r.evidence?.length ?? 0) > 0);
+  const visualBlocks = visualResults.map((r) => {
+    const actual = embedImg(r.evidence?.[0]);
+    const expPath = matchExpected(r.title, r.evidence);
+    const expected = embedImg(expPath ?? undefined);
+    const v = verdictOf(r);
+    const pane = (label: string, uri: string | null, sub: string) =>
+      `<div class="vpane"><div class="vlabel">${label}</div>` +
+      (uri ? `<img src="${uri}" alt="${label}"/>` : `<div class="vnone">${sub}</div>`) + `</div>`;
+    return `<div class="vcard"><div class="vhead">${esc(r.title)} <span class="badge ${v.cls}">${v.label}</span></div>
+      <div class="vrow">${pane('Expected (Figma)', expected, expPath ? '' : 'no Figma baseline for this state')}${pane('Actual (build)', actual, 'no screenshot')}</div>
+      <div class="vdiff"><b>Observed:</b> ${esc(r.actual ?? '')}${r.notes ? `<br><b>Verdict:</b> ${esc(r.notes)}` : ''}</div></div>`;
+  }).join('');
+  const visualMatrixRows = visualResults.map((r, i) => {
+    const v = verdictOf(r);
+    return `<tr><td>${i + 1}</td><td>${esc(r.title)}</td><td><span class="badge ${v.cls}">${v.label}</span></td><td>${r.evidence?.length ?? 0} shot(s)</td></tr>`;
+  }).join('') || '<tr><td colspan="4" class="muted">No visual evidence captured.</td></tr>';
+  const visualSection = executed
+    ? `<h2>Visual Testing — coverage matrix</h2>
+       <table><tr><th>#</th><th>Screen / state</th><th>Visual verdict</th><th>Evidence</th></tr>${visualMatrixRows}</table>
+       <h2>Visual Testing — Expected (Figma) vs Actual</h2>
+       ${visualBlocks || '<p class="muted">No screenshots were captured for visual comparison.</p>'}`
+    : '';
+
   const combos: string[] = exec.matrix?.length ? exec.matrix : (s.platform === 'web' ? ['web · (not run)'] : ['mobile · (not run)']);
   const comboPass = (combo: string) => {
     const inCombo = results.filter((r) => r.combo === combo);
@@ -1468,7 +1535,15 @@ table{border-collapse:collapse;width:100%;margin:8px 0}td,th{border-bottom:1px s
 .badge{font-size:.72rem;padding:2px 7px;border-radius:999px;border:1px solid;white-space:nowrap}
 .pass{background:#d4edda;color:#155724;border-color:#c3e6cb}.fail{background:#f8d7da;color:#721c24;border-color:#f5c6cb}
 .note{background:#fff3cd;color:#856404;border-color:#ffeeba}.noref{background:#e2e3e5;color:#383d41;border-color:#d6d8db}
-.no{background:#e2e3e5;color:#383d41;border-color:#d6d8db}.pend{background:#fff3cd;color:#856404;border-color:#ffeeba}</style></head>
+.no{background:#e2e3e5;color:#383d41;border-color:#d6d8db}.pend{background:#fff3cd;color:#856404;border-color:#ffeeba}
+.vcard{border:1px solid #E2E8F0;border-radius:10px;padding:12px;margin:14px 0}
+.vhead{font-weight:600;color:#0F1B2D;margin-bottom:8px}
+.vrow{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.vpane{border:1px solid #EEF2F6;border-radius:8px;padding:8px;background:#FAFBFC}
+.vlabel{font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:#6B7787;margin-bottom:6px}
+.vpane img{width:100%;height:auto;border-radius:4px;border:1px solid #E2E8F0}
+.vnone{color:#856404;background:#fff3cd;border:1px dashed #ffeeba;border-radius:4px;padding:18px;text-align:center;font-size:.82rem}
+.vdiff{margin-top:8px;font-size:.85rem;color:#3D4A5C}</style></head>
 <body><h1>QA Report — ${esc(s.jiraKey)}</h1>
 <p class="muted">${esc(s.title)} · ${esc(s.platform)} · ${esc(s.environment ?? 'testing')} · ${executed ? esc((exec.matrix ?? []).join(', ')) : 'execution pending'}</p>
 <div class="grid">
@@ -1481,6 +1556,7 @@ table{border-collapse:collapse;width:100%;margin:8px 0}td,th{border-bottom:1px s
 </div>
 <h2>Coverage matrix (platform · language)</h2>${matrix}
 ${executed ? '' : '<p class="muted">Execution has not produced results for this run yet.</p>'}
+${visualSection}
 <h2>Business objective</h2><p>${esc(st.requirements?.businessObjective)}</p>
 <h2>Impact analysis</h2><b>Impacted areas</b>${list(st.impact?.impactedAreas)}<b>Regression areas</b>${list(st.impact?.regressionAreas)}<b>Smoke coverage</b>${list(st.impact?.smokeCoverage)}
 <h2>Test cases &amp; results (${cases.length})</h2>

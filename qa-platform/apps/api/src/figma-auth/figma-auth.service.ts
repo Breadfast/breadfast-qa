@@ -3,6 +3,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync, readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { companionPath, figmaAuthPath, playwrightFrameworkDir } from '@qa/shared/paths';
+import { FrameworksService } from '../frameworks/frameworks.service.js';
 
 // connect-figma.js ships in the repo; the Figma session is stored in the
 // per-user workspace (never the repo). The connect script borrows the
@@ -30,8 +31,25 @@ export class FigmaAuthService implements OnModuleDestroy {
   private child: ChildProcess | null = null;
   private logs: string[] = [];
 
+  constructor(private readonly frameworks: FrameworksService) {}
+
   onModuleDestroy() {
     this.child?.kill('SIGKILL');
+  }
+
+  /**
+   * Resolve the Playwright framework dir that ships @playwright/test.
+   * The Framework Registry is the single source of truth; the BF_B55168_DIR
+   * env var is only a fallback for setups without a registered framework.
+   */
+  private async resolvePlaywrightDir(): Promise<string | undefined> {
+    try {
+      const { playwright } = await this.frameworks.resolved();
+      if (playwright && existsSync(playwright)) return playwright;
+    } catch {
+      /* registry unavailable — fall through to env */
+    }
+    return playwrightFrameworkDir();
   }
 
   /**
@@ -48,7 +66,7 @@ export class FigmaAuthService implements OnModuleDestroy {
     this.child = null;
     this.logs = [];
 
-    const frameworkDir = playwrightFrameworkDir();
+    const frameworkDir = await this.resolvePlaywrightDir();
     const child = spawn('node', [CONNECT_SCRIPT], {
       cwd: frameworkDir ?? companionPath('qa-platform'),
       stdio: ['ignore', 'pipe', 'pipe'],

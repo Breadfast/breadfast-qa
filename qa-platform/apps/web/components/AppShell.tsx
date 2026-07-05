@@ -14,8 +14,8 @@ const NAV = [
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen flex">
-      <aside className="w-60 shrink-0 bg-ink text-[#AEC2D2] flex flex-col">
+    <div className="h-screen flex overflow-hidden">
+      <aside className="w-60 shrink-0 bg-ink text-[#AEC2D2] flex flex-col overflow-y-auto">
         <div className="px-5 py-5 border-b border-[#1c3a4f]">
           <div className="text-white font-semibold tracking-tight">Breadfast QA</div>
           <div className="font-mono text-[10px] tracking-[0.18em] text-accent-bright uppercase mt-1">
@@ -38,7 +38,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           v0.1
         </div>
       </aside>
-      <main className="flex-1 min-w-0">{children}</main>
+      <main className="flex-1 min-w-0 overflow-y-auto">{children}</main>
     </div>
   );
 }

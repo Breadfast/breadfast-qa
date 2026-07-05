@@ -33,6 +33,7 @@ export interface BugFieldConfig {
   components: string[]; // Components field (names)
   squad: string[]; // cf_10183 — array of { value }
   platformValue?: string; // cf_10467 — single option value
+  environmentOption?: string; // cf_10348 — region SELECT option (e.g. "Egypt"); NOT the QA env. Omitted unless configured.
   fieldIds: { steps: string; actual: string; expected: string; environment: string };
 }
 
@@ -70,6 +71,7 @@ export function resolveBugConfig(settings: Record<string, string>, platform: str
     components: csv(settings['jira.components']),
     squad: csv(settings['jira.squadName']),
     platformValue: settings['jira.platformValue'] || platformOption(platform),
+    environmentOption: settings['jira.environmentValue'] || undefined,
     fieldIds: {
       steps: fid('jira.field.steps', DEFAULT_FIELD_IDS.steps),
       actual: fid('jira.field.actual', DEFAULT_FIELD_IDS.actual),
@@ -111,8 +113,10 @@ export function buildBugPayload(
     [cfg.fieldIds.steps]: adfBulletList(d.stepsToReproduce ?? []),
     [cfg.fieldIds.actual]: adfText(d.actual ?? d.title),
     [cfg.fieldIds.expected]: adfText(d.expected ?? ''),
-    [cfg.fieldIds.environment]: adfText(environment),
   };
+  // cf_10348 ("Environment") is a region SELECT (KSA/Egypt/Both), not a QA env — only
+  // send it when a valid option is configured; sending ADF text 400s the create.
+  if (cfg.environmentOption) fields[cfg.fieldIds.environment] = { value: cfg.environmentOption };
   if (cfg.components.length) fields.components = cfg.components.map((name) => ({ name }));
   if (cfg.squad.length) fields[mapCf('jira.field.squad', 'customfield_10183')] = cfg.squad.map((value) => ({ value }));
   if (cfg.platformValue) fields[mapCf('jira.field.platform', 'customfield_10467')] = { value: cfg.platformValue };
