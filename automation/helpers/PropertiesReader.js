@@ -16,9 +16,14 @@
 const fs   = require('fs');
 const path = require('path');
 
+// Cross-platform: derive from the registered Java framework dir when available
+// (BF_JAVA_FRAMEWORK_DIR, set by the platform worker from the Framework Registry),
+// else an explicit BF_PROPERTIES_PATH, else the legacy Windows default.
 const DEFAULT_PATH =
   process.env.BF_PROPERTIES_PATH ||
-  'D:\\projects\\resources\\environments\\config_testing.properties';
+  (process.env.BF_JAVA_FRAMEWORK_DIR
+    ? path.join(process.env.BF_JAVA_FRAMEWORK_DIR, 'resources', 'environments', 'config_testing.properties')
+    : 'D:\\projects\\resources\\environments\\config_testing.properties');
 
 let _cache = null;
 

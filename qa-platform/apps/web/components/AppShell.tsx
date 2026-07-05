@@ -1,10 +1,13 @@
 import Link from 'next/link';
 
 const NAV = [
+  { href: '/onboarding', label: 'Setup', icon: '◆' },
   { href: '/', label: 'Dashboard', icon: '◧' },
   { href: '/stories', label: 'Stories', icon: '▤' },
   { href: '/stories/new', label: 'New Story', icon: '＋' },
   { href: '/test-data', label: 'Test Data', icon: '▦' },
+  { href: '/frameworks', label: 'Frameworks', icon: '❏' },
+  { href: '/diagnostics', label: 'Diagnostics', icon: '✚' },
   { href: '/knowledge', label: 'Knowledge', icon: '◈' },
   { href: '/settings', label: 'Settings', icon: '⚙' },
 ];

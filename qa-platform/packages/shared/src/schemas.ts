@@ -14,6 +14,9 @@ import {
   TEST_DATA_STATUSES,
   SETTING_GROUPS,
   GATED_ACTIONS,
+  FRAMEWORK_TYPES,
+  FRAMEWORK_PLATFORMS,
+  FRAMEWORK_VALIDATION_STATUSES,
   platformNeeds,
   type Platform,
 } from './domain.js';
@@ -322,3 +325,34 @@ export const RegenerateStepInput = z.object({
   feedback: z.string().min(1, 'feedback is required to regenerate'),
 });
 export type RegenerateStepInput = z.infer<typeof RegenerateStepInput>;
+
+// ── Framework Registry (Phase D) ──────────────────────────────────────────
+/** What the UI sends to register/update a framework. */
+export const FrameworkInput = z.object({
+  name: z.string().min(1),
+  platform: z.enum(FRAMEWORK_PLATFORMS),
+  type: z.enum(FRAMEWORK_TYPES),
+  localPath: z.string().min(1),
+  description: z.string().optional(),
+});
+export type FrameworkInput = z.infer<typeof FrameworkInput>;
+
+/** A framework row as returned by the API (registry entry + scan status). */
+export const Framework = FrameworkInput.extend({
+  id: z.string(),
+  validationStatus: z.enum(FRAMEWORK_VALIDATION_STATUSES),
+  scanDetails: z.string().nullable().optional(),
+  lastScan: z.string().nullable().optional(),
+  version: z.string().nullable().optional(),
+  gitCommit: z.string().nullable().optional(),
+  gitBranch: z.string().nullable().optional(),
+  lastSuccessfulGeneration: z.string().nullable().optional(),
+  lastGenerationStory: z.string().nullable().optional(),
+});
+export type Framework = z.infer<typeof Framework>;
+
+/** Compact map the worker consumes: first valid path per canonical type. */
+export interface ResolvedFrameworks {
+  playwright?: string;
+  javaAppium?: string;
+}

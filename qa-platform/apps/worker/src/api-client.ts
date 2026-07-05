@@ -93,6 +93,17 @@ export async function getSettings(): Promise<Record<string, string>> {
   }
 }
 
+/** Resolved framework paths from the Framework Registry (first valid per type). */
+export async function getResolvedFrameworks(): Promise<{ playwright?: string; javaAppium?: string }> {
+  try {
+    const res = await fetch(`${BASE}/frameworks/resolved`);
+    if (!res.ok) return {};
+    return (await res.json()) as { playwright?: string; javaAppium?: string };
+  } catch {
+    return {};
+  }
+}
+
 /**
  * Ingest a run event into the API with automatic retry.
  * Gate events (gate.awaiting) that are dropped because the API is momentarily

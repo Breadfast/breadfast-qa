@@ -254,6 +254,29 @@ model TestDataItem {
   @@index([type, status])
 }
 
+// ── Framework Registry (Phase D) ─────────────────────────────────────────────
+// Per-user registry of automation frameworks (Playwright/Appium/…). Paths are
+// machine-specific → never committed. Consumed by the worker to locate the
+// Playwright/Java frameworks instead of any hardcoded folder name.
+model Framework {
+  id                       String    @id @default(cuid())
+  name                     String
+  platform                 String // web | android | ios | mobile | api | cross-platform
+  type                     String // playwright | appium | java-appium | api | other
+  localPath                String
+  description              String?
+  validationStatus         String    @default("unscanned") // valid | invalid | not-found | unscanned
+  scanDetails              String?
+  lastScan                 DateTime?
+  version                  String?
+  gitCommit                String?
+  gitBranch                String?
+  lastSuccessfulGeneration DateTime?
+  lastGenerationStory      String?
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+}
+
 // ── Audit ──────────────────────────────────────────────────────────────────
 model AuditLog {
   id       String   @id @default(cuid())

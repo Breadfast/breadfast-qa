@@ -42,7 +42,7 @@ import {
   companionDir, companionPath, storyDir, figmaAuthPath,
   playwrightFrameworkDir, javaFrameworkDir,
 } from '@qa/shared/paths';
-import { ingest, getSettings, type RunDetail, type StepDetail } from './api-client.js';
+import { ingest, getSettings, getResolvedFrameworks, type RunDetail, type StepDetail } from './api-client.js';
 import { fetchJiraIssue, jiraSourceMarkdown, jiraContextBlock, type JiraSource } from './jira.js';
 import { exportStoryFrames, type FigmaExportResult } from './figma.js';
 import { fileDefects, resolveBugConfig, type DefectInput } from './jira-write.js';
@@ -1103,9 +1103,10 @@ export const NODES: Record<string, NodeFn> = {
     // Resolved, cross-platform paths (no hardcoded drive letters). Framework
     // locations come from the Framework Registry (env overrides); when unset a
     // clear "configure it" hint is surfaced instead of a broken D:\ path.
+    const fw = await resolveFrameworks();
     const sharedPagesDir = companionPath('automation', 'pages');
-    const pwFramework = playwrightFrameworkDir() ?? '(configure a Playwright framework in the Framework Registry)';
-    const javaFramework = javaFrameworkDir() ?? '(configure a Java/Appium framework in the Framework Registry)';
+    const pwFramework = fw.playwright ?? '(configure a Playwright framework in the Framework Registry)';
+    const javaFramework = fw.javaAppium ?? '(configure a Java/Appium framework in the Framework Registry)';
     const data = await ai(
       ctx,
       aiOpts(
@@ -1234,11 +1235,12 @@ export const NODES: Record<string, NodeFn> = {
     // Card-service web stories: provision a FRESH test customer via API up to the
     // state the flow needs (ready-to-collect), so the agent tests against it
     // instead of whatever stale customer happens to exist. Best-effort teardown after.
+    const frameworks = await resolveFrameworks();
     let provisioned: Record<string, unknown> | null = null;
     if (isWeb && needsCardProvisioning(story)) {
       const target = process.env.PROVISION_TARGET || 'ready';
       await ctx.log(`provisioning a fresh card user (target=${target}) via API…`);
-      const pout = await runProvisioner([target], (l) => ctx.log(`[provision] ${l.slice(0, 160)}`));
+      const pout = await runProvisioner([target], (l) => ctx.log(`[provision] ${l.slice(0, 160)}`), frameworks);
       provisioned = parseProvisioned(pout);
       if (provisioned) {
         await ctx.log(`provisioned: mobile ${provisioned.searchMobile} · status ${provisioned.status}` +
@@ -1307,7 +1309,7 @@ export const NODES: Record<string, NodeFn> = {
       // Tear down the provisioned user (best-effort — DB teardown can time out over SSH).
       if (provisioned?.phone) {
         await ctx.log(`tearing down provisioned user ${provisioned.phone} (best-effort)…`);
-        const tout = await runProvisioner(['destroy', String(provisioned.phone)], (l) => ctx.log(`[teardown] ${l.slice(0, 160)}`));
+        const tout = await runProvisioner(['destroy', String(provisioned.phone)], (l) => ctx.log(`[teardown] ${l.slice(0, 160)}`), frameworks);
         if (!/__TEARDOWN__/.test(tout)) await ctx.log('teardown did not confirm — user may persist; clean up later if needed');
       }
     }
@@ -1572,19 +1574,35 @@ function runImporter(
 
 /** Card-user provisioner script + the runnable workspace whose node_modules it borrows. */
 const PROVISIONER = process.env.PROVISIONER_PATH || companionPath('automation', 'provision_for_execution.js');
-/** Playwright framework dir (Framework Registry / env) whose node_modules the provisioner borrows. */
-const B55168_DIR = playwrightFrameworkDir();
+
+/** Framework paths: Framework Registry (via API) first, then env fallback. */
+async function resolveFrameworks(): Promise<{ playwright?: string; javaAppium?: string }> {
+  const r = await getResolvedFrameworks();
+  return {
+    playwright: r.playwright ?? playwrightFrameworkDir(),
+    javaAppium: r.javaAppium ?? javaFrameworkDir(),
+  };
+}
 
 /** Spawn the provisioner; resolves combined stdout/stderr (never rejects). */
-function runProvisioner(args: string[], log: (l: string) => void): Promise<string> {
+function runProvisioner(
+  args: string[],
+  log: (l: string) => void,
+  fw: { playwright?: string; javaAppium?: string } = {},
+): Promise<string> {
+  const pwDir = fw.playwright ?? playwrightFrameworkDir();
+  const javaDir = fw.javaAppium ?? javaFrameworkDir();
   return new Promise((resolve) => {
-    // Borrow the Playwright framework's node_modules (mysql2/ssh2/properties-reader)
-    // when configured; otherwise run from the companion dir (provisioning will
-    // surface a clear module-not-found rather than a bad D:\ path).
+    // Borrow the Playwright framework's node_modules (mysql2/ssh2/properties-reader),
+    // and point the card-config scripts at the registered Java framework
+    // (BF_JAVA_FRAMEWORK_DIR) — cross-platform, no hardcoded D:\ path.
+    const env: NodeJS.ProcessEnv = { ...process.env };
+    if (pwDir) env.NODE_PATH = path.join(pwDir, 'node_modules');
+    if (javaDir) env.BF_JAVA_FRAMEWORK_DIR = javaDir;
     const child = spawn('node', [PROVISIONER, ...args], {
-      cwd: B55168_DIR ?? companionDir(),
+      cwd: pwDir ?? companionDir(),
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env, ...(B55168_DIR ? { NODE_PATH: path.join(B55168_DIR, 'node_modules') } : {}) },
+      env,
       windowsHide: true,
     });
     let out = '';

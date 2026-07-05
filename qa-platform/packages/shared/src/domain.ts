@@ -143,6 +143,16 @@ export type ArtifactKind = (typeof ARTIFACT_KINDS)[number];
 export const INTEGRATION_PROVIDERS = ['jira', 'figma', 'slack'] as const;
 export type IntegrationProvider = (typeof INTEGRATION_PROVIDERS)[number];
 
+// ── Framework Registry (Phase D) ─────────────────────────────────────────────
+export const FRAMEWORK_TYPES = ['playwright', 'appium', 'java-appium', 'api', 'other'] as const;
+export type FrameworkType = (typeof FRAMEWORK_TYPES)[number];
+
+export const FRAMEWORK_PLATFORMS = ['web', 'android', 'ios', 'mobile', 'api', 'cross-platform'] as const;
+export type FrameworkPlatform = (typeof FRAMEWORK_PLATFORMS)[number];
+
+export const FRAMEWORK_VALIDATION_STATUSES = ['valid', 'invalid', 'not-found', 'unscanned'] as const;
+export type FrameworkValidationStatus = (typeof FRAMEWORK_VALIDATION_STATUSES)[number];
+
 /**
  * The full QA lifecycle graph — one node per phase of the established QA
  * Companion process (CLAUDE.md §2 STEP 0–7 + §3/§4 web/mobile lifecycle).
