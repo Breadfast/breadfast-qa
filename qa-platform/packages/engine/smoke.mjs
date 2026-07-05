@@ -5,12 +5,29 @@
  *   2. CLAUDE.md + docs/ai/** load automatically as project instructions
  *   3. a scoped task returns a JSON object matching the expected shape
  *
- *   node smoke.mjs            # uses QA_COMPANION_DIR or D:\BreadfastQA
+ *   node smoke.mjs            # uses QA_COMPANION_DIR or auto-detects the repo root
  */
 import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const BIN = process.env.CLAUDE_BIN || 'claude';
-const CWD = process.env.QA_COMPANION_DIR || 'D:\\BreadfastQA';
+
+// Repo root = the dir holding CLAUDE.md + docs/ai (engine cwd). Auto-detected by
+// walking up from this file; override with QA_COMPANION_DIR. No hardcoded paths.
+function repoRoot() {
+  if (process.env.QA_COMPANION_DIR?.trim()) return path.resolve(process.env.QA_COMPANION_DIR);
+  let dir = path.dirname(fileURLToPath(import.meta.url));
+  for (let i = 0; i < 8; i++) {
+    if (existsSync(path.join(dir, 'CLAUDE.md')) && existsSync(path.join(dir, 'docs', 'ai'))) return dir;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return process.cwd();
+}
+const CWD = repoRoot();
 const MODEL = process.env.ENGINE_MODEL_CHEAP || 'claude-haiku-4-5-20251001';
 
 const instruction =

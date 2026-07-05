@@ -56,7 +56,7 @@ async function main() {
     ({ chromium } = require('@playwright/test'));
   } catch (e) {
     console.error(`[figma-connect] Could not load @playwright/test: ${e.message}`);
-    console.error('[figma-connect] Ensure D:\\Playwright\\b55168_pom has @playwright/test installed (npm install).');
+    console.error(`[figma-connect] Ensure the configured Playwright framework (${process.cwd()}) has @playwright/test installed (npm install).`);
     process.exit(2);
   }
 
@@ -73,7 +73,7 @@ async function main() {
     }
   } catch (e) {
     console.error(`[figma-connect] Failed to launch browser: ${e.message}`);
-    console.error('[figma-connect] Run "npx playwright install chromium" inside D:\\Playwright\\b55168_pom and retry.');
+    console.error(`[figma-connect] Run "npx playwright install chromium" inside the configured Playwright framework (${process.cwd()}) and retry.`);
     process.exit(2);
   }
 

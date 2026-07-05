@@ -36,8 +36,8 @@ const INCLUDE = [
   'automation',         // shared scripts + page objects + team-shared testing config
   'qa-platform',        // the app (source only)
 ];
-// Files that should land under automation/ instead of the repo root.
-const MOVE_INTO_AUTOMATION = new Set(['bs_helper.js', 'gen_report.js']);
+// bs_helper.js + gen_report.js stay at the repo root (referenced there by
+// CLAUDE.md's quick-ref and by companionPath('bs_helper.js') in the worker).
 
 // ── Exclusions (personal / runtime / generated) ─────────────────────────────
 const EXCLUDE_DIR_SEGMENTS = new Set([
@@ -102,8 +102,7 @@ async function migrateEntry(name) {
     if (EXECUTE) await fs.mkdir(destBase, { recursive: true });
     await walk(abs, name, destBase);
   } else {
-    const destName = MOVE_INTO_AUTOMATION.has(name) ? path.join('automation', name) : name;
-    const dest = path.join(DEST, destName);
+    const dest = path.join(DEST, name);
     stats.copied++;
     try { stats.bytes += statSync(abs).size; } catch {}
     if (EXECUTE) { await fs.mkdir(path.dirname(dest), { recursive: true }); await fs.copyFile(abs, dest); }

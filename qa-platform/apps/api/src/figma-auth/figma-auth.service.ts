@@ -2,13 +2,13 @@ import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync, readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
+import { companionPath, figmaAuthPath, playwrightFrameworkDir } from '@qa/shared/paths';
 
-const B55168_DIR    = process.env.BF_B55168_DIR    ?? 'D:\\Playwright\\b55168_pom';
-const QA_PLATFORM   = process.env.QA_PLATFORM_DIR  ?? 'D:\\BreadfastQA\\qa-platform';
-const AUTH_DIR      = path.join(QA_PLATFORM, 'auth');
-export const FIGMA_AUTH_PATH =
-  process.env.FIGMA_AUTH_PATH ?? path.join(AUTH_DIR, 'figma-auth.json');
-const CONNECT_SCRIPT = path.join(AUTH_DIR, 'connect-figma.js');
+// connect-figma.js ships in the repo; the Figma session is stored in the
+// per-user workspace (never the repo). The connect script borrows the
+// Playwright framework's node_modules for @playwright/test when configured.
+const CONNECT_SCRIPT = companionPath('qa-platform', 'auth', 'connect-figma.js');
+export const FIGMA_AUTH_PATH = figmaAuthPath();
 
 /** Session is considered expired after this many days. Figma sessions last ~30 days. */
 const EXPIRY_DAYS = Number(process.env.FIGMA_AUTH_EXPIRY_DAYS ?? 25);
@@ -48,12 +48,14 @@ export class FigmaAuthService implements OnModuleDestroy {
     this.child = null;
     this.logs = [];
 
+    const frameworkDir = playwrightFrameworkDir();
     const child = spawn('node', [CONNECT_SCRIPT], {
-      cwd: B55168_DIR,
+      cwd: frameworkDir ?? companionPath('qa-platform'),
       stdio: ['ignore', 'pipe', 'pipe'],
       env: {
         ...process.env,
-        NODE_PATH: path.join(B55168_DIR, 'node_modules'),
+        // Borrow the Playwright framework's node_modules for @playwright/test when configured.
+        ...(frameworkDir ? { NODE_PATH: path.join(frameworkDir, 'node_modules') } : {}),
         FIGMA_AUTH_PATH,
       },
       // DO NOT set windowsHide:true — the browser window must be visible.

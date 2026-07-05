@@ -12,13 +12,12 @@
  * node reasons on the REAL ticket instead of just its key.
  */
 import { createRequire } from 'node:module';
-import path from 'node:path';
+import { companionPath } from '@qa/shared/paths';
 
 const require = createRequire(import.meta.url);
 
-const COMPANION_DIR = process.env.QA_COMPANION_DIR ?? 'D:\\BreadfastQA';
 const CREDENTIALS_PATH =
-  process.env.QA_CREDENTIALS_PATH || path.join(COMPANION_DIR, 'automation', 'config', 'credentials.js');
+  process.env.QA_CREDENTIALS_PATH || companionPath('automation', 'config', 'credentials.js');
 
 /** HeroCoders "Acceptance criteria" checklist is stored in these issue properties.
  *  `acceptanceCriteria` holds the rendered content ({ items: "1- … 2- …", progressText }). */

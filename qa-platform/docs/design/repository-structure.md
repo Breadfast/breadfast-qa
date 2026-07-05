@@ -13,13 +13,13 @@ breadfast-qa/                          # the git repo (working clone: D:\breadfa
 ├── AGENTS.md
 ├── docs/ai/**                         # knowledge base (engine loads it from the repo root)
 ├── project-defaults.json             # NON-secret project profiles (§ project-profiles)
+├── bs_helper.js  gen_report.js        # mobile WebDriver layer + report gen (root, per CLAUDE.md quick-ref)
 ├── automation/                        # shared automation assets (no secrets)
 │   ├── pages/  helpers/               # shared page objects / helpers
 │   ├── import_browserstack_csv.js
 │   ├── provision_for_execution.js
 │   ├── helpers/FigmaExporter.js
-│   ├── bs_helper.js  gen_report.js
-│   └── config/credentials.example.js  # template ONLY
+│   └── config/  (credentials.js + credentials.local.js — team-shared testing config)
 └── qa-platform/                       # the app (npm workspaces)
     ├── ARCHITECTURE.md  README.md  ARCHITECTURE-REVIEW.md
     ├── docs/design/**                 # Phase 0 design specs (this folder)
@@ -79,8 +79,8 @@ playwright-report/
 | `docs/ai/**` (companion root) | `docs/ai/**` | knowledge base at repo root |
 | `qa-platform/docs/design/**` | `qa-platform/docs/design/**` | design specs stay with the app (carried by the `qa-platform/**` copy) |
 | `qa-platform/**` | `qa-platform/**` | drop `node_modules`, `dist`, `.next`, `.env`, `*.db`, `auth/`, `*.log`, `*.zip`, `PARITY-PROPOSAL.pdf`, `api.log`, `web.log`, `launcher.out.log` |
-| `automation/**` | `automation/**` | replace real `config/credentials.js` with `credentials.example.js`; drop any `*.local.js`, secrets, generated output |
-| `bs_helper.js`, `gen_report.js` | `automation/` | — |
+| `automation/**` | `automation/**` | kept as-is incl. team-shared QA testing config (`config/credentials.js`, `credentials.local.js`, `figma.js`, `cardServiceConfigs_testing.js`) per the simplified Phase-A decision; drop only generated output |
+| `bs_helper.js`, `gen_report.js` | root | referenced at root by CLAUDE.md quick-ref + `companionPath('bs_helper.js')` |
 | *(new)* `project-defaults.json`, `README.md`, `.gitignore` | root | authored fresh |
 
 **Do NOT migrate:** `B10-*` + `B10-55570-verify`, `BUILD-SMOKE-*`, `FigmaCheck/`, `_validation/`, `figma-export-test/`, `presentation/`, all loose `*.png`/`*.mp4`/`*.zip`/`*.xlsx`/`*.csv`/`*.html`/`*.mjs`/`*.yml` at root, `dev.db`, `.env`, `auth/figma-auth.json`, `node_modules/`, `playwright-report/`, `test-results/`, `.history/`, `.playwright-mcp/`, `log/`, the nested `b55168_pom/`.

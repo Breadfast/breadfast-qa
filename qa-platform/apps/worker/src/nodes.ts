@@ -38,6 +38,10 @@ import {
   type RunEvent,
   type GatedAction,
 } from '@qa/shared';
+import {
+  companionDir, companionPath, storyDir, figmaAuthPath,
+  playwrightFrameworkDir, javaFrameworkDir,
+} from '@qa/shared/paths';
 import { ingest, getSettings, type RunDetail, type StepDetail } from './api-client.js';
 import { fetchJiraIssue, jiraSourceMarkdown, jiraContextBlock, type JiraSource } from './jira.js';
 import { exportStoryFrames, type FigmaExportResult } from './figma.js';
@@ -52,11 +56,9 @@ export class PausedForInput extends Error {
   }
 }
 
-const COMPANION_DIR = process.env.QA_COMPANION_DIR ?? 'D:\\BreadfastQA';
-/** Saved Playwright storageState for Figma — written by the Connect Figma flow in the API. */
-const FIGMA_AUTH_PATH =
-  process.env.FIGMA_AUTH_PATH ??
-  path.join(COMPANION_DIR, 'qa-platform', 'auth', 'figma-auth.json');
+const COMPANION_DIR = companionDir();
+/** Saved Figma browser session — written by the Connect Figma flow; in the per-user workspace, not the repo. */
+const FIGMA_AUTH_PATH = figmaAuthPath();
 /** Session is considered expired after this many days — mirrors apps/api/src/figma-auth/figma-auth.service.ts. */
 const FIGMA_AUTH_EXPIRY_DAYS = Number(process.env.FIGMA_AUTH_EXPIRY_DAYS ?? 25);
 
@@ -396,7 +398,7 @@ export const NODES: Record<string, NodeFn> = {
     await ctx.log(
       `knowledge base verified: CLAUDE.md (${manifest.claudeMdBytes} bytes) + ${manifest.docsAiFiles.length} docs/ai/*.md file(s)`,
     );
-    const dir = ctx.run.story.workspacePath ?? path.join(COMPANION_DIR, ctx.run.story.jiraKey);
+    const dir = ctx.run.story.workspacePath ?? storyDir(ctx.run.story.jiraKey);
     await mkdir(dir, { recursive: true });
     await Promise.all(STD_SUBFOLDERS.map((s) => mkdir(path.join(dir, s), { recursive: true })));
     await ctx.log(`workspace ready at ${dir}`);
@@ -596,7 +598,7 @@ export const NODES: Record<string, NodeFn> = {
     // See testing-process.md §4.1/§4.5.
     const jira = ctx.state.jira as JiraSource | undefined;
     const urls = jira?.figmaUrls ?? [];
-    const dir = (ctx.state.workspacePath as string) ?? path.join(COMPANION_DIR, ctx.run.story.jiraKey);
+    const dir = (ctx.state.workspacePath as string) ?? storyDir(ctx.run.story.jiraKey);
     const outDir = path.join(dir, 'figma-analysis');
 
     // STEP 0 — mandatory session gate: verify the Figma Browser Session cookies
@@ -929,7 +931,7 @@ export const NODES: Record<string, NodeFn> = {
 
   async generate_csv(ctx) {
     const tc = ctx.state.testcases as TestCases | undefined;
-    const dir = (ctx.state.workspacePath as string) ?? path.join(COMPANION_DIR, ctx.run.story.jiraKey);
+    const dir = (ctx.state.workspacePath as string) ?? storyDir(ctx.run.story.jiraKey);
     const csv = toBrowserstackCsv(tc, ctx.run.story);
     const file = path.join(dir, 'testcases', `${ctx.run.story.jiraKey}_browserstack_testcases.csv`);
     await writeFile(file, csv, 'utf8');
@@ -1043,7 +1045,7 @@ export const NODES: Record<string, NodeFn> = {
     // Step 2 — Probe: actually drive the live app per the charters above, like a
     // human exploratory tester (not scripted test-case steps — those come later
     // in generate_testcases/execution). Capture screenshots of anything unexpected.
-    const dir = (ctx.state.workspacePath as string) ?? path.join(COMPANION_DIR, story.jiraKey);
+    const dir = (ctx.state.workspacePath as string) ?? storyDir(story.jiraKey);
     const shotsDir = path.join(dir, 'screenshots');
     await mkdir(shotsDir, { recursive: true });
     const c = story.credentials ?? undefined;
@@ -1091,15 +1093,21 @@ export const NODES: Record<string, NodeFn> = {
 
   async automation_generation(ctx) {
     // Step 1 — Plan: identify reusable assets + spec files to create.
+    // Resolved, cross-platform paths (no hardcoded drive letters). Framework
+    // locations come from the Framework Registry (env overrides); when unset a
+    // clear "configure it" hint is surfaced instead of a broken D:\ path.
+    const sharedPagesDir = companionPath('automation', 'pages');
+    const pwFramework = playwrightFrameworkDir() ?? '(configure a Playwright framework in the Framework Registry)';
+    const javaFramework = javaFrameworkDir() ?? '(configure a Java/Appium framework in the Framework Registry)';
     const data = await ai(
       ctx,
       aiOpts(
         `Plan automation for ${ctx.run.story.jiraKey} on ${ctx.run.story.platform}. ` +
         `Enforce reuse-before-build against the framework catalogs (docs/ai/automation/**): ` +
         `list reusable assets, any new page objects needed, and the spec files to create. ` +
-        `For web: Playwright specs go to D:\\BreadfastQA\\${ctx.run.story.jiraKey}\\automation\\tests\\. ` +
-        `Shared page objects go to D:\\BreadfastQA\\automation\\pages\\. ` +
-        `For mobile: describe the Java/Appium test class plan (framework at D:\\projects).`,
+        `For web: Playwright specs go to the story's automation/tests/ folder. ` +
+        `Shared page objects go to ${sharedPagesDir}. ` +
+        `For mobile: describe the Java/Appium test class plan (framework at ${javaFramework}).`,
         AutomationPlan,
         'AutomationPlan',
         '{"reusableAssets":["..."],"newPageObjects":["..."],"specs":[{"name":"...","framework":"playwright|appium","description":"..."}],"notes":"..."}',
@@ -1108,7 +1116,7 @@ export const NODES: Record<string, NodeFn> = {
     );
     ctx.state.automationPlan = data;
 
-    const dir = (ctx.state.workspacePath as string) ?? path.join(COMPANION_DIR, ctx.run.story.jiraKey);
+    const dir = (ctx.state.workspacePath as string) ?? storyDir(ctx.run.story.jiraKey);
     const automationDir = path.join(dir, 'automation');
     await mkdir(automationDir, { recursive: true });
     await artifact(ctx, 'automation/automation-plan.json', JSON.stringify(data, null, 2));
@@ -1116,7 +1124,7 @@ export const NODES: Record<string, NodeFn> = {
 
     // Step 2 — Write: spawn an agentic agent to create the actual spec files.
     // For mobile (Appium) the agent describes what to create in a README since
-    // the Java framework at D:\projects requires Maven build setup.
+    // the Java framework requires Maven build setup.
     const platform = ctx.run.story.platform;
     const isWeb = platform === 'web';
     const tc = ctx.state.testcases as { cases: Array<{ title: string; steps: unknown[] }> } | undefined;
@@ -1137,20 +1145,20 @@ export const NODES: Record<string, NodeFn> = {
           (isWeb
             ? `TASK (Playwright/JS):\n` +
               `1. Read the automation plan above carefully.\n` +
-              `2. Check for existing reusable page objects / helpers in D:\\BreadfastQA\\automation\\pages\\ and D:\\Playwright\\b55168_pom\\pages\\ before writing anything new.\n` +
-              `3. For each new page object in the plan: write it to D:\\BreadfastQA\\automation\\pages\\ (follow the pattern in D:\\Playwright\\b55168_pom\\pages\\BasePage.js).\n` +
+              `2. Check for existing reusable page objects / helpers in ${sharedPagesDir} and the configured Playwright framework's pages/ before writing anything new.\n` +
+              `3. For each new page object in the plan: write it to ${sharedPagesDir} (follow the BasePage pattern in the configured Playwright framework: ${pwFramework}).\n` +
               `4. Write the test spec file(s) to ${automationDir.replace(/\\/g, '\\\\')}\\tests\\ — file name matching the spec name in the plan.\n` +
               `   Follow the coding standard at docs/ai/automation/coding-standards.md: ` +
               `   granular steps, env-var-gated destructive tests, const EXPECTED_* for copy assertions, beforeEach login.\n` +
               `5. Write a README.md to ${automationDir.replace(/\\/g, '\\\\')} describing how to run the specs and listing preconditions.\n` +
               `6. Verify the spec file(s) exist and contain valid JS (no TypeScript annotations).`
-            : `TASK (Mobile/Appium — Java framework at D:\\projects):\n` +
+            : `TASK (Mobile/Appium — Java framework at ${javaFramework}):\n` +
               `1. Read the automation plan and the Java framework catalog at docs/ai/automation/java-framework.md.\n` +
               `2. DO NOT write Java files (the build requires Maven setup). Instead:\n` +
               `   a. Write a detailed framework-reference.md to ${automationDir.replace(/\\/g, '\\\\')}\\framework-reference.md ` +
               `      listing: which existing page objects / helpers to reuse, which new ones are needed, ` +
               `      class names + method signatures for all new page objects, and the step-by-step navigation needed for each spec.\n` +
-              `   b. Write a README.md describing how to run the Appium test from D:\\projects via Maven.\n`) +
+              `   b. Write a README.md describing how to run the Appium test from ${javaFramework} via Maven.\n`) +
           `\nDo NOT add speculative features, TODOs, or placeholder comments. Write exactly what is needed for the test cases in the plan. ` +
           `Reply "DONE: <comma-separated list of files written>" when finished, or "PARTIAL: <files written> — <what failed>" if some files could not be written.`,
         cwd: COMPANION_DIR,
@@ -1187,7 +1195,7 @@ export const NODES: Record<string, NodeFn> = {
     }
     // en-US first (per scope decision); first configured locale wins.
     const locale = ((ctx.state as any).story?.locales?.[0] as string) ?? 'en-US';
-    const dir = (ctx.state.workspacePath as string) ?? path.join(COMPANION_DIR, story.jiraKey);
+    const dir = (ctx.state.workspacePath as string) ?? storyDir(story.jiraKey);
     const shotsDir = path.join(dir, 'screenshots');
     await mkdir(shotsDir, { recursive: true });
     // Write the case list to a file the agent READS — inlining it into the
@@ -1260,7 +1268,7 @@ export const NODES: Record<string, NodeFn> = {
         `Devices: Android = Samsung Galaxy S23 / Android 13 (UiAutomator2)${bs?.android ? ` app "${bs.android}"` : ' (no app — skip)'}; ` +
         `iOS = iPhone 14 / iOS 18 (XCUITest)${bs?.ios ? ` app "${bs.ios}"` : ' (no app — skip)'}.`;
       instruction =
-        `Drive BrowserStack App Automate via the helper at ${COMPANION_DIR}\\bs_helper.js (functions: bsReq, screenshot, getSource, ` +
+        `Drive BrowserStack App Automate via the helper at ${companionPath('bs_helper.js')} (functions: bsReq, screenshot, getSource, ` +
         `findElement(s), clickEl, typeText, tap(x,y), getAttr, sleep). Write a Node driver script under "${dir.replace(/\\/g, '\\\\')}\\automation" ` +
         `that: creates a session with the caps below, executes the cases, saves a screenshot per case into the screenshots dir, then run it with Bash ` +
         `("node <script>"). Run Android first, then iOS, for locale ${locale} only (Arabic is a later pass). Handle OTP/passcode/coordinate-tap ` +
@@ -1299,7 +1307,7 @@ export const NODES: Record<string, NodeFn> = {
   },
 
   async html_report(ctx) {
-    const dir = (ctx.state.workspacePath as string) ?? path.join(COMPANION_DIR, ctx.run.story.jiraKey);
+    const dir = (ctx.state.workspacePath as string) ?? storyDir(ctx.run.story.jiraKey);
     const file = path.join(dir, 'execution-reports', `test_report_${ctx.run.story.jiraKey}.html`);
     await writeFile(file, renderReport(ctx), 'utf8');
     // Root index README per the folder standard (release-validation.md §6).
@@ -1528,7 +1536,7 @@ function csvCell(v: string): string {
 }
 
 /** Path to the reusable BrowserStack importer (override via BS_IMPORTER_PATH). */
-const BS_IMPORTER = process.env.BS_IMPORTER_PATH || 'D:\\BreadfastQA\\automation\\import_browserstack_csv.js';
+const BS_IMPORTER = process.env.BS_IMPORTER_PATH || companionPath('automation', 'import_browserstack_csv.js');
 
 /** Run the importer CLI; resolves with combined stdout+stderr (never rejects). */
 function runImporter(
@@ -1556,16 +1564,20 @@ function runImporter(
 }
 
 /** Card-user provisioner script + the runnable workspace whose node_modules it borrows. */
-const PROVISIONER = process.env.PROVISIONER_PATH || path.join(COMPANION_DIR, 'automation', 'provision_for_execution.js');
-const B55168_DIR = process.env.BF_B55168_DIR || 'D:\\Playwright\\b55168_pom';
+const PROVISIONER = process.env.PROVISIONER_PATH || companionPath('automation', 'provision_for_execution.js');
+/** Playwright framework dir (Framework Registry / env) whose node_modules the provisioner borrows. */
+const B55168_DIR = playwrightFrameworkDir();
 
 /** Spawn the provisioner; resolves combined stdout/stderr (never rejects). */
 function runProvisioner(args: string[], log: (l: string) => void): Promise<string> {
   return new Promise((resolve) => {
+    // Borrow the Playwright framework's node_modules (mysql2/ssh2/properties-reader)
+    // when configured; otherwise run from the companion dir (provisioning will
+    // surface a clear module-not-found rather than a bad D:\ path).
     const child = spawn('node', [PROVISIONER, ...args], {
-      cwd: B55168_DIR, // borrow its node_modules for mysql2/ssh2/properties-reader
+      cwd: B55168_DIR ?? companionDir(),
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env, NODE_PATH: path.join(B55168_DIR, 'node_modules') },
+      env: { ...process.env, ...(B55168_DIR ? { NODE_PATH: path.join(B55168_DIR, 'node_modules') } : {}) },
       windowsHide: true,
     });
     let out = '';
@@ -1590,7 +1602,7 @@ function parseProvisioned(out: string): Record<string, unknown> | null {
 
 /** Write a file under the story's workspace folder, creating parent dirs. */
 async function artifact(ctx: NodeContext, rel: string, content: string): Promise<string> {
-  const dir = (ctx.state.workspacePath as string) ?? path.join(COMPANION_DIR, ctx.run.story.jiraKey);
+  const dir = (ctx.state.workspacePath as string) ?? storyDir(ctx.run.story.jiraKey);
   const file = path.join(dir, rel);
   await mkdir(path.dirname(file), { recursive: true });
   await writeFile(file, content, 'utf8');

@@ -13,13 +13,14 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "generate": "prisma generate",
-    "push": "prisma db push",
-    "migrate": "prisma migrate dev",
-    "studio": "prisma studio"
+    "generate": "node scripts/prisma-run.mjs generate",
+    "push": "node scripts/prisma-run.mjs db push",
+    "migrate": "node scripts/prisma-run.mjs migrate dev",
+    "studio": "node scripts/prisma-run.mjs studio"
   },
   "dependencies": {
-    "@prisma/client": "^6.1.0"
+    "@prisma/client": "^6.1.0",
+    "@qa/shared": "*"
   },
   "devDependencies": {
     "prisma": "^6.1.0",

@@ -16,13 +16,12 @@
  * never throws (returns an error string).
  */
 import { createRequire } from 'node:module';
-import path from 'node:path';
+import { companionPath } from '@qa/shared/paths';
 
 const require = createRequire(import.meta.url);
 
-const COMPANION_DIR = process.env.QA_COMPANION_DIR ?? 'D:\\BreadfastQA';
 const FIGMA_EXPORTER_PATH =
-  process.env.QA_FIGMA_EXPORTER_PATH || path.join(COMPANION_DIR, 'automation', 'helpers', 'FigmaExporter.js');
+  process.env.QA_FIGMA_EXPORTER_PATH || companionPath('automation', 'helpers', 'FigmaExporter.js');
 
 export interface FigmaFrame {
   id: string;
