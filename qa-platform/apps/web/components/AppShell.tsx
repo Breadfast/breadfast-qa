@@ -35,7 +35,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           ))}
         </nav>
         <div className="mt-auto p-4 border-t border-[#1c3a4f] text-xs font-mono text-muted">
-          v0.1 · phase 0
+          v0.1
         </div>
       </aside>
       <main className="flex-1 min-w-0">{children}</main>

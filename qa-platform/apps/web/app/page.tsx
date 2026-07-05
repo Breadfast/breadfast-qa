@@ -15,9 +15,11 @@ const STAT_META: Array<{ key: keyof DashboardSummary['cards']; label: string; to
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [onboarded, setOnboarded] = useState<boolean | null>(null);
 
   useEffect(() => {
     api<DashboardSummary>('/dashboard').then(setData).catch((e) => setError(String(e)));
+    api<{ completed: boolean }>('/onboarding/state').then((s) => setOnboarded(s.completed)).catch(() => setOnboarded(null));
   }, []);
 
   return (
@@ -34,6 +36,23 @@ export default function DashboardPage() {
           ＋ New Story
         </Link>
       </header>
+
+      {onboarded === false && (
+        <div className="rounded-xl border border-accent/30 bg-[#EAF4F8] p-5 mb-6 flex items-center justify-between gap-4">
+          <div>
+            <div className="text-sm font-semibold text-ink">Finish setting up your environment</div>
+            <p className="text-sm text-muted mt-0.5">
+              Configure your frameworks and integrations, and verify your environment is ready — before running your first story.
+            </p>
+          </div>
+          <Link
+            href="/onboarding"
+            className="shrink-0 bg-accent text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-accent-bright transition-colors"
+          >
+            Go to Setup →
+          </Link>
+        </div>
+      )}
 
       {error && (
         <div className="rounded-lg border border-line bg-surface p-4 text-sm text-muted">

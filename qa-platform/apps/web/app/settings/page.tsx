@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { api } from '../../lib/api';
 
 // ── Figma session types ───────────────────────────────────────────────────────
@@ -32,7 +33,7 @@ const CATALOG: Array<{ group: string; title: string; fields: FieldDef[] }> = [
     { key: 'browserstack.defaultFolder', label: 'Default folder' },
     { key: 'browserstack.publicFolderUrl', label: 'Public folder URL' },
   ]},
-  { group: 'figma', title: 'Figma', fields: [
+  { group: 'figma', title: 'Figma (REST API fallback)', fields: [
     { key: 'figma.token', label: 'Personal access token (REST API)', secret: true },
     { key: 'figma.team', label: 'Team' },
     { key: 'figma.defaultFile', label: 'Default file key' },
@@ -44,12 +45,6 @@ const CATALOG: Array<{ group: string; title: string; fields: FieldDef[] }> = [
     { key: 'ai.modelCheap', label: 'Cheap model', placeholder: 'claude-haiku-4-5-20251001' },
     { key: 'ai.mcpConfig', label: 'MCP config path' },
     { key: 'ai.knowledgeBasePath', label: 'Knowledge base path', placeholder: 'auto-detected (repo root) — override only if needed' },
-  ]},
-  { group: 'automation', title: 'Automation', fields: [
-    { key: 'automation.playwrightPath', label: 'Playwright framework path', placeholder: 'path to your Playwright framework clone' },
-    { key: 'automation.appiumPath', label: 'Appium framework path', placeholder: 'path to your Appium/Java framework clone' },
-    { key: 'automation.canonicalFramework', label: 'Canonical framework', placeholder: 'b55168_pom' },
-    { key: 'automation.repoLocations', label: 'Repository locations' },
   ]},
   { group: 'integrations', title: 'Integrations', fields: [
     { key: 'integrations.slackToken', label: 'Slack token', secret: true },
@@ -178,7 +173,7 @@ export default function SettingsPage() {
         {/* ── Figma Browser Session (action card, not a settings field) ── */}
         <section className="rounded-xl border border-line bg-surface p-5">
           <div className="flex items-center justify-between mb-1">
-            <h2 className="text-sm font-semibold text-ink">Figma Browser Session</h2>
+            <h2 className="text-sm font-semibold text-ink">Figma Browser Session (recommended)</h2>
             <FigmaStatusBadge status={figmaStatus} />
           </div>
           <p className="text-xs text-muted mb-4 leading-relaxed">
@@ -233,6 +228,19 @@ export default function SettingsPage() {
               {figmaPayload.recentLogs.join('\n')}
             </pre>
           )}
+        </section>
+
+        {/* ── Automation frameworks: single source of truth is the Framework Registry ── */}
+        <section className="rounded-xl border border-line bg-surface p-5 flex items-center justify-between gap-4">
+          <div>
+            <h2 className="text-sm font-semibold text-ink">Automation frameworks</h2>
+            <p className="text-xs text-muted mt-1">
+              Playwright / Appium framework locations are managed in the Framework Registry — one place, with path validation and scan status.
+            </p>
+          </div>
+          <Link href="/frameworks" className="shrink-0 text-sm font-medium px-4 py-2 rounded-lg border border-line text-body hover:border-accent">
+            Open Framework Registry →
+          </Link>
         </section>
 
         {/* ── Catalog sections ── */}

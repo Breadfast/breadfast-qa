@@ -11,9 +11,10 @@ import { FrameworksModule } from './frameworks/frameworks.module.js';
 import { ProfilesModule } from './profiles/profiles.module.js';
 import { DiagnosticsModule } from './diagnostics/diagnostics.module.js';
 import { OnboardingModule } from './onboarding/onboarding.module.js';
+import { KnowledgeModule } from './knowledge/knowledge.module.js';
 
 @Module({
-  imports: [AuthModule, StoriesModule, RunsModule, DashboardModule, SettingsModule, TestDataModule, FigmaAuthModule, FrameworksModule, ProfilesModule, DiagnosticsModule, OnboardingModule],
+  imports: [AuthModule, StoriesModule, RunsModule, DashboardModule, SettingsModule, TestDataModule, FigmaAuthModule, FrameworksModule, ProfilesModule, DiagnosticsModule, OnboardingModule, KnowledgeModule],
   providers: [PrismaService],
   exports: [PrismaService],
 })
