@@ -22,14 +22,14 @@ Checklist:
 
 ### 1.1 Defect Grounding Gate (precision — prevents false positives)
 
-A finding becomes a **filed Defect only if it passes ALL of the checks below**. Otherwise it is a **report-only observation** (put it in notes / the report), never a Jira bug. Added after the B10-56337 certification run filed 5 false positives out of 7 (B10-57363/64/65/66/68) — each failed one of these:
+A finding becomes a **filed Defect only if it passes ALL of the checks below**. Otherwise it is a **report-only observation** (put it in notes / the report), never a Jira bug. Added after the B10-56337 certification run filed 4 false positives out of 7 (B10-57364/65/66/68) — each failed one of these:
 
-1. **Source cited.** Name the exact thing it violates — a specific **AC**, a **Figma** element, or an **established business rule**. If you can't name it, it is not a defect. Never invent an "ideal" expectation (e.g. *"the Confirm button should be disabled"* when the spec only calls for an inline error on submit). → *B10-57363*
+1. **Source cited.** Name the exact thing it violates — a specific **AC**, a **Figma** element, or an **established business rule**. If you can't name it, it is not a defect — never invent an "ideal" expectation the spec never states (an extra dialog, a disabled state, a copy tweak). **But check the AC first: if the AC _does_ state it (e.g. "the Confirm button must be disabled until Package Number is entered" — a real B10-56337 AC), a deviation IS a valid defect.**
 2. **Not test data.** Seeded/garbage values in the testing env — dropdown entries like `test`, `dsa`, `{{7*7}}`, `@SUM(...)`, duplicate demo branches — are not product defects. → *B10-57364*
 3. **Reproducible.** Re-run the exact steps ≥ once more. A single non-repeating observation is unconfirmed/flaky, not a defect. → *B10-57366*
 4. **Not a tooling artifact.** `pdf-parse` reverses/re-orders Arabic (RTL) numerals and shaping. A digit-order/RTL difference seen **only in extracted text** is not a defect unless confirmed by eyeballing the rendered PDF/screenshot. *(Note: a genuine RTL render defect confirmed visually IS valid — cf. B10-57367.)*
 5. **No cross-language / derived-field false mismatches.** Don't assert an English UI label must equal an Arabic stored value (a correct branch **code** = valid mapping, regardless of the Arabic name → *B10-57365*). Don't flag derived fields as inconsistent with a display label (Gender is derived from the **Egyptian NID 13th digit**: odd = male, even = female → *B10-57368*).
-6. **One defect = one problem.** Never bundle two distinct issues (or a strong issue + a weak one) into one bug — split them. (Reinforces the one-defect-per-bug standard.)
+6. **One defect = one problem.** Never bundle two distinct issues (or a strong issue + a weak one) into one bug — split them. → *B10-57363* bundled a valid AC-based disabled-button defect with a flaky "no-op" observation. (Reinforces the one-defect-per-bug standard.)
 
 Enforced in the QA Platform execution node (`apps/worker/src/nodes.ts`) as a mandatory pre-filing gate in the execution prompt.
 

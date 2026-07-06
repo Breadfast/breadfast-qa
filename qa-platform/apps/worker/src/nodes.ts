@@ -1249,8 +1249,9 @@ export const NODES: Record<string, NodeFn> = {
       `Defect ONLY if it passes ALL of the checks below; otherwise the case is "pass" (with a note) or the finding goes in "notes" as an ` +
       `OBSERVATION — never as a Defect:\n` +
       `1. SOURCE: you can cite the exact thing it violates — a specific acceptance criterion, a Figma design element, or an established ` +
-      `business rule. If you cannot name the AC/design/rule, it is NOT a defect. Do NOT invent an "ideal" expectation (e.g. "the Confirm ` +
-      `button should be disabled" when the spec only calls for an inline error on submit).\n` +
+      `business rule. If you cannot name the AC/design/rule, it is NOT a defect. Do NOT invent an "ideal" expectation the spec never states ` +
+      `(e.g. an extra confirmation dialog, a disabled state, or a copy tweak that no AC/design calls for). Conversely, if the AC DOES state it ` +
+      `(e.g. "the button must be disabled until X"), a deviation IS a real defect — check the AC before deciding either way.\n` +
       `2. NOT TEST DATA: seeded/garbage values in the testing environment — dropdown entries like "test", "dsa", "{{7*7}}", "@SUM(...)", ` +
       `duplicate demo branches — are NOT product defects.\n` +
       `3. REPRODUCIBLE: re-run the exact steps at least once more. A single, non-repeating observation is NOT a defect (record it as ` +
