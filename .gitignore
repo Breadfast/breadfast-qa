@@ -26,3 +26,8 @@ test-results/
 playwright-report/
 .playwright-mcp/
 .history/
+
+# editor + root-level story evidence (screenshots / generated PDFs — not part of the platform)
+.vscode/
+/*.png
+/*.pdf

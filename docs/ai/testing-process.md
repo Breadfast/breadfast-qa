@@ -89,10 +89,11 @@ All generated test cases — for every story, every platform — MUST follow the
 This standard is automatic for every future story — no additional instruction required.
 
 ### 3.8 Automation mirrors the approved test cases 1:1
-The automated suite is a **1:1 mirror of the imported BrowserStack test cases**: one automated test per case, **named identically to the BrowserStack title**, and **each assertion checks that case's expected result** (so a failure means the feature deviates from the AC, and per-case status maps straight to a defect). Consequences:
+The automated suite is a **1:1 mirror of the imported BrowserStack test cases**: one automated test per case, **named identically to the BrowserStack title** (verbatim, no `[TC_...]` prefix — the BrowserStack case id is the traceability key), and **each assertion checks that case's expected result** (so a failure means the feature deviates from the AC, and per-case status maps straight to a defect). Consequences:
 - A test that covers a persistence/traceability AC must assert against the **destination** (§1), e.g. query the audit-trail API after posting — not just that the request returned 200.
 - For ACs that can't be exercised (no role account, surface not present), use an explicit **skip with a reason** so the status is visible — never a silent pass.
 - Generate a per-test-case report so every case shows PASS / FAIL / SKIP and its mapped defect (see [release-validation.md](release-validation.md) §2). *Pattern established on B10-55570: `B10-55570_browserstack_suite.spec.js` (28 cases) + `gen_suite_report.js`.*
+- **Maintain a test-case → script mapping table** in the story's automation `README.md`: BrowserStack Case ID + Title → spec file → automated? (with a reason for any non-automatable case). This makes 1:1 coverage auditable. Format + rules: [coding-standards.md](automation/coding-standards.md) "Test-case → script traceability".
 
 ---
 

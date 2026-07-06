@@ -37,7 +37,22 @@ Before writing any new automation, **check the existing assets first** — see [
 - Methods: camelCase, verb-first (`fillLoginFormAndSubmit`, `selectMerchantsByName`, `cloneEligiblePurchase`, `triggerCashbackCron`).
 - Config getters: `get<Thing>()` (`getAdminUserName`, `getCardBackendBaseURL`).
 - Constants: UPPER_SNAKE at module top (`LOGIN_ENDPOINT`, `TABLE`, `TYPE_PURCHASE`, `BS_USER`).
-- Tests are tagged with their case id in the title: `` test('[TC_UI_010] ...') `` / `` test('[TC_CB_005] ...') ``.
+- **Test title = the exact BrowserStack case title, verbatim** (the `Verify …` sentence as imported). One automated test per BrowserStack case; do **not** invent internal titles or `[TC_xxx]` prefixes. The BrowserStack case id (`TC-49826`) is the traceability key and lives in the **mapping table** (below), not in the title. This supersedes the older `[TC_UI_010]`-style tag. Full rule: [testing-process.md](../testing-process.md) §3.7 (1:1 mirror).
+
+## Test-case → script traceability (mandatory)
+
+Every generated automation suite must be traceable back to the BrowserStack test cases it mirrors:
+
+- **1:1 coverage:** every **automatable** BrowserStack case maps to exactly one automated test, named with that case's exact title (see Naming). Its assertion checks **that case's expected result**, so a per-case FAIL maps straight to a defect.
+- **Non-automatable cases are declared, never silently dropped:** list them with a reason (manual-only, needs backend fault injection, env-gated, etc.). Env-gated tests that auto-skip (`test.skip(condition, reason)`) still count as mapped.
+- **Maintain a mapping table** in the story's automation `README.md` (or `framework-reference.md`) so coverage is auditable at a glance. Columns:
+
+  | BrowserStack Case ID | BrowserStack Title | Spec file | Automated? | Note (if not / env-gate) |
+  |----------------------|--------------------|-----------|-----------|--------------------------|
+  | `TC-49826` | `Verify DOB … is rejected in Admin Portal` | `kyc_edit_customer.spec.js` | ✅ | |
+  | `TC-49840` | `Verify … on card replacement` | — | ⏭️ env-gated | `QA_REPLACE_ENABLED=1` |
+
+- The table is the single source of truth linking the imported BrowserStack folder to the runnable specs; keep it updated whenever cases or specs are added.
 
 ## Async / await
 

@@ -6,6 +6,22 @@
  */
 import type { RunStatus, StepStatus, StepType, GatedAction } from './domain.js';
 
+/**
+ * A single credential a node discovered it needs mid-run. Self-documenting so
+ * the run page can render the same "friendly name / why / where to get it"
+ * affordances as the Settings page, without the tester leaving the run.
+ */
+export type CredentialSpec = {
+  key: string;          // canonical settings key, e.g. "browserstack.username"
+  label: string;        // friendly display name
+  description: string;  // one sentence: what it is used for
+  whenUsed: string;     // the step that needs it (usually "Used now, to …")
+  secret: boolean;      // render as a password field + store masked
+  group: string;        // storage group (SETTING_GROUPS) when saved
+  obtainText?: string;  // "How to get this" copy
+  obtainUrl?: string;   // optional external guide link
+};
+
 export type RunEvent =
   | { kind: 'run.status'; runId: string; status: RunStatus; at: string }
   | {
@@ -49,6 +65,16 @@ export type RunEvent =
       runId: string;
       stepId: string;
       questions: Array<{ id: string; question: string; why?: string }>;
+      at: string;
+    }
+  | {
+      // A node needs a credential that isn't configured yet. The run pauses and
+      // the tester can supply it Once, Save it to Settings, or Cancel the run.
+      kind: 'credential.awaiting';
+      runId: string;
+      stepId: string;
+      reason: string;               // why the run needs these now
+      credentials: CredentialSpec[]; // the missing credentials
       at: string;
     };
 

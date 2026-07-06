@@ -17,7 +17,7 @@ import { RunsService } from './runs.service.js';
 import { EventsBus } from './events.bus.js';
 import { AuthenticatedGuard } from '../common/authenticated.guard.js';
 import type { SessionUser } from '../auth/session.serializer.js';
-import { ApproveGateInput, AnswerClarificationInput, RegenerateStepInput, type RunEvent } from '@qa/shared';
+import { ApproveGateInput, AnswerClarificationInput, RegenerateStepInput, SubmitCredentialInput, type RunEvent } from '@qa/shared';
 
 @Controller()
 export class RunsController {
@@ -60,6 +60,14 @@ export class RunsController {
     const user = req.user as SessionUser;
     const dto = AnswerClarificationInput.parse(body);
     return this.runs.answerClarification(stepId, dto.answers, user.id);
+  }
+
+  @Post('runs/:runId/steps/:stepId/credential')
+  @UseGuards(AuthenticatedGuard)
+  credential(@Param('stepId') stepId: string, @Body() body: SubmitCredentialInput, @Req() req: Request) {
+    const user = req.user as SessionUser;
+    const dto = SubmitCredentialInput.parse(body);
+    return this.runs.submitCredential(stepId, dto.decision, dto.values, user.id);
   }
 
   @Post('runs/:runId/steps/:stepId/regenerate')

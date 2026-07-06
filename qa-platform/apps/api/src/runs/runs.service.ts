@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { prisma } from '@qa/db';
-import { GATE_SOURCE, LIFECYCLE_GRAPH, type LifecycleNode, type RunEvent } from '@qa/shared';
+import { GATE_SOURCE, LIFECYCLE_GRAPH, SETTING_GROUPS, type LifecycleNode, type RunEvent } from '@qa/shared';
 import { EventsBus } from './events.bus.js';
 
 @Injectable()
@@ -125,6 +125,21 @@ export class RunsService {
           create: { runStepId: event.stepId, questionsJson: event.questions },
         });
         break;
+      case 'credential.awaiting': {
+        // Reuses the clarification carrier (no schema change): a credential
+        // request is marked by a `credentialRequest` envelope in questionsJson.
+        await prisma.runStep.update({
+          where: { id: event.stepId },
+          data: { status: 'awaiting_input' },
+        });
+        const questionsJson = { credentialRequest: { reason: event.reason, credentials: event.credentials } };
+        await prisma.clarification.upsert({
+          where: { runStepId: event.stepId },
+          update: { questionsJson },
+          create: { runStepId: event.stepId, questionsJson },
+        });
+        break;
+      }
     }
     this.bus.publish(event);
     return { ok: true };
@@ -150,6 +165,63 @@ export class RunsService {
     });
     await this.requeue(clar.runStep.runId);
     return clar;
+  }
+
+  /**
+   * Tester response to a runtime credential prompt (`credential.awaiting`):
+   *  - cancel   → stop the run (never requeued);
+   *  - save     → persist each value to Settings AND thread it into this run;
+   *  - use-once → thread the values into just this run, do not persist.
+   * `save`/`use-once` re-queue the run so the worker resumes and proceeds.
+   */
+  async submitCredential(
+    stepId: string,
+    decision: 'use-once' | 'save' | 'cancel',
+    values: Array<{ key: string; value: string; secret: boolean; group?: string }>,
+    userId: string,
+  ) {
+    const clar = await prisma.clarification.findUnique({
+      where: { runStepId: stepId },
+      include: { runStep: { select: { runId: true } } },
+    });
+    if (!clar) throw new NotFoundException(`No credential request found for step ${stepId}`);
+    const runId = clar.runStep.runId;
+
+    if (decision === 'cancel') {
+      await prisma.clarification.update({
+        where: { runStepId: stepId },
+        data: { answersJson: { decision: 'cancel' }, answeredById: userId, answeredAt: new Date() },
+      });
+      await prisma.runStep.update({ where: { id: stepId }, data: { status: 'cancelled', finishedAt: new Date() } });
+      await prisma.run.update({ where: { id: runId }, data: { status: 'cancelled', finishedAt: new Date() } });
+      this.bus.publish({ kind: 'run.status', runId, status: 'cancelled', at: new Date().toISOString() });
+      return { cancelled: true };
+    }
+
+    const filled = values.filter((v) => v.value.trim().length > 0);
+    if (decision === 'save') {
+      for (const v of filled) {
+        const prefix = v.key.split('.')[0];
+        const group = v.group ?? ((SETTING_GROUPS as readonly string[]).includes(prefix) ? prefix : 'integrations');
+        await prisma.setting.upsert({
+          where: { key: v.key },
+          update: { value: v.value, group, secret: v.secret },
+          create: { key: v.key, value: v.value, group, secret: v.secret },
+        });
+      }
+    }
+    // Both save + use-once: record the values on the step so the worker sees
+    // them the moment it resumes (use-once values live only here, not in Settings).
+    await prisma.clarification.update({
+      where: { runStepId: stepId },
+      data: {
+        answersJson: { decision, values: filled.map((v) => ({ key: v.key, value: v.value })) },
+        answeredById: userId,
+        answeredAt: new Date(),
+      },
+    });
+    await this.requeue(runId);
+    return { ok: true, decision, saved: decision === 'save' ? filled.length : 0 };
   }
 
   /** Put a paused run back in the queue and announce it so a worker re-claims. */

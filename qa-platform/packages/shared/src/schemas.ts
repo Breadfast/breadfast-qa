@@ -326,6 +326,24 @@ export const RegenerateStepInput = z.object({
 });
 export type RegenerateStepInput = z.infer<typeof RegenerateStepInput>;
 
+// Runtime credential prompt: the tester's response to a `credential.awaiting`
+// pause. `use-once` threads the values into just this run; `save` also persists
+// them to Settings for future stories; `cancel` stops the run.
+export const SubmitCredentialInput = z.object({
+  decision: z.enum(['use-once', 'save', 'cancel']),
+  values: z
+    .array(
+      z.object({
+        key: z.string().min(1),
+        value: z.string().default(''),
+        secret: z.boolean().default(false),
+        group: z.enum(SETTING_GROUPS).optional(),
+      }),
+    )
+    .default([]),
+});
+export type SubmitCredentialInput = z.infer<typeof SubmitCredentialInput>;
+
 // ── Framework Registry (Phase D) ──────────────────────────────────────────
 /** What the UI sends to register/update a framework. */
 export const FrameworkInput = z.object({
