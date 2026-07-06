@@ -37,6 +37,7 @@ import {
   makeEvent,
   type RunEvent,
   type GatedAction,
+  type CredentialSpec,
 } from '@qa/shared';
 import {
   companionDir, companionPath, storyDir, figmaAuthPath,
@@ -958,28 +959,44 @@ export const NODES: Record<string, NodeFn> = {
       await ctx.log(`DRY-RUN: would upload ${csv} to BrowserStack folder ${ctx.run.story.bsFolderId ?? 'default'} (not uploaded).`);
       return { uploaded: false, dryRun: true, csvPath: csv };
     }
-    // Real upload reusing the proven import_browserstack_csv.js (Test Management
-    // REST API). Creds come from .env or Settings; skips cleanly if missing.
+    // Primary import method: Playwright browser UI (email + password). Needs the
+    // BrowserStack login + target project. Rather than silently skipping when
+    // these aren't configured, pause and ask the tester (Use Once / Save / Cancel).
     const s = await getSettings();
-    const user = process.env.BS_TM_USERNAME || s['browserstack.username'];
-    const token = process.env.BS_TM_API_TOKEN || s['browserstack.tmApiToken'] || s['browserstack.accessKey'];
-    const project = s['browserstack.defaultProject'] || process.env.BS_TM_PROJECT;
-    const folder = ctx.run.story.bsFolderId || s['browserstack.defaultFolder'] || '';
-    if (!user || !token || !project) {
-      await ctx.log('BrowserStack upload skipped — set browserstack.username, a Test Management token (browserstack.tmApiToken), and defaultProject in Settings.');
-      return { uploaded: false, reason: 'missing-credentials' };
-    }
-    // Primary import method: Playwright browser UI (email + password).
-    // Bypasses the Test Management REST API token requirement — no separate API
-    // token needed; just the BrowserStack login credentials.
-    const uiUser = process.env.BS_TM_UI_USERNAME || s['browserstack.uiUsername'] || user;
-    const uiPass = process.env.BS_TM_UI_PASSWORD || s['browserstack.uiPassword'];
-    const projectId = project || s['browserstack.defaultProject'] || process.env.BS_TM_PROJECT;
-    const folderId = folder || s['browserstack.defaultFolder'] || '';
-    if (!uiUser || !uiPass || !projectId) {
-      await ctx.log('BrowserStack upload skipped — set BS_TM_UI_USERNAME + BS_TM_UI_PASSWORD + BS_TM_PROJECT in Settings or .env');
-      return { uploaded: false, reason: 'missing-credentials' };
-    }
+    const creds = await requireCredential(
+      ctx,
+      [
+        {
+          key: 'browserstack.username', label: 'BrowserStack Username', group: 'browserstack', secret: false,
+          description: 'Login email for BrowserStack Test Management, used to import the generated test cases.',
+          whenUsed: 'Used now — to sign in and import this story’s test cases.',
+          obtainText: 'BrowserStack → Account & Profile → Settings → Username',
+          obtainUrl: 'https://www.browserstack.com/accounts/profile/details',
+        },
+        {
+          key: 'browserstack.uiPassword', label: 'BrowserStack Password', group: 'browserstack', secret: true,
+          description: 'Password used to sign in and import test cases through the BrowserStack UI.',
+          whenUsed: 'Used now — to sign in and import this story’s test cases.',
+          obtainText: 'Your BrowserStack Test Management login password.',
+        },
+        {
+          key: 'browserstack.defaultProject', label: 'Test Management Project', group: 'browserstack', secret: false,
+          description: 'The Test Management project the generated test cases are imported into.',
+          whenUsed: 'Used now — as the import destination.',
+          obtainText: 'Test Management → open your project → the project ID is in the page URL.',
+        },
+      ],
+      'Importing the generated test cases into BrowserStack Test Management needs your BrowserStack login and target project.',
+      {
+        'browserstack.username': process.env.BS_TM_UI_USERNAME || process.env.BS_TM_USERNAME,
+        'browserstack.uiPassword': process.env.BS_TM_UI_PASSWORD,
+        'browserstack.defaultProject': process.env.BS_TM_PROJECT,
+      },
+    );
+    const uiUser = creds['browserstack.username'];
+    const uiPass = creds['browserstack.uiPassword'];
+    const projectId = creds['browserstack.defaultProject'];
+    const folderId = ctx.run.story.bsFolderId || s['browserstack.defaultFolder'] || process.env.BS_TM_FOLDER || '';
 
     const csvEsc = csv.replace(/\\/g, '\\\\');
     const tmUrl = `https://test-management.browserstack.com/projects/${projectId}${folderId ? `/folder/${folderId}` : ''}/test-cases`;
@@ -1016,7 +1033,7 @@ export const NODES: Record<string, NodeFn> = {
       });
       const uiOk = !uiResult.isError && /IMPORTED/i.test(uiResult.text);
       await ctx.log(`BrowserStack UI import ${uiOk ? 'succeeded' : 'result'}: ${uiResult.text.slice(0, 200)}`);
-      return { uploaded: uiOk, folder, method: 'ui' };
+      return { uploaded: uiOk, folder: folderId, method: 'ui' };
     } catch (e) {
       await ctx.log(`BrowserStack UI import error: ${(e as Error).message}`);
       return { uploaded: false, reason: 'ui-import-error' };
@@ -1227,7 +1244,24 @@ export const NODES: Record<string, NodeFn> = {
       `actual ≠ expected — capture a defect), "blocked" (could not run, e.g. precondition/data/permission missing), or "skipped". ` +
       `Capture at least one screenshot per case into "${shotsDir.replace(/\\/g, '\\\\')}" (name it <index>_<short-slug>.png) and put the ` +
       `saved file path(s) in that case's "evidence". For every "fail", add a Defect (title, severity, priority, caseTitle, combo, ` +
-      `stepsToReproduce, expected, actual, evidence) per docs/ai/bug-reporting.md. Do NOT perform destructive/irreversible actions; if a ` +
+      `stepsToReproduce, expected, actual, evidence) per docs/ai/bug-reporting.md.\n\n` +
+      `DEFECT GROUNDING (mandatory precision gate — apply to EVERY candidate "fail" BEFORE recording it as a Defect). A finding becomes a ` +
+      `Defect ONLY if it passes ALL of the checks below; otherwise the case is "pass" (with a note) or the finding goes in "notes" as an ` +
+      `OBSERVATION — never as a Defect:\n` +
+      `1. SOURCE: you can cite the exact thing it violates — a specific acceptance criterion, a Figma design element, or an established ` +
+      `business rule. If you cannot name the AC/design/rule, it is NOT a defect. Do NOT invent an "ideal" expectation (e.g. "the Confirm ` +
+      `button should be disabled" when the spec only calls for an inline error on submit).\n` +
+      `2. NOT TEST DATA: seeded/garbage values in the testing environment — dropdown entries like "test", "dsa", "{{7*7}}", "@SUM(...)", ` +
+      `duplicate demo branches — are NOT product defects.\n` +
+      `3. REPRODUCIBLE: re-run the exact steps at least once more. A single, non-repeating observation is NOT a defect (record it as ` +
+      `unconfirmed/flaky in notes).\n` +
+      `4. NOT A TOOLING ARTIFACT: text extracted from a PDF (pdf-parse) reverses/re-orders Arabic (RTL) numerals and shaping. A digit-order ` +
+      `or RTL difference seen ONLY in extracted text is NOT a defect unless you confirm it by visually inspecting the rendered PDF/screenshot.\n` +
+      `5. NO CROSS-LANGUAGE / DERIVED-FIELD FALSE MISMATCHES: do not assert an English UI label must equal an Arabic stored value (e.g. a ` +
+      `branch's Arabic name vs its English selection label — a correct branch CODE means the mapping is valid). Do not flag derived fields as ` +
+      `inconsistent with a display label (e.g. Gender is derived from the Egyptian National ID 13th digit: odd=male, even=female).\n` +
+      `6. ONE DEFECT = ONE PROBLEM: never bundle two distinct issues into one Defect; split them, and never combine a real issue with a weak one.\n\n` +
+      `Do NOT perform destructive/irreversible actions; if a ` +
       `step would, mark the case blocked and note why. Keep going through all cases even if some fail.\n\n` +
       `The full list of test cases to execute (combo "${(isWeb ? 'web' : 'android/ios')} · ${locale}") is in this file — READ it first: ` +
       `"${casesFile.replace(/\\/g, '\\\\')}".`;
@@ -1613,6 +1647,51 @@ async function gate(
     payloadPreview,
   }));
   await ctx.log(`awaiting approval: ${summary}`);
+  throw new PausedForInput();
+}
+
+/**
+ * Resolve credentials a node needs, prompting the tester mid-run for any that
+ * aren't configured. Resolution order per key: values the tester just supplied
+ * (this run) → saved Settings → caller-provided env fallback. If anything is
+ * still missing, emits `credential.awaiting` (the run page shows a Use Once /
+ * Save to My Settings / Cancel Run prompt) and pauses. On resume the submitted
+ * values are read back here and the node proceeds. Returns key→value for all.
+ */
+async function requireCredential(
+  ctx: NodeContext,
+  specs: CredentialSpec[],
+  reason: string,
+  envFallback: Record<string, string | undefined> = {},
+): Promise<Record<string, string>> {
+  const settings = await getSettings();
+  const submitted = (ctx.step.clarification?.answersJson ?? null) as
+    | { decision?: string; values?: Array<{ key: string; value: string }> }
+    | null;
+  // A cancel decision cancels the run API-side, so the worker never resumes;
+  // guard defensively so a stray resume doesn't proceed with missing creds.
+  if (submitted?.decision === 'cancel') throw new PausedForInput();
+
+  const provided: Record<string, string> = {};
+  for (const v of submitted?.values ?? []) if (v.value) provided[v.key] = v.value;
+
+  const result: Record<string, string> = {};
+  const missing: CredentialSpec[] = [];
+  for (const spec of specs) {
+    const val = provided[spec.key] || settings[spec.key] || envFallback[spec.key] || '';
+    if (val) result[spec.key] = val;
+    else missing.push(spec);
+  }
+  if (!missing.length) return result;
+
+  await emit(makeEvent<Extract<RunEvent, { kind: 'credential.awaiting' }>>({
+    kind: 'credential.awaiting',
+    runId: ctx.run.id,
+    stepId: ctx.step.id,
+    reason,
+    credentials: missing,
+  }));
+  await ctx.log(`awaiting ${missing.length} credential(s): ${missing.map((m) => m.key).join(', ')}`);
   throw new PausedForInput();
 }
 
