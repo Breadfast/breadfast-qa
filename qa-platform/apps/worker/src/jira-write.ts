@@ -139,14 +139,28 @@ async function postJson(url: string, auth: JiraAuth, body: unknown): Promise<{ o
   return { ok: res.ok, status: res.status, json };
 }
 
-/** Attach files to an issue via multipart (X-Atlassian-Token: no-check). */
+/** Content-Type by extension so Jira previews the attachment inline — crucially, screen
+ *  recordings (video/mp4, video/webm) render as a playable video instead of an opaque
+ *  application/octet-stream download. Falls back to octet-stream for unknown types. */
+const ATTACH_MIME: Record<string, string> = {
+  '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime', '.m4v': 'video/mp4',
+  '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp',
+  '.pdf': 'application/pdf', '.json': 'application/json', '.csv': 'text/csv',
+  '.txt': 'text/plain', '.html': 'text/html', '.log': 'text/plain', '.zip': 'application/zip',
+};
+function mimeForFile(f: string): string {
+  return ATTACH_MIME[path.extname(f).toLowerCase()] ?? 'application/octet-stream';
+}
+
+/** Attach files (screenshots AND screen recordings) to an issue via multipart
+ *  (X-Atlassian-Token: no-check), typed so videos preview inline. */
 async function attachFiles(key: string, files: string[], auth: JiraAuth, log: (l: string) => void): Promise<string[]> {
   const attached: string[] = [];
   for (const f of files) {
     try {
       const buf = await readFile(f);
       const form = new FormData();
-      form.append('file', new Blob([buf]), path.basename(f));
+      form.append('file', new Blob([buf], { type: mimeForFile(f) }), path.basename(f));
       const res = await fetch(`${auth.baseUrl}/rest/api/3/issue/${key}/attachments`, {
         method: 'POST',
         headers: { Authorization: auth.authHeader, 'X-Atlassian-Token': 'no-check' },

@@ -1243,7 +1243,10 @@ export const NODES: Record<string, NodeFn> = {
       `in order, compare the live result to its EXPECTED result, and decide a status: "pass" (all steps matched), "fail" (a step's ` +
       `actual ≠ expected — capture a defect), "blocked" (could not run, e.g. precondition/data/permission missing), or "skipped". ` +
       `Capture at least one screenshot per case into "${shotsDir.replace(/\\/g, '\\\\')}" (name it <index>_<short-slug>.png) and put the ` +
-      `saved file path(s) in that case's "evidence". For every "fail", add a Defect (title, severity, priority, caseTitle, combo, ` +
+      `saved file path(s) in that case's "evidence". For a "fail" whose defect is a multi-step or state/DB-transition issue that a single ` +
+      `screenshot cannot convey, ALSO capture a short screen recording (.mp4 or .webm) into that folder and add its path to "evidence" — ` +
+      `recordings are attached to the Bug and preview inline in Jira, making the defect self-explanatory to the developer. For every "fail", ` +
+      `add a Defect (title, severity, priority, caseTitle, combo, ` +
       `stepsToReproduce, expected, actual, evidence) per docs/ai/bug-reporting.md.\n\n` +
       `DEFECT GROUNDING (mandatory precision gate — apply to EVERY candidate "fail" BEFORE recording it as a Defect). A finding becomes a ` +
       `Defect ONLY if it passes ALL of the checks below; otherwise the case is "pass" (with a note) or the finding goes in "notes" as an ` +
