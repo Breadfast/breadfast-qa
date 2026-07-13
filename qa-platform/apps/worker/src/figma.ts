@@ -52,6 +52,49 @@ export async function exportStoryFrames(
   ]);
 }
 
+/** Top-level Figma node types that represent an exportable "screen". */
+const SCREEN_TYPES = new Set(['FRAME', 'SECTION', 'COMPONENT', 'COMPONENT_SET', 'GROUP', 'INSTANCE']);
+
+/**
+ * Expand any container node (PAGE/CANVAS or SECTION) among the URL-derived nodes
+ * into its direct screen children, so a section like "Phase 1" yields one image
+ * per screen instead of a single collapsed PNG. Leaf frames (and nodes we cannot
+ * resolve) are kept as-is. Result is de-duplicated by node id, order preserved.
+ */
+async function expandContainers(
+  fx: any,
+  fileKey: string,
+  nodes: { id: string; name: string }[],
+  log: (l: string) => void,
+): Promise<{ id: string; name: string }[]> {
+  const out: { id: string; name: string }[] = [];
+  for (const n of nodes) {
+    let doc: any = null;
+    try {
+      const data = await fx._getJson(
+        `https://api.figma.com/v1/files/${fileKey}/nodes?ids=${encodeURIComponent(n.id)}&depth=1`,
+      );
+      doc = data?.nodes?.[n.id]?.document ?? null;
+    } catch {
+      /* structure read failed (rate limit etc.) — fall back to exporting node as-is */
+    }
+    const isContainer = doc && (doc.type === 'SECTION' || doc.type === 'CANVAS');
+    const kids: { id: string; name: string }[] = isContainer
+      ? (doc.children ?? [])
+          .filter((c: any) => SCREEN_TYPES.has(c.type))
+          .map((c: any) => ({ id: c.id, name: c.name }))
+      : [];
+    if (kids.length) {
+      log(`figma: node ${n.id} is a ${doc.type} ("${doc.name}") with ${kids.length} screen(s) — exporting children`);
+      out.push(...kids);
+    } else {
+      out.push(n);
+    }
+  }
+  const seen = new Set<string>();
+  return out.filter((x) => (seen.has(x.id) ? false : (seen.add(x.id), true)));
+}
+
 async function runExport(figmaUrls: string[], outDir: string, log: (l: string) => void): Promise<FigmaExportResult> {
   let Exporter: any;
   try {
@@ -60,9 +103,14 @@ async function runExport(figmaUrls: string[], outDir: string, log: (l: string) =
     return { frames: [], error: `FigmaExporter not loadable: ${(e as Error).message}` };
   }
 
+  // Resolve the file key up front so it is reported even if the render/download
+  // step later throws (rate limit / timeout) — the analysis should still record
+  // which file was targeted rather than "File key: —".
+  let fileKey: string | undefined;
   try {
     const fx = new Exporter();
-    const fileKey: string = Exporter.fileKeyFromUrl(figmaUrls[0]);
+    const key: string = Exporter.fileKeyFromUrl(figmaUrls[0]);
+    fileKey = key;
 
     // Prefer the explicit frame node-ids in the URLs (one /images call, no
     // rate-limited file-structure read). Fall back to the first page's frames.
@@ -75,17 +123,23 @@ async function runExport(figmaUrls: string[], outDir: string, log: (l: string) =
 
     let manifest: FigmaFrame[];
     if (nodes.length) {
-      manifest = await fx.exportNodes({ fileKey, nodes, outDir, scale: 2 });
+      // A URL node-id often points at a PAGE or SECTION container (e.g. a
+      // "Phase 1" section holding ~71 screen frames), not a single frame.
+      // Rendering the container as one image would collapse the whole design
+      // into a single PNG, so expand any container node into its top-level
+      // screen children and export those; leaf frames are exported as-is.
+      const expanded = await expandContainers(fx, key, nodes, log);
+      manifest = await fx.exportNodes({ fileKey: key, nodes: expanded, outDir, scale: 2 });
     } else {
-      const pages: { id: string; name: string }[] = await fx.listPages(fileKey);
-      if (!pages.length) return { fileKey, frames: [], error: 'no node-id in URL and no pages found' };
-      manifest = await fx.exportPage({ fileKey, pageName: pages[0].name, outDir, scale: 2 });
+      const pages: { id: string; name: string }[] = await fx.listPages(key);
+      if (!pages.length) return { fileKey: key, frames: [], error: 'no node-id in URL and no pages found' };
+      manifest = await fx.exportPage({ fileKey: key, pageName: pages[0].name, outDir, scale: 2 });
     }
 
     const ok = manifest.filter((m) => m.file).length;
-    log(`figma: exported ${ok}/${manifest.length} frame(s) from file ${fileKey} → ${outDir}`);
-    return { fileKey, frames: manifest };
+    log(`figma: exported ${ok}/${manifest.length} frame(s) from file ${key} → ${outDir}`);
+    return { fileKey: key, frames: manifest };
   } catch (e) {
-    return { frames: [], error: (e as Error).message };
+    return { fileKey, frames: [], error: (e as Error).message };
   }
 }

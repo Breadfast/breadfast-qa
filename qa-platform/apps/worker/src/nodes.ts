@@ -44,7 +44,7 @@ import {
   playwrightFrameworkDir, javaFrameworkDir,
 } from '@qa/shared/paths';
 import { ingest, getSettings, getResolvedFrameworks, type RunDetail, type StepDetail } from './api-client.js';
-import { fetchJiraIssue, jiraSourceMarkdown, jiraContextBlock, type JiraSource } from './jira.js';
+import { fetchJiraIssue, jiraSourceMarkdown, jiraContextBlock, extractFigmaUrls, type JiraSource } from './jira.js';
 import { exportStoryFrames, type FigmaExportResult } from './figma.js';
 import { fileDefects, resolveBugConfig, type DefectInput } from './jira-write.js';
 import { verifyKnowledgeBase, knowledgeReminder, NODE_DOCS } from './knowledge.js';
@@ -605,9 +605,58 @@ export const NODES: Record<string, NodeFn> = {
     // Fallback: REST API via FigmaExporter (rate-limited on View seat, Retry-After up to 77h).
     // See testing-process.md §4.1/§4.5.
     const jira = ctx.state.jira as JiraSource | undefined;
-    const urls = jira?.figmaUrls ?? [];
     const dir = (ctx.state.workspacePath as string) ?? storyDir(ctx.run.story.jiraKey);
     const outDir = path.join(dir, 'figma-analysis');
+    await mkdir(outDir, { recursive: true });
+
+    // Figma URLs come from the Jira ticket (description/AC/comments), the tester's
+    // Execution Instructions / Additional Inputs (testers frequently paste the
+    // design link in the story instructions rather than the ticket — root cause of
+    // B10-56729 "Export method: none"), and — as a last resort — a link the tester
+    // supplies when the platform asks for it below. A tester-supplied link is
+    // persisted to a sidecar so it survives a later pause in this same node (e.g.
+    // the session re-auth gate re-runs the node from the top on resume).
+    const urlSidecar = path.join(outDir, 'figma-urls.json');
+    let urls = extractFigmaUrls(
+      ...(jira?.figmaUrls ?? []),
+      ctx.run.story.executionInstructions,
+      ctx.run.story.additionalInputs,
+      existsSync(urlSidecar) ? readFileSync(urlSidecar, 'utf8') : '',
+    );
+
+    // No Figma link found in the ticket OR the story instructions → PAUSE and ask
+    // the tester for one. Answerable: paste a URL to validate against, or reply
+    // "none" to proceed with a spec-only analysis (backend-only / design-less
+    // stories). Mirrors the ask/pause/resume machinery used by detect_prerequisites.
+    if (!urls.length) {
+      const answers = ctx.step.clarification?.answersJson as { id?: string; answer?: string }[] | undefined;
+      if (Array.isArray(answers) && answers.length) {
+        urls = extractFigmaUrls(answers.map((a) => a?.answer ?? '').join('\n'));
+        if (urls.length) {
+          await writeFile(urlSidecar, JSON.stringify(urls, null, 2), 'utf8');
+          await ctx.log(`figma_analysis: using tester-supplied Figma link(s) — ${urls.length} url(s)`);
+        } else {
+          await ctx.log('figma_analysis: tester supplied no Figma link — proceeding with spec-only analysis');
+        }
+      } else if (Array.isArray(ctx.step.clarification?.questionsJson) && ctx.step.clarification!.questionsJson.length) {
+        throw new PausedForInput();
+      } else {
+        await emit(makeEvent<Extract<RunEvent, { kind: 'ask.awaiting' }>>({
+          kind: 'ask.awaiting',
+          runId: ctx.run.id,
+          stepId: ctx.step.id,
+          questions: [{
+            id: 'figma_link',
+            question:
+              `No Figma design link was found in the Jira ticket or the story instructions for ${ctx.run.story.jiraKey}. ` +
+              `Paste the Figma design URL to validate against, or reply "none" to continue with a spec-only analysis.`,
+            why: 'STEP 2 Figma validation needs the per-story design link; it normally lives in the Jira ticket or the story instructions.',
+          }],
+        }));
+        await ctx.log('figma_analysis: no Figma link found in ticket or instructions — awaiting tester input');
+        throw new PausedForInput();
+      }
+    }
 
     // STEP 0 — mandatory session gate: verify the Figma Browser Session cookies
     // (Settings page) are saved and fresh BEFORE opening the browser for the

@@ -83,6 +83,15 @@ export function getJiraAuth(): JiraAuth {
 
 const FIGMA_RE = /https?:\/\/(?:www\.)?figma\.com\/(?:design|file|proto)\/[A-Za-z0-9]+[^\s"'<>)\]]*/g;
 
+/** Extract unique figma.com design/file/proto URLs from arbitrary text (Jira
+ *  description/AC/comments OR the tester's Execution Instructions / Additional
+ *  Inputs). Testers commonly paste the Figma link in the story instructions
+ *  rather than the Jira ticket — figma_analysis must scan both sources. */
+export function extractFigmaUrls(...texts: (string | null | undefined)[]): string[] {
+  const haystack = texts.filter(Boolean).join('\n');
+  return Array.from(new Set((haystack.match(FIGMA_RE) ?? []).map((u) => u.trim())));
+}
+
 /** Strip rendered-HTML (renderedFields) to readable plain text. */
 function htmlToText(html: string | undefined): string {
   if (!html) return '';
@@ -212,8 +221,7 @@ export async function fetchJiraIssue(key: string, log: (l: string) => void): Pro
     const ac = await fetchAcceptanceCriteria(auth.baseUrl, key, auth);
 
     // Figma URLs from description + comments + AC.
-    const haystack = [descriptionText, ac ?? '', ...comments.map((c) => c.text)].join('\n');
-    const figmaUrls = Array.from(new Set((haystack.match(FIGMA_RE) ?? []).map((u) => u.trim())));
+    const figmaUrls = extractFigmaUrls(descriptionText, ac ?? '', ...comments.map((c) => c.text));
 
     log(
       `fetch_jira: ${key} "${summary}" — desc ${descriptionText.length}c, ` +
