@@ -147,9 +147,51 @@ Output: individual PNGs named by screen state (`Sufficient balance.png`, `CVV.pn
 `Checkout.png`, etc.) stored directly in the story's `figma-analysis/` folder. These are the
 Figma reference files for visual comparison (§4.2–4.4).
 
+**Batch-export pitfalls & verification (why the ZIP count can be wrong):**
+- **Verify the file count.** After extracting, count the PNGs. Expect it **at or slightly below**
+  the dialog's "N of N selected". A *drastically* lower count (e.g. ~10–15% of expected) means the
+  wrong node set was selected — re-check the pre-selected frame and re-export.
+- **Duplicate layer names silently overwrite each other in the ZIP** — two frames both named
+  "Header" (or any repeat) collapse to one file, so the count lands *below* the selection with no
+  error. A small gap is expected and harmless (truly redundant states); if every state must be
+  preserved, export the duplicates in a separate batch or ask the designer to rename them uniquely.
+- **Never select a parent/container** (a row or group holding several screens side by side): it
+  exports as **one flattened "collage" image** of everything inside, not per-screen files. Select
+  the individual screen frames — this is why we pre-select via the frame's `?node-id` rather than a
+  wrapper.
+- **Manual-selection rescue** (only if URL pre-selection grabs the wrong set): in the Layers panel,
+  collapse all layers, expand **only one level** of the target frame, click the first child, scroll
+  the panel to the **true last sibling** (the item just above the next shallower-indent layer), then
+  Shift+click it. Range-selecting in a multi-level expanded tree sweeps in nested children;
+  stopping the scroll early is the #1 cause of a short selection.
+
+**Completeness gate (MANDATORY — prove every needed screen is present, don't trust the count):**
+A raw file count can match by coincidence while the *wrong* screens are inside. Reconcile the ZIP
+against a **source-of-truth expected list**, per language:
+
+1. **Build the expected screen list BEFORE exporting.** Enumerate the container frame's direct
+   children with Figma MCP `get_metadata` on the story's container node — capture each child's
+   **name + node ID**. That name list (× EN and AR frames) is the definition of "all screens
+   needed". Cross-check it against the AC / test-case list so no required state is absent from the
+   design itself.
+2. **After extraction, diff extracted filenames against the expected name list** (not just counts).
+   For each expected screen, confirm a matching PNG exists in `figma-analysis/`. Log every miss as
+   `[FIGMA] MISSING screen: <name>`.
+3. **Recover each miss by node ID via REST API** — `FigmaExporter.exportNodes()` with the node ID
+   from step 1 and an explicit `name`. Because you name the output file yourself, this **also fixes
+   duplicate-name overwrites** (two "Header" frames → export as `header-1` / `header-2`). Re-run the
+   diff until zero misses remain.
+4. **Only then proceed** to §4.2 comparison. A screen that is genuinely absent from the design (not
+   just from the ZIP) → `NO FIGMA REF` for that state, recorded explicitly — never silently skipped.
+
+Do not sign off Figma analysis until the diff is clean for **all four sets** (iOS/Android × EN/AR):
+the deliverable is one Figma reference per key screen per language (§6), and a missing reference is
+an incomplete gate, not a pass.
+
 **When to fall back to REST API:** use `FigmaExporter.exportNodes()` only for frames that are
 **not pre-configured for export** in the designer's file (e.g. a newly added Arabic-only frame
-with no export settings), or when an exact node ID is needed for a diff against a prior run.
+with no export settings), when an exact node ID is needed for a diff against a prior run, or to
+**recover screens flagged missing by the completeness gate above**.
 REST API is token-efficient (downloads straight to disk) but **rate-limits aggressively on the
 View seat** (Retry-After up to 77+ hours observed 2026-06-29) — do not treat it as the default.
 
