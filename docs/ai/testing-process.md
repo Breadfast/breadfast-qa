@@ -163,7 +163,8 @@ Figma reference files for visual comparison (§4.2–4.4).
   collapse all layers, expand **only one level** of the target frame, click the first child, scroll
   the panel to the **true last sibling** (the item just above the next shallower-indent layer), then
   Shift+click it. Range-selecting in a multi-level expanded tree sweeps in nested children;
-  stopping the scroll early is the #1 cause of a short selection.
+  stopping the scroll early is the #1 cause of a short selection. Full manual walkthrough:
+  [figma-exporter-instructions.md](figma-exporter-instructions.md).
 
 **Completeness gate (MANDATORY — prove every needed screen is present, don't trust the count):**
 A raw file count can match by coincidence while the *wrong* screens are inside. Reconcile the ZIP
