@@ -532,9 +532,18 @@ export const NODES: Record<string, NodeFn> = {
   },
 
   async review_automation(ctx) {
-    const d = await reviewGate(ctx, 'review.automation',
-      `Review the automation plan for ${ctx.run.story.jiraKey} before execution`,
-      ctx.state.automationPlan);
+    const plan = ctx.state.automationPlan as
+      | { specs?: unknown[]; specsWritten?: number; specFiles?: string[]; blocked?: boolean; agentReply?: string }
+      | undefined;
+    const planned = plan?.specs?.length ?? 0;
+    const written = plan?.specsWritten ?? 0;
+    const summary = plan?.blocked
+      ? `⚠ Automation BLOCKED for ${ctx.run.story.jiraKey}: 0 of ${planned} planned spec(s) were written. ` +
+        `Reason: ${plan?.agentReply?.slice(0, 200) || 'spec-writing produced no files'}. ` +
+        `Approve to proceed WITHOUT automation (deferred), or reject to stop and resolve the blocker.`
+      : `Review automation for ${ctx.run.story.jiraKey}: ${written} of ${planned} spec(s) written` +
+        (plan?.specFiles?.length ? ` (${plan.specFiles.join(', ')})` : '');
+    const d = await reviewGate(ctx, 'review.automation', summary, plan);
     return { reviewed: d.decision === 'approved', decision: d.decision };
   },
 
@@ -1235,8 +1244,9 @@ export const NODES: Record<string, NodeFn> = {
       return data;
     }
 
+    let agentReply = '';
     try {
-      await runClaude({
+      const res = await runClaude({
         prompt:
           `You are implementing automation specs for Jira story ${ctx.run.story.jiraKey} ("${ctx.run.story.title}").\n\n` +
           `Automation plan:\n${JSON.stringify(data, null, 2)}\n\n` +
@@ -1269,11 +1279,39 @@ export const NODES: Record<string, NodeFn> = {
         onLog: (l) => void ctx.log(l),
         signal: ctx.signal,
       });
+      agentReply = (res?.text ?? '').trim();
       await ctx.log('automation spec generation complete');
     } catch (e) {
+      agentReply = `ERROR: ${(e as Error).message}`;
       await ctx.log(`automation spec generation failed (plan saved to automation/automation-plan.json): ${(e as Error).message}`);
     }
-    return data;
+
+    // Verify specs were ACTUALLY written — the spec-writing sub-agent can no-op
+    // (e.g. it hits a blocker in the plan) while this node still "succeeds". Never
+    // report success on an empty plan: count the real output and surface a blocker
+    // so review_automation shows it instead of the plan silently looking complete.
+    const testsDir = path.join(automationDir, 'tests');
+    const specFiles = isWeb
+      ? (existsSync(testsDir) ? readdirSync(testsDir).filter((f) => /\.spec\.(js|ts)$/.test(f)) : [])
+      : (existsSync(path.join(automationDir, 'framework-reference.md')) ? ['framework-reference.md'] : []);
+    const blocked = caseCount > 0 && specFiles.length === 0;
+    const out = {
+      ...data,
+      specsWritten: specFiles.length,
+      specFiles,
+      agentReply: agentReply.slice(0, 800),
+      blocked,
+    };
+    if (blocked) {
+      await ctx.log(
+        `automation_generation: 0 automation file(s) written despite ${caseCount} test case(s) — ` +
+          `surfacing as a blocker at review_automation. Agent reply: ${agentReply.slice(0, 300) || '(empty)'}`,
+      );
+    } else {
+      await ctx.log(`automation_generation: ${specFiles.length} automation file(s) written (${specFiles.join(', ') || 'none'})`);
+    }
+    ctx.state.automationPlan = out;
+    return out;
   },
 
   async execution(ctx) {
