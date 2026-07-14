@@ -137,11 +137,29 @@ named by the Figma layer name, mapping 1:1 to test cases. Zero post-processing n
 Step-by-step (Playwright MCP):
 1. browser_navigate → https://www.figma.com/design/<FILE_KEY>/design?node-id=<CONTAINER_FRAME>
 2. browser_wait_for  → canvas element + title contains "–"
-3. browser_press_key → Control+Shift+E   (opens batch export dialog)
-4. Verify dialog shows "N of N selected"
-5. browser_click     → Export button (getByLabel('Export').getByRole('button', {name:'Export'}))
-6. Wait for download event → save ZIP → Expand-Archive to figma-analysis/
+3. SELECT ALL FRAMES of the target section/page (see below) — this is mandatory when the node-id
+   points at a SECTION/page holding many frames; otherwise the dialog grabs only a subset (1–15).
+4. browser_press_key → Control+Shift+E   (opens batch export dialog)
+5. Verify dialog shows "N of N selected" AND N is the full set (dozens) — a small N means step 3
+   under-selected; re-select and reopen. Optionally add a PNG preset to the whole selection first
+   so frames without their own export setting are still included.
+6. browser_click     → Export button (getByLabel('Export').getByRole('button', {name:'Export'}))
+7. Wait for download event → save ZIP → Expand-Archive to figma-analysis/
 ```
+
+**Select-all is verification-driven (the #1 cause of a short export).** A URL `node-id` usually
+selects a single node — often a **SECTION** (e.g. "Phase 1", ~70 frames). Exporting with only that
+selected yields a tiny subset. Select every child frame, and **confirm the live selection count is
+the full set (via screenshot) before exporting**, trying tactics in order until it is:
+1. **Page-level** — `Escape`, click empty canvas, `Ctrl+A`.
+2. **Enter-section** — double-click the section (or select it + `Enter`) to move the selection
+   context INSIDE it, then `Ctrl+A` to grab all its child frames.
+3. **Marquee** — `Shift+1` (zoom to fit), `Escape`, then rubber-band drag across the whole canvas
+   from an empty-canvas corner (never start the drag on a frame — that moves it).
+Verified on B10-56729 (2026-07-13): tactic 2/3 exported the exact same **68 frames** as the
+designer's manual export; naive "select the section node only" gave 1–11. The QA Platform worker
+([apps/worker/src/nodes.ts](../../qa-platform/apps/worker/src/nodes.ts) `tryPlaywrightBatchExport`)
+implements this select-all + count-verification loop automatically.
 
 Output: individual PNGs named by screen state (`Sufficient balance.png`, `CVV.png`,
 `Checkout.png`, etc.) stored directly in the story's `figma-analysis/` folder. These are the
