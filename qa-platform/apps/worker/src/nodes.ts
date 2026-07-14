@@ -292,21 +292,47 @@ async function tryPlaywrightBatchExport(
         `(testing-process.md §4.1).\n\n` +
         `Figma URL: ${urls[0]}\n` +
         `Output directory (already exists): ${outDirEsc}\n\n` +
+        `GOAL: export EVERY frame of the section/page the URL points to — one PNG per frame — ` +
+        `NOT just the handful that happen to carry an export preset. The node-id in the URL usually ` +
+        `points at a SECTION (e.g. "Phase 1") that contains many frames (often dozens).\n\n` +
         `Steps:\n` +
         figmaAuthRestoreStep() +
         `1. browser_navigate → ${urls[0]}\n` +
-        `2. browser_wait_for → Figma canvas loads (title contains em-dash "–")\n` +
-        `3. browser_run_code_unsafe → intercept the download BEFORE triggering the export:\n` +
-        `   const downloadPromise = page.waitForEvent('download', {timeout:60000});\n` +
-        `4. browser_press_key → "Control+Shift+E" to open the batch export dialog\n` +
-        `5. Verify the dialog shows "N of N selected" (all frames selected)\n` +
-        `6. browser_click → Export button (try: getByLabel('Export').getByRole('button',{name:'Export'}))\n` +
-        `7. browser_run_code_unsafe → await the download and save the ZIP to outDir:\n` +
+        `2. browser_wait_for → Figma canvas loads (title contains em-dash "–"). The node-id selects the section.\n` +
+        `3. SELECT ALL FRAMES IN THE SECTION — this is the critical step, and it must be VERIFIED, not assumed. ` +
+        `Selecting only the section node (or a single frame) exports a tiny subset (we have seen 1 and 11). This ` +
+        `section holds dozens of frames (expect ~60-75). Try the tactics below IN ORDER, and after EACH one take a ` +
+        `browser_take_screenshot AND read Figma's live selection count (top toolbar shows "N selected"; the right ` +
+        `properties panel header shows the count). Only stop once the count is in the dozens (≥ ~50). If a tactic ` +
+        `yields 1 or a handful, it FAILED — press "Escape" and move to the next tactic:\n` +
+        `   TACTIC A (page-level select-all): press "Escape" to deselect, click once on an EMPTY canvas area to ` +
+        `focus the canvas, then press "Control+a". If the frames are top-level this selects them all.\n` +
+        `   TACTIC B (enter section, then select-all): double-click the "Phase 1" section body (or select it and ` +
+        `press "Enter") to enter it so the selection context is INSIDE the section, then press "Control+a" to ` +
+        `select all its child frames. Verify focus is on the canvas (not a panel/text field) before Control+a.\n` +
+        `   TACTIC C (marquee / rubber-band): press "Shift+1" (Zoom to fit) so every frame is visible, press ` +
+        `"Escape", then browser_run_code_unsafe to drag-select across the whole canvas — e.g.\n` +
+        `     const b = await page.viewportSize();\n` +
+        `     await page.mouse.move(80, 160); await page.mouse.down();\n` +
+        `     await page.mouse.move(b.width-40, b.height-40, {steps:20}); await page.mouse.up();\n` +
+        `   (start the drag on empty canvas, NOT on a frame, so it rubber-bands instead of moving a frame).\n` +
+        `   Do NOT proceed to export until a screenshot + the selection count confirm the full set is selected.\n` +
+        `4. FORCE AN EXPORT PRESET ON THE WHOLE SELECTION so frames without their own export setting are still ` +
+        `included: in the right panel's Export section click "+" to add a preset (PNG, 2x). With all frames ` +
+        `selected this applies to every one. (If the frames already export fine this is harmless.)\n` +
+        `5. browser_run_code_unsafe → intercept the download BEFORE triggering the export:\n` +
+        `   const downloadPromise = page.waitForEvent('download', {timeout:120000});\n` +
+        `6. browser_press_key → "Control+Shift+E" to open the batch export dialog.\n` +
+        `7. Verify the dialog header shows the FULL count ("Export N layers" / "N of N selected") — N must match ` +
+        `the number of frames from step 3, not a small subset. If N is small, close the dialog and redo step 3.\n` +
+        `8. browser_click → Export button (try: getByLabel('Export').getByRole('button',{name:'Export'})).\n` +
+        `9. browser_run_code_unsafe → await the download and save the ZIP to outDir:\n` +
         `   const dl = await downloadPromise;\n` +
         `   const zipPath = require('path').join(${JSON.stringify(outDir)}, 'figma_export.zip');\n` +
         `   await dl.saveAs(zipPath);\n` +
-        `8. Bash → extract the ZIP with this exact command (already selected for the current OS): ${extractCmd}\n` +
-        `9. Bash → list extracted PNGs and return the manifest\n\n` +
+        `10. Bash → extract the ZIP with this exact command (already selected for the current OS): ${extractCmd}\n` +
+        `11. Bash → list extracted PNGs and return the manifest. Sanity-check the count reflects all frames; ` +
+        `if only a few PNGs came out, the selection was incomplete — go back to step 3.\n\n` +
         `If any step fails, return frames:[] with the error message.`,
       schema: FigmaExportManifest,
       schemaName: 'FigmaExportManifest',
@@ -317,7 +343,7 @@ async function tryPlaywrightBatchExport(
       cwd: COMPANION_DIR,
       allowedTools: FIGMA_EXPORT_TOOLS,
       model: MODEL,
-      timeoutMs: 5 * 60 * 1000,
+      timeoutMs: 12 * 60 * 1000,
       onLog: (l) => void ctx.log(l),
       signal: ctx.signal,
     });
