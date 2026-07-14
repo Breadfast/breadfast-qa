@@ -1,0 +1,47 @@
+{
+  "reusableAssets": [
+    "LoginPage.fillLoginFormAndSubmit(user, pass) — Admin Portal UI login (b55168_pom/pages/LoginPage.js)",
+    "ApiHelper.loginAndGetToken(request) — Admin login → JWT (b55168_pom/helpers/ApiHelper.js)",
+    "PerksPage.goToPerksPage / clickAddPerk / selectGeneralSpendCashbackType / fillMandatoryFields / submitPerkExpectSuccess — Create-perk UI flow (b55168_pom/pages/PerksPage.js)",
+    "PerksPage.selectMerchantsByName / deselectMerchantsByName / selectMerchants / selectAllMerchants / getSelectedMerchantsCount — Excluded-merchant multi-select, reused for AC14 Exclusions (b55168_pom/pages/PerksPage.js)",
+    "ApiHelper.createGeneralCashbackPerk / listPerks / buildMerchantIds — API perk seeding + verification (b55168_pom/helpers/ApiHelper.js)",
+    "BasePage — base locator/wait conventions all page objects extend (b55168_pom/pages/BasePage.js)",
+    "ConfigReader singleton getters — non-secret env/URL config (b55168_pom/helpers/ConfigReader.js)",
+    "PropertiesReader.getCardDbConfig — secrets from Java framework config source of truth (b55168_pom/helpers/PropertiesReader.js)",
+    "create_perks_api.js — standalone node runner pattern for ad-hoc API perk seeding of test fixtures (b55168_pom/create_perks_api.js)",
+    "playwright.config.js fullyParallel:false / workers:1 convention — reused as-is; no cron dependency in this story"
+  ],
+  "newPageObjects": [
+    "Extend existing PerksPage.js (do NOT create a parallel page object) — add locators/methods for the new/renamed form controls: Section dropdown (AC6), Perk subheader EN/AR conditional fields (AC7), Usage section 'Short usage description' EN/AR (AC9), Branches 'List of valid branches' EN/AR (AC10), Cashback processing 'Short cashback description' EN/AR (AC11), Coupon type selector Online/Physical (AC16), renamed 'Cashback limit'/'Exclusions'/'Funding' section headers (AC13/14/15), renamed 'Logo EN'/'Logo AR' upload labels (AC8), and title char-limit assertion helper (AC3, 20 chars). Verify all selectors against the live DOM and add a dated comment block per coding-standards §Selectors.",
+    "Implement the currently-stubbed PerksPage methods that throw — fillCouponPerk (needed for AC16 coupon-type), fillCategoryPerk, and setLimits — by recording the live perk-form selectors (open dep #1/#8 in reusable-components.md 'Known gaps'). No new class; fill the stubs in place.",
+    "Optionally add a small PerkFormLabels/section-order constants module under D:\\breadfast-qa\\automation\\pages only if label/section-order data is shared across specs; otherwise keep as page-object fields to avoid a parallel implementation."
+  ],
+  "specs": [
+    {
+      "name": "create_perk_labels_and_title.spec.js",
+      "framework": "playwright",
+      "description": "AC1–AC5, AC8: verify page title 'Create perk', sentence-case section headings/field labels, renamed 'Logo EN'/'Logo AR' labels, updated sidebar Perk icon, updated logo/cover-photo specs/ratios in upload controls, and the reduced 20-char limit on EN+AR title fields (counter + hard cap). Uses perks-images from D:\\breadfast-qa\\perks-images for upload validation."
+    },
+    {
+      "name": "create_perk_basic_details_section.spec.js",
+      "framework": "playwright",
+      "description": "AC6, AC7 + comment logic: required 'Section' dropdown present for all perk types; Perk subheader EN/AR (30 chars) appear only when 'Breadfast' merchant selected for coupon/merchant perks, always present for General cashback; auto-fill of subheader with merchant name (non-Breadfast) / category name (Category cashback); Breadfast-merchant identification by name containing 'Breadfast'."
+    },
+    {
+      "name": "create_perk_new_sections.spec.js",
+      "framework": "playwright",
+      "description": "AC9–AC11: required Usage section 'Short usage description' EN/AR (200 chars); optional Branches section EN/AR for Merchant cashback & Discount/coupon; optional Cashback processing 'Short cashback description' EN/AR (45 chars) for all cashback types. Assert required/optional validation and char limits, EN+AR parity."
+    },
+    {
+      "name": "create_perk_restructuring_and_coupon.spec.js",
+      "framework": "playwright",
+      "description": "AC12–AC17: 'Usage Frequency'/'other' removed; 'Cash Back Limit'→'Cashback limit'; 'Other'→'Exclusions' (MCC/MID fields unchanged, reuse selectMerchants*); 'Funding Type' inline → 'Funding' section header; Coupon type Online/Physical selector appears on coupon-code entry; and the final section order for all cashback perk types (Basic details → Value → Usage → Branches → Cashback processing → Duration → Cashback limit → Exclusions → Funding)."
+    },
+    {
+      "name": "create_perk_preview.spec.js",
+      "framework": "playwright",
+      "description": "AC18 + comment override: Preview screen renders all new/updated fields — merchant name, perk title, perk subtitle (custom & auto-filled), perk description, usage, branches, cashback processing, duration, cover photo, logo — across Breadfast and non-Breadfast merchant scenarios."
+    }
+  ],
+  "notes": "Scope is web-only per directives.platforms=['web'] — no Appium/Java test class is planned for this story; all specs are Playwright in D:\\qa-platform\\stories\\B10-56729\\automation\\tests\\, shared page-object changes go to D:\\breadfast-qa\\automation\\pages (runnable copy stays in D:\\Playwright\\b55168_pom). Reuse-before-build enforced: extend PerksPage/LoginPage/ApiHelper rather than creating parallel implementations (coding-standards §0/§Framework Architecture). BLOCKER before coding: PerksPage.fillCouponPerk/fillCategoryPerk/setLimits are stubs that throw and coupon/category/merchant form selectors are not yet captured (reusable-components 'Known gaps' #1/#2/#3/#8) — record live-DOM selectors first. Each spec's test titles must equal the exact BrowserStack case titles (1:1 mirror) with a mapping table in the story automation README. Confirm the AC7 vs comment-thread subheader rule (auto-tag by name 'Breadfast' per Farah's resolution) with stakeholders before asserting. Localization: assert EN(en/US)+AR(ar/EG) parity for every new/renamed label and char counter."
+}

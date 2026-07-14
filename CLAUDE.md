@@ -53,10 +53,10 @@ CLAUDE.md orchestrates; `docs/ai/` holds the detail. Routing:
 When given a Jira story, follow these steps **in order**. Do **not** generate test cases before story analysis + clarification are complete.
 
 ### STEP 0 — Create the per-story artifact folder
-At the very start, create `D:\BreadfastQA\<JIRA_TICKET_ID>\` with the standard subfolders if it doesn't exist (`requirements-analysis/ figma-analysis/ hls/ browserstack/ testcases/ automation/ execution-reports/ screenshots/ defects/ evidence/`). **All** outputs for the story go here and are reused on any retest/update.
+At the very start, create the story's own folder **directly under the repo root** — `D:\breadfast-qa\<JIRA_TICKET_ID>\` — with the standard subfolders if it doesn't exist (`requirements-analysis/ figma-analysis/ hls/ browserstack/ testcases/ automation/ execution-reports/ screenshots/ defects/ evidence/`). **All** outputs for the story go here and are reused on any retest/update. (The QA Platform derives this via `storyDir(jiraKey)` = companion/repo root; runtime data — SQLite DB, logs, browser sessions — stays in the separate workspace, never in the story folder.)
 
 - The story's `automation/` holds **story-specific only**: `tests/` (specs) + generators + `framework-reference.md` + README.
-- **Shared automation code is NOT duplicated per story** — page objects, helpers, and config live once at **`D:\BreadfastQA\automation\`** (`pages/ helpers/ config/`) and are reused across stories; the runnable copy stays in `D:\Playwright\b55168_pom`. New reusable page objects/helpers go in the shared folder.
+- **Shared automation code is NOT duplicated per story** — page objects, helpers, and config live once at the shared **`D:\breadfast-qa\automation\`** (`pages/ helpers/ config/`), one level up from the per-story folders, and are reused across stories; the **runnable copy stays in `D:\Playwright\b55168_pom`** (its `playwright.config.js` + deps). New reusable page objects/helpers go in the shared folder (and are mirrored to the runnable copy so specs can execute).
 
 Full standard + rules: [docs/ai/release-validation.md](docs/ai/release-validation.md) §6. Framework patterns + reuse-before-build: [docs/ai/automation/playwright-framework.md](docs/ai/automation/playwright-framework.md) · [docs/ai/automation/coding-standards.md](docs/ai/automation/coding-standards.md).
 

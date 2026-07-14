@@ -31,3 +31,12 @@ playwright-report/
 .vscode/
 /*.png
 /*.pdf
+
+# Per-story folders at the repo root (B10-<key>/): version-control the automation
+# test scripts + README only; ignore the heavy per-run artifacts (figma frames,
+# screenshots, evidence, analysis exports, CSVs, reports) so the repo stays lean.
+/B10-*/*
+!/B10-*/automation/
+!/B10-*/README.md
+/B10-*/automation/**/*.png
+/B10-*/automation/**/*.zip

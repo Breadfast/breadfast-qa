@@ -85,9 +85,18 @@ export function ensureDir(dir: string): string {
   return dir;
 }
 
-/** A story's artifact root: <workspace>/stories/<jiraKey> (created). */
+/**
+ * A story's artifact root. Per the QA convention (CLAUDE.md STEP 0) each story
+ * gets its OWN folder directly under the companion/repo root, alongside the
+ * shared `automation/` folder — e.g. <repo>/B10-56729/ next to <repo>/automation/.
+ * This keeps per-story test scripts version-controlled with the repo and the
+ * shared page objects one level up. Runtime data (DB/logs/sessions) still lives
+ * in the workspace, OUTSIDE the story folders. Override the root with
+ * QA_STORY_ROOT if stories should live elsewhere.
+ */
 export function storyDir(jiraKey: string): string {
-  return ensureDir(path.join(workspaceDir(), 'stories', jiraKey));
+  const root = process.env.QA_STORY_ROOT?.trim() || companionDir();
+  return ensureDir(path.join(root, jiraKey));
 }
 
 export function logsDir(): string { return ensureDir(path.join(workspaceDir(), 'logs')); }
