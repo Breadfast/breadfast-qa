@@ -6,5 +6,8 @@ dist/
 .env.local
 *.log
 coverage/
+# …but the web /coverage route (Phase 4) is source, not a coverage report:
+!apps/web/app/coverage/
+!apps/web/app/coverage/**
 packages/db/generated/
 .DS_Store
