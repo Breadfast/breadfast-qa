@@ -6,6 +6,7 @@
  */
 import type { z } from 'zod';
 import { runClaude, type ClaudeRunOptions, type ClaudeRunResult } from './claude-runner.js';
+import { parseJsonTolerant } from './json.js';
 
 export interface AiTaskOptions<S extends z.ZodTypeAny>
   extends Omit<ClaudeRunOptions, 'prompt' | 'appendSystemPrompt'> {
@@ -64,6 +65,8 @@ export const FIGMA_EXPORT_TOOLS = [
 export interface AiTaskResult<T> {
   data: T;
   raw: ClaudeRunResult;
+  /** Diagnostics for the LLM Request Log (#7) — how the JSON was obtained. */
+  meta: { attempts: number; repaired: boolean; repairStage: string };
 }
 
 export async function runAiTask<S extends z.ZodTypeAny>(
@@ -81,16 +84,21 @@ export async function runAiTask<S extends z.ZodTypeAny>(
           'Reply with ONLY the JSON object, no markdown fences, no prose.';
 
     const raw = await runClaude({ ...opts, prompt });
-    const json = parseJson(raw.text);
-    if (json !== undefined) {
-      const parsed = opts.schema.safeParse(json);
-      if (parsed.success) return { data: parsed.data, raw };
+    // Repair common JSON defects (fences, trailing commas, smart quotes, raw
+    // control chars, …) BEFORE deciding to re-run Claude. Only a repair failure
+    // — not a merely-messy but recoverable reply — costs another model call.
+    const parsedJson = parseJsonTolerant(raw.text);
+    if (parsedJson !== undefined) {
+      if (parsedJson.repaired) opts.onLog?.(`JSON repaired via "${parsedJson.stage}" (attempt ${attempt}) — no re-run needed`);
+      const parsed = opts.schema.safeParse(parsedJson.value);
+      if (parsed.success)
+        return { data: parsed.data, raw, meta: { attempts: attempt, repaired: parsedJson.repaired, repairStage: parsedJson.stage } };
       opts.onLog?.(`schema validation failed (attempt ${attempt}): ${parsed.error.message}`);
     } else {
-      opts.onLog?.(`JSON parse failed (attempt ${attempt})`);
+      opts.onLog?.(`JSON parse failed after repair (attempt ${attempt})`);
     }
   }
-  throw new Error(`AI task "${opts.schemaName}" did not return valid JSON after 2 attempts`);
+  throw new Error(`AI task "${opts.schemaName}" did not return valid JSON after ${maxAttempts} attempt(s)`);
 }
 
 function buildPrompt(
@@ -118,24 +126,3 @@ function buildPrompt(
     .join('\n');
 }
 
-/** Tolerant JSON extraction — strips ``` fences and finds the outermost object. */
-function parseJson(text: string): unknown {
-  if (!text) return undefined;
-  let t = text.trim();
-  const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  if (fence) t = fence[1].trim();
-  try {
-    return JSON.parse(t);
-  } catch {
-    const first = t.indexOf('{');
-    const last = t.lastIndexOf('}');
-    if (first >= 0 && last > first) {
-      try {
-        return JSON.parse(t.slice(first, last + 1));
-      } catch {
-        return undefined;
-      }
-    }
-    return undefined;
-  }
-}

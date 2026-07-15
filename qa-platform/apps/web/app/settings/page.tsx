@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { api } from '../../lib/api';
+import { CLAUDE_MODELS } from '@qa/shared';
 
 // ── Figma session types ───────────────────────────────────────────────────────
 type FigmaStatus = 'connected' | 'connecting' | 'disconnected' | 'expired' | 'loading';
@@ -41,6 +42,10 @@ type FieldDef = {
   runtime: Runtime[];         // configure-now / requested-at-runtime / saved
   secret?: boolean;
   placeholder?: string;
+  // When present, the field renders as a dropdown of these options instead of a
+  // free-text input. The current saved value is auto-injected if not listed, so
+  // custom/older ids never break. Include a { value: '' } entry to allow "unset".
+  options?: readonly { value: string; label: string }[];
   advanced?: boolean;         // rendered inside the Advanced section
   withoutIt?: string;         // for integrations: graceful-degradation behaviour
 };
@@ -224,15 +229,16 @@ const SECTIONS: Section[] = [
         key: 'ai.model', group: 'ai', label: 'Claude Model',
         description: 'The primary model used for analysis, test-case design and automation.',
         requirement: 'required', whenUsed: 'Used across all AI-driven stages.',
-        obtain: { text: 'Use a current model ID, e.g. claude-opus-4-8. Installed automatically with the Claude CLI.' },
-        runtime: ['now', 'saved'], placeholder: 'claude-opus-4-8',
+        obtain: { text: 'Pick a current model. Installed automatically with the Claude CLI.' },
+        runtime: ['now', 'saved'], placeholder: 'claude-opus-4-8', options: CLAUDE_MODELS,
       },
       {
         key: 'ai.modelCheap', group: 'ai', label: 'Fast Model',
         description: 'A lower-cost model used for lightweight steps to save time and tokens.',
         requirement: 'optional', whenUsed: 'Used for cheap, high-volume sub-steps.',
-        obtain: { text: 'A current fast model ID, e.g. claude-haiku-4-5-20251001.' },
+        obtain: { text: 'Pick a current fast model, e.g. Haiku 4.5.' },
         runtime: ['now', 'saved'], placeholder: 'claude-haiku-4-5-20251001',
+        options: [{ value: '', label: 'Use platform default' }, ...CLAUDE_MODELS],
       },
     ],
   },
@@ -434,13 +440,29 @@ function FieldRow({
         </div>
       )}
 
-      <input
-        type={field.secret ? 'password' : 'text'}
-        value={value}
-        placeholder={field.placeholder}
-        onChange={(e) => onChange(e.target.value)}
-        className="mt-2.5 w-full rounded-lg border border-line px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent"
-      />
+      {field.options ? (
+        <select
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="mt-2.5 w-full rounded-lg border border-line px-3 py-2 text-sm text-ink bg-white focus:outline-none focus:ring-2 focus:ring-accent"
+        >
+          {/* Preserve a saved custom/older value that isn't one of the presets. */}
+          {value && !field.options.some((o) => o.value === value) && (
+            <option value={value}>{value} (current)</option>
+          )}
+          {field.options.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
+      ) : (
+        <input
+          type={field.secret ? 'password' : 'text'}
+          value={value}
+          placeholder={field.placeholder}
+          onChange={(e) => onChange(e.target.value)}
+          className="mt-2.5 w-full rounded-lg border border-line px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent"
+        />
+      )}
 
       {/* Runtime behaviour chips */}
       <div className="flex flex-wrap gap-1.5 mt-2">

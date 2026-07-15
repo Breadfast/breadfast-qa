@@ -35,10 +35,15 @@ export interface StepDetail {
   ordinal: number;
   status: string;
   outputJson?: unknown;
+  // Timing (M6 Activity Timeline — used to build the report's timeline section).
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  tokens?: number;
+  costUsd?: number;
   /** Tester feedback from a Regenerate action, threaded into this node's prompt. */
   feedback?: string | null;
-  approval?: { decision?: string | null; feedback?: string | null; payload?: unknown } | null;
-  clarification?: { questionsJson?: any; answersJson?: any } | null;
+  approval?: { decision?: string | null; feedback?: string | null; payload?: unknown; createdAt?: string | null; decidedAt?: string | null } | null;
+  clarification?: { questionsJson?: any; answersJson?: any; createdAt?: string | null; answeredAt?: string | null } | null;
 }
 
 export interface RunDetail {
@@ -135,4 +140,43 @@ export async function ingest(event: RunEvent): Promise<void> {
   }
   // Final failure — log to stderr but don't crash the worker.
   console.error(`[ingest] failed after ${MAX_ATTEMPTS} attempts for event ${event.kind}:`, (lastErr as Error)?.message ?? lastErr);
+}
+
+/** One AI call's audit record (LLM Request Log, #7). */
+export interface LlmRequestRecord {
+  runId?: string;
+  runStepId?: string;
+  node: string;
+  schemaName?: string;
+  model?: string;
+  promptVersion?: string;
+  workflowVersion?: string;
+  systemPrompt?: string;
+  userPrompt?: string;
+  rawResponse?: string;
+  validatedOutput?: unknown;
+  status: string; // ok | repaired | parse_failed | schema_failed | error
+  repaired?: boolean;
+  repairStage?: string;
+  tokens?: number;
+  costUsd?: number;
+  durationMs?: number;
+  attempt?: number;
+}
+
+/**
+ * Persist an LLM Request Log record. Fire-and-forget: never throws, never blocks
+ * a run — an audit-log write must not be able to fail the workflow.
+ */
+export async function logLlmRequest(rec: LlmRequestRecord): Promise<void> {
+  if (!rec.runId) return;
+  try {
+    await fetch(`${BASE}/runs/${rec.runId}/llm-log`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(rec),
+    });
+  } catch {
+    /* fire-and-forget */
+  }
 }

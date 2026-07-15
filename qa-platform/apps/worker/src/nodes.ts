@@ -35,6 +35,24 @@ import {
   KnowledgeUpdate,
   ExecutionResults,
   makeEvent,
+  getPrompt,
+  promptRegistry,
+  computeParityCertification,
+  computeReviewConfidence,
+  computeStoryHealth,
+  computeRecommendations,
+  buildActivityTimeline,
+  lintKnowledgeProposals,
+  type KnowledgeCorpusEntry,
+  computeVisualHealth,
+  detectVisualPatterns,
+  VisualScreenComparison,
+  NODE_STATE_KEY,
+  redactSecrets,
+  EXPLORATORY_PROBE_HINT,
+  resolveCitations,
+  type CitationContext,
+  type VisualComparison,
   type RunEvent,
   type GatedAction,
   type CredentialSpec,
@@ -43,7 +61,7 @@ import {
   companionDir, companionPath, storyDir, figmaAuthPath,
   playwrightFrameworkDir, javaFrameworkDir,
 } from '@qa/shared/paths';
-import { ingest, getSettings, getResolvedFrameworks, type RunDetail, type StepDetail } from './api-client.js';
+import { ingest, getSettings, getResolvedFrameworks, logLlmRequest, getRunDetail, type RunDetail, type StepDetail } from './api-client.js';
 import { fetchJiraIssue, jiraSourceMarkdown, jiraContextBlock, extractFigmaUrls, type JiraSource } from './jira.js';
 import { exportStoryFrames, type FigmaExportResult } from './figma.js';
 import { fileDefects, resolveBugConfig, type DefectInput } from './jira-write.js';
@@ -96,11 +114,33 @@ export interface NodeContext {
   signal: AbortSignal;
 }
 
-/** Run an AI task and accumulate its real cost/tokens onto the step. */
+/** Run an AI task, accumulate cost/tokens, and capture the LLM Request Log (#7). */
 async function ai<S extends z.ZodTypeAny>(ctx: NodeContext, opts: AiTaskOptions<S>): Promise<z.infer<S>> {
-  const { data, raw } = await runAiTask({ ...opts, signal: ctx.signal });
+  const { data, raw, meta } = await runAiTask({ ...opts, signal: ctx.signal });
   ctx.meta.costUsd += raw.costUsd;
   ctx.meta.tokens += raw.outputTokens;
+  // Fire-and-forget audit capture — the durable record behind Story Replay +
+  // AI Explainability, and the source of exact per-call token/cost.
+  void logLlmRequest({
+    runId: ctx.run.id,
+    runStepId: ctx.step.id,
+    node: ctx.step.name,
+    schemaName: opts.schemaName,
+    model: opts.model,
+    promptVersion: promptRegistry[ctx.step.name as keyof typeof promptRegistry]?.version,
+    workflowVersion: (ctx.run as { workflowVersion?: string }).workflowVersion,
+    systemPrompt: redactSecrets(opts.instruction),
+    userPrompt: redactSecrets(opts.context),
+    rawResponse: raw.text?.slice(0, 20000),
+    validatedOutput: data,
+    status: meta.repaired ? 'repaired' : 'ok',
+    repaired: meta.repaired,
+    repairStage: meta.repairStage,
+    tokens: raw.outputTokens,
+    costUsd: raw.costUsd,
+    durationMs: raw.durationMs,
+    attempt: meta.attempts,
+  });
   return data;
 }
 
@@ -124,6 +164,19 @@ const aiOpts = <S extends z.ZodTypeAny>(
   context: buildContext(ctx),
   onLog: (l: string) => void ctx.log(l),
 });
+
+/**
+ * aiOpts sourced from the Prompt Registry (Phase 1 #2). The instruction,
+ * schemaName, and schemaHint all come from the versioned prompt definition, so
+ * prompts evolve in @qa/shared without editing workflow logic here.
+ */
+const aiOptsP = <S extends z.ZodTypeAny, V>(
+  prompt: { build: (v: V) => string; schemaName: string; schemaHint: string },
+  vars: V,
+  schema: S,
+  ctx: NodeContext,
+  model: string = MODEL,
+) => aiOpts(prompt.build(vars), schema, prompt.schemaName, prompt.schemaHint, ctx, model);
 
 /**
  * Context injected into every AI node: tester guidance (Execution Instructions
@@ -461,15 +514,10 @@ export const NODES: Record<string, NodeFn> = {
     }
     const data = await ai(
       ctx,
-      aiOpts(
-        `Compile the tester's Execution Instructions for ${ctx.run.story.jiraKey} into structured directives. ` +
-          `Map a stage skip to its lifecycle node name(s) — e.g. "skip automation generation" → ` +
-          `skipNodes:["automation_generation","review_automation"]. Platforms use android/ios/web. ` +
-          `A cap on scenarios ("no more than N HLS", "max N HLS") → maxHls:N. ` +
-          `Only set fields the instructions actually imply; leave the rest empty.\n\nInstructions:\n${instr}`,
-        Directives, 'Directives',
-        '{"onlyFlows":["..."],"skipNodes":["..."],"accountOverride":"...","packageNumbers":["..."],"ignoreIssues":["..."],"focus":["..."],"platforms":["..."],"maxHls":20,"notes":"..."}',
-        ctx, MODEL_CHEAP,
+      aiOptsP(
+        getPrompt('parse_instructions'),
+        { jiraKey: ctx.run.story.jiraKey, instructions: instr },
+        Directives, ctx, MODEL_CHEAP,
       ),
     );
     ctx.state.directives = data;
@@ -491,15 +539,10 @@ export const NODES: Record<string, NodeFn> = {
     }
     const data = await ai(
       ctx,
-      aiOpts(
-        `Identify ONLY the genuinely-missing prerequisites that BLOCK testing ${ctx.run.story.jiraKey} and that the ` +
-          `platform cannot derive (an unknown OTP/account/BCID the system can't compute, a required backend status ` +
-          `change, or story content that cannot be found). Auto-provisioning of a fresh card user and the test-data ` +
-          `pool already cover most needs — do NOT ask for anything obtainable from them or from the Additional Inputs ` +
-          `in Context. If nothing is blocking, set ready=true and return no questions.`,
-        PrerequisiteCheck, 'PrerequisiteCheck',
-        '{"ready":true,"missing":[{"item":"...","why":"..."}],"questions":[{"id":"p1","question":"...","why":"..."}]}',
-        ctx, MODEL_CHEAP,
+      aiOptsP(
+        getPrompt('detect_prerequisites'),
+        { jiraKey: ctx.run.story.jiraKey },
+        PrerequisiteCheck, ctx, MODEL_CHEAP,
       ),
     );
     if (data.ready || !data.questions.length) {
@@ -556,24 +599,30 @@ export const NODES: Record<string, NodeFn> = {
   },
 
   async review_report(ctx) {
-    const exec = ctx.state.execution as { summary?: Record<string, number> } | undefined;
+    const exec = ctx.state.execution as
+      | { summary?: Record<string, number>; executed?: boolean; blocked?: boolean; notRun?: number; notes?: string }
+      | undefined;
+    // Execution did not actually run (agent error / env outage / no valid JSON):
+    // lead the gate summary with a warning so it can't be rubber-stamped as a pass.
+    const didNotRun = exec ? exec.executed === false || exec.blocked === true : false;
+    const warn = didNotRun
+      ? `⚠ EXECUTION DID NOT RUN — 0 of ${exec?.notRun ?? exec?.summary?.total ?? '?'} case(s) executed` +
+        `${exec?.notes ? ` (${exec.notes})` : ''}. Nothing was actually tested; do NOT approve as a pass — ` +
+        `re-run once the blocker clears. `
+      : '';
     const d = await reviewGate(ctx, 'review.report',
-      `Review the HTML report for ${ctx.run.story.jiraKey} before filing defects`,
-      { reportPath: ctx.state.reportPath, summary: exec?.summary });
-    return { reviewed: d.decision === 'approved', decision: d.decision };
+      `${warn}Review the HTML report for ${ctx.run.story.jiraKey} before filing defects`,
+      { reportPath: ctx.state.reportPath, executed: exec?.executed !== false && !exec?.blocked, summary: exec?.summary });
+    return { reviewed: d.decision === 'approved', decision: d.decision, executionRan: !didNotRun };
   },
 
   async requirements_analysis(ctx) {
     const data = await ai(
       ctx,
-      aiOpts(
-        `Perform STEP 1 Requirements Analysis for Jira story ${ctx.run.story.jiraKey} ("${ctx.run.story.title}"). ` +
-          `Use the REAL Jira source provided in Context (description, acceptance criteria, comments) — comments may ` +
-          `override/clarify the AC. Analyze per CLAUDE.md.`,
-        RequirementsAnalysis,
-        'RequirementsAnalysis',
-        '{"businessObjective":"...","functionalRequirements":["..."],"nonFunctionalRequirements":["..."],"dependencies":["..."],"risks":["..."],"missingRequirements":["..."],"testabilityConcerns":["..."],"commentOverrides":["..."]}',
-        ctx,
+      aiOptsP(
+        getPrompt('requirements_analysis'),
+        { jiraKey: ctx.run.story.jiraKey, title: ctx.run.story.title },
+        RequirementsAnalysis, ctx,
       ),
     );
     ctx.state.requirements = data;
@@ -588,13 +637,10 @@ export const NODES: Record<string, NodeFn> = {
   async acceptance_criteria(ctx) {
     const data = await ai(
       ctx,
-      aiOpts(
-        `Extract and analyze the acceptance criteria for ${ctx.run.story.jiraKey}. Mark each as testable or not and note gaps.`,
-        AcceptanceCriteria,
-        'AcceptanceCriteria',
-        '{"criteria":[{"id":"AC-1","text":"...","testable":true,"notes":"..."}],"gaps":["..."]}',
-        ctx,
-        MODEL_CHEAP,
+      aiOptsP(
+        getPrompt('acceptance_criteria'),
+        { jiraKey: ctx.run.story.jiraKey },
+        AcceptanceCriteria, ctx, MODEL_CHEAP,
       ),
     );
     ctx.state.acceptanceCriteria = data;
@@ -604,13 +650,10 @@ export const NODES: Record<string, NodeFn> = {
   async comments_analysis(ctx) {
     const data = await ai(
       ctx,
-      aiOpts(
-        `Analyze the Jira comments for ${ctx.run.story.jiraKey}. Comments may override/clarify/invalidate the original AC — surface overrides, clarifications, and any new requirements.`,
-        CommentsAnalysis,
-        'CommentsAnalysis',
-        '{"overrides":["..."],"clarifications":["..."],"newRequirements":["..."],"notes":"..."}',
-        ctx,
-        MODEL_CHEAP,
+      aiOptsP(
+        getPrompt('comments_analysis'),
+        { jiraKey: ctx.run.story.jiraKey },
+        CommentsAnalysis, ctx, MODEL_CHEAP,
       ),
     );
     ctx.state.comments = data;
@@ -620,13 +663,10 @@ export const NODES: Record<string, NodeFn> = {
   async linked_stories(ctx) {
     const data = await ai(
       ctx,
-      aiOpts(
-        `Identify linked/related tickets and linked docs for ${ctx.run.story.jiraKey} and their relationship and testing impact.`,
-        LinkedStories,
-        'LinkedStories',
-        '{"links":[{"key":"B10-...","relationship":"blocks|relates|depends","impact":"..."}],"notes":"..."}',
-        ctx,
-        MODEL_CHEAP,
+      aiOptsP(
+        getPrompt('linked_stories'),
+        { jiraKey: ctx.run.story.jiraKey },
+        LinkedStories, ctx, MODEL_CHEAP,
       ),
     );
     ctx.state.linkedStories = data;
@@ -798,22 +838,13 @@ export const NODES: Record<string, NodeFn> = {
 
     const frameFiles = exported.frames.filter((f) => f.file).map((f) => f.file as string);
 
-    const baseInstr =
-      `Perform STEP 2 Figma analysis for ${ctx.run.story.jiraKey}. Compare the design against the description, ` +
-      `acceptance criteria and comments in Context. Surface screens, states (default/filled/empty/error/loading), ` +
-      `validation rules, copy/localization (en-US + ar-EG incl. RTL/truncation), UX inconsistencies, and any ` +
-      `gaps/contradictions/missing states vs the spec (testing-process.md §4).`;
-    const hint =
-      '{"analyzed":true,"screens":[{"name":"...","summary":"..."}],"states":["..."],"validations":["..."],' +
-      '"gaps":["..."],"missingStates":["..."],"localizationNotes":["..."],"uxFindings":["..."],"notes":"..."}';
-
     let data;
     if (frameFiles.length) {
       data = await ai(ctx, {
-        ...aiOpts(
-          `${baseInstr} The exported design frames (PNG @2x, via ${exportMethod}) are these files — READ each one and analyze the actual pixels:\n` +
-            frameFiles.map((f) => `- ${f.replace(/\\/g, '\\\\')}`).join('\n'),
-          FigmaAnalysis, 'FigmaAnalysis', hint, ctx,
+        ...aiOptsP(
+          getPrompt('figma_analysis'),
+          { jiraKey: ctx.run.story.jiraKey, mode: 'frames', exportMethod, frameFiles },
+          FigmaAnalysis, ctx,
         ),
         agentic: true,
         permissionMode: 'default',
@@ -827,10 +858,10 @@ export const NODES: Record<string, NodeFn> = {
       await ctx.log(`figma_analysis: ${why} — analyzing design expectations from the spec only`);
       data = await ai(
         ctx,
-        aiOpts(
-          `${baseInstr} NOTE: design frames could not be exported (${why}); analyze design expectations from the spec ` +
-            `and explicitly flag that visual frames were unavailable.`,
-          FigmaAnalysis, 'FigmaAnalysis', hint, ctx, MODEL_CHEAP,
+        aiOptsP(
+          getPrompt('figma_analysis'),
+          { jiraKey: ctx.run.story.jiraKey, mode: 'spec', why },
+          FigmaAnalysis, ctx, MODEL_CHEAP,
         ),
       );
     }
@@ -862,13 +893,10 @@ export const NODES: Record<string, NodeFn> = {
     // First time: decide what (if anything) genuinely needs asking.
     const data = await ai(
       ctx,
-      aiOpts(
-        `Based on the analysis so far, produce the STEP 3 clarification questions genuinely needed before test design ` +
-          `for ${ctx.run.story.jiraKey}. Only ask what truly blocks scope. If none, return an empty list.`,
-        ClarificationQuestions,
-        'ClarificationQuestions',
-        '{"questions":[{"id":"q1","question":"...","why":"...","suggestedAnswers":["..."]}]}',
-        ctx,
+      aiOptsP(
+        getPrompt('clarification'),
+        { jiraKey: ctx.run.story.jiraKey },
+        ClarificationQuestions, ctx,
       ),
     );
     if (!data.questions.length) {
@@ -888,13 +916,10 @@ export const NODES: Record<string, NodeFn> = {
   async impact_analysis(ctx) {
     const data = await ai(
       ctx,
-      aiOpts(
-        `Perform STEP 4 Impact Analysis for ${ctx.run.story.jiraKey}: Impacted Areas, Regression Areas, ` +
-          `Smoke Coverage, Automation Impact (regression-strategy.md §1).`,
-        ImpactAnalysis,
-        'ImpactAnalysis',
-        '{"impactedAreas":["..."],"regressionAreas":["..."],"smokeCoverage":["..."],"automationImpact":["..."]}',
-        ctx,
+      aiOptsP(
+        getPrompt('impact_analysis'),
+        { jiraKey: ctx.run.story.jiraKey },
+        ImpactAnalysis, ctx,
       ),
     );
     ctx.state.impact = data;
@@ -910,15 +935,10 @@ export const NODES: Record<string, NodeFn> = {
     const maxHls = await resolveHlsCap(ctx, s);
     const data = await ai(
       ctx,
-      aiOpts(
-        `Generate STEP 5 High Level Scenarios for ${ctx.run.story.jiraKey}. Cover happy paths, negatives, edge cases, ` +
-          `state transitions, validations, navigation, permissions, localization (en-US + ar-EG), error handling, regression risks. ` +
-          `HARD LIMIT: produce NO MORE THAN ${maxHls} scenarios — consolidate and prioritize the highest-risk coverage; ` +
-          `do not pad. Number them 1..N (N ≤ ${maxHls}).`,
-        Hls,
-        'Hls',
-        '{"storyName":"...","scenarios":[{"index":1,"text":"Verify ..."}]}',
-        ctx,
+      aiOptsP(
+        getPrompt('generate_hls'),
+        { jiraKey: ctx.run.story.jiraKey, maxHls },
+        Hls, ctx,
       ),
     );
     // Hard backstop: truncate + re-index if the model overshot the cap.
@@ -1005,16 +1025,10 @@ export const NODES: Record<string, NodeFn> = {
   async generate_testcases(ctx) {
     const data = await ai(
       ctx,
-      aiOpts(
-        `Generate STEP 6 detailed test cases for ${ctx.run.story.jiraKey} in the canonical granular standard ` +
-          `(browserstack-process.md §10.0): one user action per step, every step has its OWN Expected Result, ` +
-          `never combine actions; navigation/validation/verification are explicit steps. Cover all HLS scenarios. ` +
-          `Set: type (Functional/Acceptance/Regression/Usability/Smoke & Sanity), priority (Critical/High/Medium/Low), ` +
-          `automationStatus (default "Not Automated"), a one-line description, and preconditions.`,
-        TestCases,
-        'TestCases',
-        '{"cases":[{"title":"...","description":"...","preconditions":"...","type":"Functional","priority":"High","automationStatus":"Not Automated","steps":[{"action":"...","expectedResult":"..."}]}]}',
-        ctx,
+      aiOptsP(
+        getPrompt('generate_testcases'),
+        { jiraKey: ctx.run.story.jiraKey },
+        TestCases, ctx,
       ),
     );
     ctx.state.testcases = data;
@@ -1128,13 +1142,10 @@ export const NODES: Record<string, NodeFn> = {
     // Step 1 — Plan: charters, risk areas, fragile flows (cheap model, no tools).
     const plan = await ai(
       ctx,
-      aiOpts(
-        `Produce exploratory testing charters for ${ctx.run.story.jiraKey} (exploratory-testing.md): areas to probe, risk areas, and fragile flows for ${ctx.run.story.platform}.`,
-        ExploratoryNotes,
-        'ExploratoryNotes',
-        '{"charters":[{"area":"...","idea":"..."}],"riskAreas":["..."],"fragileFlows":["..."]}',
-        ctx,
-        MODEL_CHEAP,
+      aiOptsP(
+        getPrompt('exploratory_testing'),
+        { jiraKey: ctx.run.story.jiraKey, platform: ctx.run.story.platform },
+        ExploratoryNotes, ctx, MODEL_CHEAP,
       ),
     );
 
@@ -1166,18 +1177,19 @@ export const NODES: Record<string, NodeFn> = {
     try {
       const probed = await ai(ctx, {
         ...aiOpts(
-          `Use the Playwright browser tools to actually explore the live app for ${story.jiraKey} ("${story.title}"). ${creds}\n\n` +
-            `Charters to probe (spend real time on each — try boundary values, invalid input, unusual navigation, rapid repeat actions, ` +
-            `back/refresh mid-flow — the things a human exploratory tester would try, not the scripted happy-path steps from the test cases):\n` +
-            `${charterList}\n\n` +
-            `Also probe these risk areas: ${plan.riskAreas.join('; ') || '(none flagged)'}\n` +
-            `And these fragile flows: ${plan.fragileFlows.join('; ') || '(none flagged)'}\n\n` +
-            `For every genuinely unexpected or noteworthy result, use browser_take_screenshot to save evidence under ` +
-            `"${shotsDir.replace(/\\/g, '\\\\')}" (name it exploratory_<n>_<slug>.png) and record it as a finding. Do NOT invent findings — ` +
-            `only report what you actually observed while probing. Do not perform destructive/irreversible actions.`,
+          getPrompt('exploratory_testing').build({
+            jiraKey: story.jiraKey,
+            mode: 'probe',
+            title: story.title,
+            creds,
+            charterList,
+            riskAreas: plan.riskAreas.join('; ') || '(none flagged)',
+            fragileFlows: plan.fragileFlows.join('; ') || '(none flagged)',
+            shotsDir,
+          }),
           ExploratoryNotes,
           'ExploratoryNotes',
-          '{"charters":[],"riskAreas":[],"fragileFlows":[],"findings":[{"area":"...","observation":"...","screenshot":"<path>"}],"probed":true}',
+          EXPLORATORY_PROBE_HINT,
           ctx,
         ),
         agentic: true,
@@ -1210,17 +1222,10 @@ export const NODES: Record<string, NodeFn> = {
     const javaFramework = fw.javaAppium ?? '(configure a Java/Appium framework in the Framework Registry)';
     const data = await ai(
       ctx,
-      aiOpts(
-        `Plan automation for ${ctx.run.story.jiraKey} on ${ctx.run.story.platform}. ` +
-        `Enforce reuse-before-build against the framework catalogs (docs/ai/automation/**): ` +
-        `list reusable assets, any new page objects needed, and the spec files to create. ` +
-        `For web: Playwright specs go to the story's automation/tests/ folder. ` +
-        `Shared page objects go to ${sharedPagesDir}. ` +
-        `For mobile: describe the Java/Appium test class plan (framework at ${javaFramework}).`,
-        AutomationPlan,
-        'AutomationPlan',
-        '{"reusableAssets":["..."],"newPageObjects":["..."],"specs":[{"name":"...","framework":"playwright|appium","description":"..."}],"notes":"..."}',
-        ctx,
+      aiOptsP(
+        getPrompt('automation_generation'),
+        { jiraKey: ctx.run.story.jiraKey, platform: ctx.run.story.platform, sharedPagesDir, javaFramework },
+        AutomationPlan, ctx,
       ),
     );
     ctx.state.automationPlan = data;
@@ -1245,32 +1250,23 @@ export const NODES: Record<string, NodeFn> = {
     }
 
     let agentReply = '';
+    // Spec-writing prompt sourced from the Prompt Registry (#2 completion).
+    const writePrompt = getPrompt('automation_generation').build({
+      jiraKey: ctx.run.story.jiraKey,
+      title: ctx.run.story.title,
+      platform,
+      sharedPagesDir,
+      javaFramework,
+      pwFramework,
+      mode: 'write',
+      planJson: JSON.stringify(data, null, 2),
+      dir,
+      automationDir,
+      isWeb,
+    });
     try {
       const res = await runClaude({
-        prompt:
-          `You are implementing automation specs for Jira story ${ctx.run.story.jiraKey} ("${ctx.run.story.title}").\n\n` +
-          `Automation plan:\n${JSON.stringify(data, null, 2)}\n\n` +
-          `Platform: ${platform}\n` +
-          `Story workspace: ${dir.replace(/\\/g, '\\\\')}\n\n` +
-          (isWeb
-            ? `TASK (Playwright/JS):\n` +
-              `1. Read the automation plan above carefully.\n` +
-              `2. Check for existing reusable page objects / helpers in ${sharedPagesDir} and the configured Playwright framework's pages/ before writing anything new.\n` +
-              `3. For each new page object in the plan: write it to ${sharedPagesDir} (follow the BasePage pattern in the configured Playwright framework: ${pwFramework}).\n` +
-              `4. Write the test spec file(s) to ${automationDir.replace(/\\/g, '\\\\')}\\tests\\ — file name matching the spec name in the plan.\n` +
-              `   Follow the coding standard at docs/ai/automation/coding-standards.md: ` +
-              `   granular steps, env-var-gated destructive tests, const EXPECTED_* for copy assertions, beforeEach login.\n` +
-              `5. Write a README.md to ${automationDir.replace(/\\/g, '\\\\')} describing how to run the specs and listing preconditions.\n` +
-              `6. Verify the spec file(s) exist and contain valid JS (no TypeScript annotations).`
-            : `TASK (Mobile/Appium — Java framework at ${javaFramework}):\n` +
-              `1. Read the automation plan and the Java framework catalog at docs/ai/automation/java-framework.md.\n` +
-              `2. DO NOT write Java files (the build requires Maven setup). Instead:\n` +
-              `   a. Write a detailed framework-reference.md to ${automationDir.replace(/\\/g, '\\\\')}\\framework-reference.md ` +
-              `      listing: which existing page objects / helpers to reuse, which new ones are needed, ` +
-              `      class names + method signatures for all new page objects, and the step-by-step navigation needed for each spec.\n` +
-              `   b. Write a README.md describing how to run the Appium test from ${javaFramework} via Maven.\n`) +
-          `\nDo NOT add speculative features, TODOs, or placeholder comments. Write exactly what is needed for the test cases in the plan. ` +
-          `Reply "DONE: <comma-separated list of files written>" when finished, or "PARTIAL: <files written> — <what failed>" if some files could not be written.`,
+        prompt: writePrompt,
         cwd: COMPANION_DIR,
         model: MODEL,
         permissionMode: 'default',
@@ -1280,6 +1276,27 @@ export const NODES: Record<string, NodeFn> = {
         signal: ctx.signal,
       });
       agentReply = (res?.text ?? '').trim();
+      ctx.meta.costUsd += res?.costUsd ?? 0;
+      ctx.meta.tokens += res?.outputTokens ?? 0;
+      // Record this direct runClaude interaction in the LLM Request Log (#7) so
+      // EVERY AI interaction — not just ai()-schema calls — carries a prompt version.
+      void logLlmRequest({
+        runId: ctx.run.id,
+        runStepId: ctx.step.id,
+        node: ctx.step.name,
+        schemaName: 'automation-spec-write',
+        model: MODEL,
+        promptVersion: getPrompt('automation_generation').version,
+        workflowVersion: (ctx.run as { workflowVersion?: string }).workflowVersion,
+        systemPrompt: redactSecrets(writePrompt),
+        userPrompt: undefined,
+        rawResponse: agentReply.slice(0, 20000),
+        status: 'ok',
+        tokens: res?.outputTokens ?? 0,
+        costUsd: res?.costUsd ?? 0,
+        durationMs: res?.durationMs ?? 0,
+        attempt: 1,
+      });
       await ctx.log('automation spec generation complete');
     } catch (e) {
       agentReply = `ERROR: ${(e as Error).message}`;
@@ -1350,39 +1367,6 @@ export const NODES: Record<string, NodeFn> = {
       return emptyExecution('mobile story missing bsAppIds (android/ios) — execution skipped', false);
     }
 
-    const common =
-      `You are executing QA test cases for Jira story ${story.jiraKey} ("${story.title}") in the ${story.environment ?? 'testing'} ` +
-      `environment, locale ${locale}. Execute ONLY against the ${story.environment ?? 'testing'} environment. For EACH test case: perform every step ` +
-      `in order, compare the live result to its EXPECTED result, and decide a status: "pass" (all steps matched), "fail" (a step's ` +
-      `actual ≠ expected — capture a defect), "blocked" (could not run, e.g. precondition/data/permission missing), or "skipped". ` +
-      `Capture at least one screenshot per case into "${shotsDir.replace(/\\/g, '\\\\')}" (name it <index>_<short-slug>.png) and put the ` +
-      `saved file path(s) in that case's "evidence". For a "fail" whose defect is a multi-step or state/DB-transition issue that a single ` +
-      `screenshot cannot convey, ALSO capture a short screen recording (.mp4 or .webm) into that folder and add its path to "evidence" — ` +
-      `recordings are attached to the Bug and preview inline in Jira, making the defect self-explanatory to the developer. For every "fail", ` +
-      `add a Defect (title, severity, priority, caseTitle, combo, ` +
-      `stepsToReproduce, expected, actual, evidence) per docs/ai/bug-reporting.md.\n\n` +
-      `DEFECT GROUNDING (mandatory precision gate — apply to EVERY candidate "fail" BEFORE recording it as a Defect). A finding becomes a ` +
-      `Defect ONLY if it passes ALL of the checks below; otherwise the case is "pass" (with a note) or the finding goes in "notes" as an ` +
-      `OBSERVATION — never as a Defect:\n` +
-      `1. SOURCE: you can cite the exact thing it violates — a specific acceptance criterion, a Figma design element, or an established ` +
-      `business rule. If you cannot name the AC/design/rule, it is NOT a defect. Do NOT invent an "ideal" expectation the spec never states ` +
-      `(e.g. an extra confirmation dialog, a disabled state, or a copy tweak that no AC/design calls for). Conversely, if the AC DOES state it ` +
-      `(e.g. "the button must be disabled until X"), a deviation IS a real defect — check the AC before deciding either way.\n` +
-      `2. NOT TEST DATA: seeded/garbage values in the testing environment — dropdown entries like "test", "dsa", "{{7*7}}", "@SUM(...)", ` +
-      `duplicate demo branches — are NOT product defects.\n` +
-      `3. REPRODUCIBLE: re-run the exact steps at least once more. A single, non-repeating observation is NOT a defect (record it as ` +
-      `unconfirmed/flaky in notes).\n` +
-      `4. NOT A TOOLING ARTIFACT: text extracted from a PDF (pdf-parse) reverses/re-orders Arabic (RTL) numerals and shaping. A digit-order ` +
-      `or RTL difference seen ONLY in extracted text is NOT a defect unless you confirm it by visually inspecting the rendered PDF/screenshot.\n` +
-      `5. NO CROSS-LANGUAGE / DERIVED-FIELD FALSE MISMATCHES: do not assert an English UI label must equal an Arabic stored value (e.g. a ` +
-      `branch's Arabic name vs its English selection label — a correct branch CODE means the mapping is valid). Do not flag derived fields as ` +
-      `inconsistent with a display label (e.g. Gender is derived from the Egyptian National ID 13th digit: odd=male, even=female).\n` +
-      `6. ONE DEFECT = ONE PROBLEM: never bundle two distinct issues into one Defect; split them, and never combine a real issue with a weak one.\n\n` +
-      `Do NOT perform destructive/irreversible actions; if a ` +
-      `step would, mark the case blocked and note why. Keep going through all cases even if some fail.\n\n` +
-      `The full list of test cases to execute (combo "${(isWeb ? 'web' : 'android/ios')} · ${locale}") is in this file — READ it first: ` +
-      `"${casesFile.replace(/\\/g, '\\\\')}".`;
-
     // Card-service web stories: provision a FRESH test customer via API up to the
     // state the flow needs (ready-to-collect), so the agent tests against it
     // instead of whatever stale customer happens to exist. Best-effort teardown after.
@@ -1419,23 +1403,26 @@ export const NODES: Record<string, NodeFn> = {
           `If the expected action/state is still not present for this customer, mark the case blocked and say so precisely.`
         : '';
       toolset = PLAYWRIGHT_TOOLS;
-      instruction =
-        `Use the Playwright browser tools to drive the live web app. ${creds}${useUser} Use browser_take_screenshot with a filename under the ` +
-        `screenshots dir for evidence. ${common}`;
+      instruction = getPrompt('execution').build({
+        jiraKey: story.jiraKey, title: story.title, environment: story.environment ?? 'testing',
+        locale, shotsDir, casesFile, isWeb: true, creds, useUser,
+      });
     } else {
       toolset = ['Bash', 'Read', 'Write', 'Glob', 'Grep'];
       const caps =
         `Devices: Android = Samsung Galaxy S23 / Android 13 (UiAutomator2)${bs?.android ? ` app "${bs.android}"` : ' (no app — skip)'}; ` +
         `iOS = iPhone 14 / iOS 18 (XCUITest)${bs?.ios ? ` app "${bs.ios}"` : ' (no app — skip)'}.`;
-      instruction =
-        `Drive BrowserStack App Automate via the helper at ${companionPath('bs_helper.js')} (functions: bsReq, screenshot, getSource, ` +
-        `findElement(s), clickEl, typeText, tap(x,y), getAttr, sleep). Write a Node driver script under "${dir.replace(/\\/g, '\\\\')}\\automation" ` +
-        `that: creates a session with the caps below, executes the cases, saves a screenshot per case into the screenshots dir, then run it with Bash ` +
-        `("node <script>"). Run Android first, then iOS, for locale ${locale} only (Arabic is a later pass). Handle OTP/passcode/coordinate-tap ` +
-        `quirks per CLAUDE.md §7. ${caps} ${common}`;
+      instruction = getPrompt('execution').build({
+        jiraKey: story.jiraKey, title: story.title, environment: story.environment ?? 'testing',
+        locale, shotsDir, casesFile, isWeb: false, caps,
+        bsHelperPath: companionPath('bs_helper.js'), dir,
+      });
     }
 
-    await ctx.log(`execution: ${isWeb ? 'web (Playwright)' : 'mobile (bs_helper)'} · ${cases.length} case(s) · ${locale}`);
+    // Per-story model override for execution (set in the New Story wizard); falls
+    // back to the platform default (MODEL_EXECUTION) when unset.
+    const executionModel = (story as { executionModel?: string | null }).executionModel || MODEL_EXECUTION;
+    await ctx.log(`execution: ${isWeb ? 'web (Playwright)' : 'mobile (bs_helper)'} · ${cases.length} case(s) · ${locale} · model ${executionModel}`);
     try {
       const data = await ai(ctx, {
         ...aiOpts(instruction, ExecutionResults, 'ExecutionResults',
@@ -1444,18 +1431,29 @@ export const NODES: Record<string, NodeFn> = {
           '"defects":[{"title":"...","severity":"High","priority":"High","caseTitle":"...","combo":"web · en-US","stepsToReproduce":["..."],"expected":"...","actual":"...","evidence":["<path>"]}],"notes":"..."}',
           ctx),
         agentic: true,
+        // Agentic default is 1 attempt; give execution a 2nd so a single bad final
+        // message (e.g. the agent ended with prose instead of the JSON) isn't fatal.
+        attempts: 2,
         permissionMode: 'default',
         allowedTools: toolset,
-        disallowedTools: ['Task'], // no subagents — this is a single flat headless run
-        model: MODEL_EXECUTION,
+        // No subagents (Task); and block the "pause/resume later" tools — in a one-shot
+        // headless run they don't resume anything, they just end the turn with prose
+        // (not the required JSON), which fails the whole execution. The agent must
+        // finish inline with the ExecutionResults JSON (see BLOCKER HANDLING in the prompt).
+        disallowedTools: ['Task', 'ScheduleWakeup', 'CronCreate', 'CronDelete', 'CronList', 'PushNotification', 'RemoteTrigger'],
+        model: executionModel,
         effort: EFFORT_EXECUTION,
         timeoutMs: 45 * 60 * 1000,
       });
       await ctx.log(`execution done: ${data.summary.passed}P/${data.summary.failed}F/${data.summary.blocked}B/${data.summary.skipped}S of ${data.summary.total}; ${data.defects.length} defect(s)`);
       return data;
     } catch (e) {
-      await ctx.log(`execution error: ${(e as Error).message}`);
-      return emptyExecution(`execution failed: ${(e as Error).message}`, false);
+      // The agent errored or never returned valid JSON — nothing was actually
+      // executed. Do NOT report this as a clean run: flag it blocked so the
+      // review_report gate (and the report) surface it loudly instead of showing
+      // a benign 0/0/0/0 pass. `cases.length` is the count we FAILED to run.
+      await ctx.log(`execution error (0 of ${cases.length} case(s) ran): ${(e as Error).message}`);
+      return { ...emptyExecution(`execution failed: ${(e as Error).message}`, false), blocked: true, notRun: cases.length };
     } finally {
       // Tear down the provisioned user (best-effort — DB teardown can time out over SSH).
       if (provisioned?.phone) {
@@ -1469,6 +1467,111 @@ export const NODES: Record<string, NodeFn> = {
   async html_report(ctx) {
     const dir = (ctx.state.workspacePath as string) ?? storyDir(ctx.run.story.jiraKey);
     const file = path.join(dir, 'execution-reports', `test_report_${ctx.run.story.jiraKey}.html`);
+    // Parity Certification (#5): deterministic run evaluation over accumulated
+    // state. Stashed in ctx.state so renderReport can show it, returned so the
+    // API persists it to Run.parityJson.
+    const st = ctx.state as Record<string, any>;
+    const rawLocales = (ctx.run.story as { locales?: unknown }).locales;
+    const locales = Array.isArray(rawLocales)
+      ? (rawLocales as string[])
+      : typeof rawLocales === 'string' && rawLocales
+        ? rawLocales.split(',').map((l) => l.trim()).filter(Boolean)
+        : ['en-US'];
+    // Improvement #2: completed nodes come from AUTHORITATIVE RunStep.status
+    // (execution truth), not inferred from accumulated state keys. Falls back to
+    // state-key inference only if the detail fetch fails (never block the report).
+    let completedNodes: string[];
+    try {
+      const detail = await getRunDetail(ctx.run.id);
+      completedNodes = (detail.steps ?? [])
+        .filter((s) => s.status === 'succeeded')
+        .map((s) => s.name);
+    } catch {
+      completedNodes = Object.keys(NODE_STATE_KEY).filter((n) => st[NODE_STATE_KEY[n]] != null);
+    }
+    // Visual Testing Intelligence (M3): run the Senior-QA vision comparison
+    // (best-effort) if not already produced, so parity/review/report consume it.
+    if (st.visual == null) {
+      try {
+        const v = await runVisualComparison(ctx);
+        if (v) st.visual = v;
+      } catch (e) {
+        await ctx.log(`visual comparison skipped: ${(e as Error).message}`);
+      }
+    }
+    const evalInput = {
+      platform: ctx.run.story.platform,
+      locales,
+      enabledNodes: Array.isArray((ctx.run.story as { enabledNodes?: unknown }).enabledNodes)
+        ? ((ctx.run.story as { enabledNodes?: string[] }).enabledNodes as string[])
+        : null,
+      completedNodes,
+      acceptanceCriteria: st.acceptanceCriteria,
+      testCases: st.testcases,
+      execution: st.execution,
+      figmaFrameCount: st.figma?.frames?.length ?? 0,
+      visual: st.visual,
+      automation: st.automationPlan,
+    };
+    // Parity Certification (#5) + Review Confidence (M2) share the one evaluation
+    // input — both deterministic, both from authoritative RunStep.status.
+    const parity = computeParityCertification(evalInput);
+    const review = computeReviewConfidence(evalInput);
+    // Story Health (M4) — deterministic six-dimension roll-up REUSING parity +
+    // review + visual health + defects. No AI call (ADR-001).
+    const vcForHealth = st.visual as VisualComparison | undefined;
+    const visualHealth = vcForHealth && vcForHealth.compared ? computeVisualHealth(vcForHealth) : null;
+    const defectsForEval = (st.execution?.defects ?? []) as Array<{ title?: string; severity?: string; caseTitle?: string; component?: string }>;
+    const health = computeStoryHealth(evalInput, parity, review, { visualHealth, defects: defectsForEval });
+    // Recommendations (M5) — deterministic + rule-based, REUSING parity + review +
+    // health + visual patterns + defects + traceability. No AI call (ADR-001).
+    const recommendations = computeRecommendations({
+      parity, review, health, visual: vcForHealth ?? null, visualHealth,
+      defects: defectsForEval, testCases: st.testcases,
+    });
+    ctx.state.parity = parity;
+    ctx.state.review = review;
+    ctx.state.health = health;
+    ctx.state.recommendations = recommendations;
+    // Jira base URL for citation deep-links in the report (best-effort; labels
+    // still render without it).
+    try {
+      const settings = await getSettings();
+      const base = settings['jira.baseUrl'] || settings['jira.host'];
+      if (base) ctx.state.jiraBaseUrl = base;
+    } catch {
+      /* citations fall back to labels-only */
+    }
+    await ctx.log(
+      `Parity Certification: ${parity.certification.toUpperCase()} (score ${parity.score}) — ` +
+        `${parity.executedCombos.length}/${parity.requiredCombos.length} combos, ` +
+        `${parity.missingWorkflowStages.length} missing stage(s)`,
+    );
+    await ctx.log(
+      `Review Confidence: ${review.level.toUpperCase()} (score ${review.score})` +
+        (review.reductions.length ? ` — reduced: ${review.reductions.join('; ')}` : ''),
+    );
+    await ctx.log(
+      `Story Health: ${health.level.toUpperCase()} (score ${health.score}) across ` +
+        `${health.dimensions.filter((d) => d.applicable).length} dimension(s)`,
+    );
+    await ctx.log(`Recommendations: ${recommendations.length} (deterministic, 0 AI calls)`);
+    // Activity Timeline (M6) — deterministic, from persisted steps; embedded in the
+    // report so the artifact is a complete, self-contained audit trail (0 AI).
+    try {
+      const detail = await getRunDetail(ctx.run.id);
+      ctx.state.timeline = buildActivityTimeline({
+        run: { createdAt: (detail as { createdAt?: string }).createdAt, startedAt: (detail as { startedAt?: string }).startedAt, finishedAt: (detail as { finishedAt?: string }).finishedAt, status: detail.status },
+        steps: detail.steps.map((s) => ({
+          name: s.name, type: s.type, status: s.status, ordinal: s.ordinal,
+          startedAt: s.startedAt, finishedAt: s.finishedAt,
+          approval: s.approval ? { action: (s.approval as { action?: string }).action, decision: s.approval.decision, createdAt: s.approval.createdAt, decidedAt: s.approval.decidedAt } : null,
+          clarification: s.clarification ? { createdAt: s.clarification.createdAt, answeredAt: s.clarification.answeredAt } : null,
+        })),
+      });
+    } catch (e) {
+      await ctx.log(`activity timeline skipped: ${(e as Error).message}`);
+    }
     await writeFile(file, renderReport(ctx), 'utf8');
     // Root index README per the folder standard (release-validation.md §6).
     await artifact(ctx, 'README.md',
@@ -1479,7 +1582,7 @@ export const NODES: Record<string, NodeFn> = {
       `| browserstack/ | import evidence |\n| automation/ | story-specific specs |\n` +
       `| execution-reports/ | test_report_${ctx.run.story.jiraKey}.html |\n| screenshots/ · evidence/ · defects/ | run evidence |\n`);
     await ctx.log(`HTML report + README written`);
-    return { reportPath: file };
+    return { reportPath: file, parity, review, health, recommendations, visual: st.visual ?? null };
   },
 
   async gate_file_bugs(ctx) {
@@ -1542,20 +1645,152 @@ export const NODES: Record<string, NodeFn> = {
   async knowledge_update(ctx) {
     const data = await ai(
       ctx,
-      aiOpts(
-        `Per the documentation governance protocol, propose reusable knowledge to persist from ${ctx.run.story.jiraKey} (new business rule, workflow, automation pattern, BrowserStack convention, regression rule). Only genuinely reusable items; map each to a docs/ai/** path.`,
-        KnowledgeUpdate,
-        'KnowledgeUpdate',
-        '{"proposals":[{"docPath":"docs/ai/...","summary":"...","rationale":"..."}]}',
-        ctx,
-        MODEL_CHEAP,
+      aiOptsP(
+        getPrompt('knowledge_update'),
+        { jiraKey: ctx.run.story.jiraKey },
+        KnowledgeUpdate, ctx, MODEL_CHEAP,
       ),
     );
     ctx.state.knowledge = data;
+    // Knowledge Lint (M8) — deterministic governance check (placement/duplicate/
+    // conflict/quality) vs the existing docs/ai corpus. No AI (ADR-001). Flags
+    // for human confirmation; never auto-persists or auto-rejects.
+    const lint = lintKnowledgeProposals({ proposals: data.proposals, corpus: knowledgeCorpus() });
+    ctx.state.knowledgeLint = lint;
+    await ctx.log(
+      `Knowledge Lint: ${lint.summary.ok} ok · ${lint.summary.review} review · ${lint.summary.reject} reject` +
+        (lint.summary.duplicates ? ` · ${lint.summary.duplicates} possible duplicate(s)` : '') +
+        (lint.summary.conflicts ? ` · ${lint.summary.conflicts} possible conflict(s)` : ''),
+    );
     await ctx.log(`${data.proposals.length} knowledge proposal(s); review in the Knowledge Center`);
-    return data;
+    return { ...data, lint };
   },
 };
+
+/**
+ * Best-effort corpus of existing knowledge for Knowledge Lint (M8): every
+ * docs/ai/**\/*.md as {path, title (first heading), text (leading excerpt)}.
+ * Tries a couple of candidate roots (repo root vs qa-platform cwd); returns []
+ * if none found — the linter still runs placement/quality/in-batch checks.
+ */
+function knowledgeCorpus(): KnowledgeCorpusEntry[] {
+  const roots = [
+    path.join(process.cwd(), 'docs', 'ai'),
+    path.join(process.cwd(), '..', 'docs', 'ai'),
+  ];
+  for (const root of roots) {
+    if (!existsSync(root)) continue;
+    try {
+      const files = readdirSync(root, { recursive: true }) as string[];
+      const rootAbs = path.resolve(root);
+      const repoRel = (abs: string) => path.relative(process.cwd(), abs).replace(/\\/g, '/');
+      return files
+        .filter((f) => typeof f === 'string' && /\.md$/i.test(f))
+        .map((f) => {
+          const abs = path.join(root, f);
+          let text = '';
+          try {
+            text = readFileSync(abs, 'utf8').slice(0, 2000);
+          } catch {
+            /* skip unreadable */
+          }
+          const heading = /^#\s+(.+)$/m.exec(text)?.[1]?.trim();
+          // Normalize to a docs/ai-relative path so it matches proposal docPaths.
+          const rel = repoRel(abs);
+          const docPath = rel.includes('docs/ai/') ? rel.slice(rel.indexOf('docs/ai/')) : `docs/ai/${String(f).replace(/\\/g, '/')}`;
+          void rootAbs;
+          return { path: docPath, title: heading, text };
+        });
+    } catch {
+      /* fall through to next root */
+    }
+  }
+  return [];
+}
+
+/** Image screenshots for visual comparison: prefer execution evidence, else the screenshots dir. */
+function collectScreenshots(execState: { cases?: Array<{ evidence?: string[] }> } | undefined, shotsDir: string): string[] {
+  const isImg = (p: string) => /\.(png|jpe?g|webp)$/i.test(p);
+  const fromEvidence = (execState?.cases ?? []).flatMap((c) => c.evidence ?? []).filter(isImg);
+  if (fromEvidence.length) return [...new Set(fromEvidence)];
+  try {
+    if (existsSync(shotsDir)) return readdirSync(shotsDir).filter(isImg).map((f) => path.join(shotsDir, f));
+  } catch {
+    /* ignore */
+  }
+  return [];
+}
+
+/** Best actual-screenshot match for a Figma frame by normalized token overlap; index fallback. */
+function bestShot(frameName: string, shots: string[], index: number): string {
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter(Boolean);
+  const frameTokens = new Set(norm(frameName));
+  let best = shots[index % shots.length];
+  let bestScore = -1;
+  for (const s of shots) {
+    const overlap = norm(path.basename(s)).filter((t) => frameTokens.has(t)).length;
+    if (overlap > bestScore) {
+      bestScore = overlap;
+      best = s;
+    }
+  }
+  return best;
+}
+
+/**
+ * Visual Testing Intelligence (M3) — best-effort. For each exported Figma frame
+ * matched to an actual screenshot, run the Senior-QA `visual_comparison` vision
+ * task (reads both images + the AC) and aggregate into a VisualComparison. The
+ * deterministic health/coverage/pass-rate is computed later by computeVisualHealth.
+ * Never blocks the report: any failure degrades to fewer/zero compared screens.
+ * One AI vision comparator today; future pixel/OCR/axe comparators append findings
+ * to the same shape with no architecture change.
+ */
+async function runVisualComparison(ctx: NodeContext): Promise<VisualComparison | undefined> {
+  const st = ctx.state as Record<string, any>;
+  const frames = ((st.figma?.frames ?? []) as Array<{ name: string; file?: string }>).filter((f) => f.file);
+  if (!frames.length) return undefined;
+  const dir = (st.workspacePath as string) ?? storyDir(ctx.run.story.jiraKey);
+  const shots = collectScreenshots(st.execution, path.join(dir, 'screenshots'));
+  if (!shots.length) {
+    return { compared: false, expectedFrames: frames.length, comparedScreens: 0, passRate: 0, categoriesCovered: [], screens: [], patterns: [], componentsAffected: [], notes: 'No actual screenshots captured to compare against Figma.' };
+  }
+  const acText = ((st.acceptanceCriteria?.criteria ?? []) as Array<{ id: string; text: string }>)
+    .map((a) => `${a.id}: ${a.text}`)
+    .join('\n');
+  const combo = (st.execution?.matrix?.[0] as string) ?? (ctx.run.story.platform === 'web' ? 'web · en-US' : 'android · en-US');
+  const MAX = Number(process.env.QA_VISUAL_MAX_SCREENS ?? 12);
+  const screens: z.infer<typeof VisualScreenComparison>[] = [];
+  for (const [i, frame] of frames.slice(0, MAX).entries()) {
+    if (ctx.signal.aborted) break;
+    const shot = bestShot(frame.name, shots, i);
+    try {
+      const r = await ai(ctx, {
+        ...aiOptsP(
+          getPrompt('visual_comparison'),
+          { jiraKey: ctx.run.story.jiraKey, screen: frame.name, combo, acText, expectedFrame: frame.file as string, actualScreenshot: shot },
+          VisualScreenComparison, ctx,
+        ),
+        agentic: true,
+        permissionMode: 'default',
+        allowedTools: ['Read'],
+        timeoutMs: 4 * 60 * 1000,
+      });
+      screens.push({ ...r, screen: r.screen || frame.name, combo, expectedFrame: frame.file, actualScreenshot: shot });
+    } catch (e) {
+      await ctx.log(`visual_comparison: "${frame.name}" failed — ${(e as Error).message}`);
+    }
+  }
+  const comparedScreens = screens.filter((s) => s.verdict !== 'no-frame').length;
+  const passRate = comparedScreens ? Math.round((screens.filter((s) => s.verdict === 'pass').length / comparedScreens) * 100) : 0;
+  const categoriesCovered = [...new Set(screens.flatMap((s) => s.categoriesChecked ?? []))];
+  // M3.5 — deterministic design-system aggregation: recurring root causes + components touched.
+  const vc: VisualComparison = { compared: screens.length > 0, expectedFrames: frames.length, comparedScreens, passRate, categoriesCovered, screens, patterns: [], componentsAffected: [], notes: '' };
+  vc.patterns = detectVisualPatterns(vc);
+  vc.componentsAffected = [...new Set(screens.flatMap((s) => (s.findings ?? []).map((f) => f.component).filter(Boolean) as string[]))].sort();
+  await ctx.log(`visual_comparison: ${screens.length} screen(s) compared · pass rate ${passRate}% · ${vc.patterns.length} recurring pattern(s)`);
+  return vc;
+}
 
 /** Self-contained HTML run report following release-validation.md §2 structure. */
 function renderReport(ctx: NodeContext): string {
@@ -1584,16 +1819,37 @@ function renderReport(ctx: NodeContext): string {
       ? paths.map((p) => `<a href="file:///${esc(p).replace(/\\/g, '/')}">shot</a>`).join(' ')
       : '<span class="muted">—</span>';
 
+  // ── Citation & Traceability rendering (Phase 2 M1) ──
+  const citeCtx: CitationContext = {
+    jiraBaseUrl: typeof st.jiraBaseUrl === 'string' ? st.jiraBaseUrl : undefined,
+    storyKey: s.jiraKey,
+    figmaFileKey: st.figma?.fileKey,
+    acById: Object.fromEntries(
+      ((st.acceptanceCriteria?.criteria ?? []) as Array<{ id: string; text: string }>).map((a) => [a.id, a.text]),
+    ),
+  };
+  const chips = (srcs?: unknown[]) => {
+    const rc = resolveCitations(srcs as any, citeCtx);
+    if (!rc.length) return '';
+    return `<div class="cites">${rc
+      .map((c) =>
+        c.href
+          ? `<a class="cite" href="${esc(c.href)}" title="${esc(c.title ?? '')}">${esc(c.label)}</a>`
+          : `<span class="cite" title="${esc(c.title ?? '')}">${esc(c.label)}</span>`,
+      )
+      .join(' ')}</div>`;
+  };
+
   const caseRows = cases.map((c, i) => {
     const r = byTitle.get(c.title);
-    return `<tr><td>${i + 1}</td><td>${esc(c.title)}</td><td>${esc(c.type)}</td>
+    return `<tr><td>${i + 1}</td><td>${esc(c.title)}${chips(c.sources)}</td><td>${esc(c.type)}</td>
     <td>${esc(c.priority)}</td><td>${c.steps?.length ?? 0}</td>
     <td>${statusBadge(r?.status)}</td><td>${fileLink(r?.evidence)}</td>
     <td>${esc(r?.actual ?? '')}</td></tr>`;
   }).join('');
 
   const defectRows = defects.length
-    ? defects.map((d, i) => `<tr><td>${i + 1}</td><td>${esc(d.title)}</td><td><span class="badge fail">${esc(d.severity)}</span></td>
+    ? defects.map((d, i) => `<tr><td>${i + 1}</td><td>${esc(d.title)}${chips(d.sources)}</td><td><span class="badge fail">${esc(d.severity)}</span></td>
       <td>${esc(d.priority)}</td><td>${esc(d.caseTitle ?? '')}</td><td>${esc(d.expected)}</td><td>${esc(d.actual)}</td></tr>`).join('')
     : '<tr><td colspan="7" class="muted">No defects recorded.</td></tr>';
 
@@ -1676,6 +1932,242 @@ function renderReport(ctx: NodeContext): string {
   const matrix = `<table><tr><th>Combo (platform · locale)</th><th>Result</th></tr>` +
     combos.map((cb) => `<tr><td><b>${esc(cb)}</b></td><td>${comboPass(cb)}</td></tr>`).join('') + '</table>';
 
+  // Parity Certification block (#5) + version footer (#3).
+  const parity = st.parity as
+    | {
+        score: number;
+        certification: string;
+        requiredCombos: string[];
+        executedCombos: string[];
+        missingWorkflowStages: string[];
+        missingAcCoverage: string[];
+        missingVisualCoverage: string[];
+        missingAutomationCoverage: string[];
+        notes?: string;
+      }
+    | undefined;
+  const parityCls = parity
+    ? parity.certification === 'certified'
+      ? 'pass'
+      : parity.certification === 'partial'
+        ? 'note'
+        : 'fail'
+    : 'no';
+  const missBlock = (label: string, arr?: string[]) =>
+    arr && arr.length ? `<b>${label}</b>${list(arr)}` : '';
+  const parityBlock = parity
+    ? `<h2>Platform Parity Certification</h2>
+       <p><span class="badge ${parityCls}">${esc(parity.certification.toUpperCase())} · score ${parity.score}</span>
+       &nbsp;${parity.executedCombos.length}/${parity.requiredCombos.length} required combo(s) executed</p>
+       ${missBlock('Missing workflow stages', parity.missingWorkflowStages)}
+       ${missBlock('Missing AC coverage', parity.missingAcCoverage)}
+       ${missBlock('Missing visual coverage', parity.missingVisualCoverage)}
+       ${missBlock('Missing automation coverage', parity.missingAutomationCoverage)}
+       ${parity.notes ? `<p class="muted">${esc(parity.notes)}</p>` : ''}`
+    : '';
+  // Review Confidence block (M2) — deterministic, evidence-based.
+  const review = st.review as
+    | { score: number; level: string; reductions: string[]; signals: Array<{ label: string; applicable: boolean; satisfied: boolean }> }
+    | undefined;
+  const reviewCls = review ? (review.level === 'high' ? 'pass' : review.level === 'medium' ? 'note' : 'fail') : 'no';
+  const reviewBlock = review
+    ? `<h2>Review Confidence</h2>
+       <p><span class="badge ${reviewCls}">${esc(review.level.toUpperCase())} · score ${review.score}</span>
+       &nbsp;evidence-based (deterministic), not model-estimated.</p>
+       ${review.reductions.length ? `<b>Why below 100%</b>${list(review.reductions)}` : ''}
+       <table><tr><th>Evidence signal</th><th>Status</th></tr>${review.signals
+         .filter((s) => s.applicable)
+         .map((s) => `<tr><td>${esc(s.label)}</td><td><span class="badge ${s.satisfied ? 'pass' : 'fail'}">${s.satisfied ? '✓' : '✗'}</span></td></tr>`)
+         .join('')}</table>`
+    : '';
+  // Story Health block (M4) — deterministic six-dimension roll-up (reuses parity/review/visual).
+  const health = st.health as
+    | { score: number; level: string; summary: string; reductions: string[];
+        dimensions: Array<{ key: string; label: string; applicable: boolean; score: number; level: string; detail: string }> }
+    | undefined;
+  const healthCls = health ? (health.level === 'high' ? 'pass' : health.level === 'medium' ? 'note' : 'fail') : 'no';
+  const dimCls = (lvl: string) => (lvl === 'high' ? 'pass' : lvl === 'medium' ? 'note' : 'fail');
+  const storyHealthBlock = health
+    ? `<h2>Story Health</h2>
+       <p><span class="badge ${healthCls}">OVERALL ${health.score} · ${esc(health.level.toUpperCase())}</span>
+       &nbsp;<span class="muted">deterministic roll-up (no AI) · reuses Parity + Review Confidence + Visual Health</span></p>
+       <div class="grid">${health.dimensions.map((d) =>
+         `<div class="card"><div class="n ${d.applicable ? '' : 'muted'}">${d.applicable ? d.score : '—'}</div>` +
+         `${esc(d.label)} ${d.applicable ? `<span class="badge ${dimCls(d.level)}">${esc(d.level)}</span>` : '<span class="badge no">n/a</span>'}</div>`).join('')}</div>
+       <table><tr><th>Dimension</th><th>Score</th><th>Detail</th></tr>${health.dimensions.map((d) =>
+         `<tr><td>${esc(d.label)}</td><td>${d.applicable ? `<span class="badge ${dimCls(d.level)}">${d.score}</span>` : '<span class="muted">n/a</span>'}</td><td>${esc(d.detail)}</td></tr>`).join('')}</table>`
+    : '';
+  // Recommendations block (M5) — deterministic + rule-based, prioritized.
+  const recs = (st.recommendations ?? []) as Array<{
+    id: string; title: string; category: string; severity: string; impact: string; effort: string;
+    expectedBenefit: string; confidence: string; priorityScore: number; rootCause: string;
+    actions: string[]; eliminatesFindings: number; layer: string;
+    sources?: Array<{ kind: string; ref: string; label?: string }>; derivedFrom: string[];
+  }>;
+  const recCards = recs.map((r) =>
+    `<div class="vfind"><div><span class="badge ${sevCls(r.severity)}">${esc(r.severity)}</span> ` +
+    `<b>${esc(r.title)}</b> <span class="muted">· ${esc(r.category)} · P${r.priorityScore}</span></div>` +
+    `<div class="cites"><span class="dschip comp">impact ${esc(r.impact)}</span><span class="dschip tok">effort ${esc(r.effort)}</span>` +
+    `<span class="dschip comp">confidence ${esc(r.confidence)}</span>${r.eliminatesFindings > 1 ? `<span class="dschip tok">clears ${r.eliminatesFindings}</span>` : ''}` +
+    `<span class="dschip comp">${esc(r.layer)}</span></div>` +
+    (r.rootCause ? `<div><b>Root cause:</b> ${esc(r.rootCause)}</div>` : '') +
+    (r.actions?.length ? `<div class="muted"><b>Action:</b> ${esc(r.actions.join(' '))}</div>` : '') +
+    `<div class="muted"><b>Benefit:</b> ${esc(r.expectedBenefit)}</div>` +
+    chips(r.sources) + '</div>').join('');
+  const recommendationsBlock = recs.length
+    ? `<h2>Recommendations (${recs.length})</h2>
+       <p class="muted">Deterministic + rule-based · derived from existing outputs · 0 AI invocations (ADR-001) · prioritized (fix-one-clear-many first).</p>
+       ${recCards}`
+    : '';
+  // Visual Testing Intelligence section (M3) — from the structured VisualComparison.
+  const vc = st.visual as VisualComparison | undefined;
+  const vh = vc && vc.compared ? computeVisualHealth(vc) : undefined;
+  const sevCls = (sev: string) => (sev === 'critical' || sev === 'major' ? 'fail' : sev === 'minor' ? 'note' : 'no');
+  const vhCls = vh ? (vh.level === 'high' ? 'pass' : vh.level === 'medium' ? 'note' : 'fail') : 'no';
+  const sevRow = vh ? Object.entries(vh.findingsBySeverity).filter(([, n]) => n > 0).map(([k, n]) => `${k}: ${n}`).join(' · ') : '';
+  const catRow = vh ? Object.entries(vh.findingsByCategory).map(([k, n]) => `${k}: ${n}`).join(' · ') : '';
+  // M3.5 — design-system tag: component and/or token chip on a finding.
+  const dsTag = (f: { component?: string; token?: { kind: string; name?: string } }) => {
+    const parts: string[] = [];
+    if (f.component) parts.push(`<span class="dschip comp">${esc(f.component)}</span>`);
+    if (f.token) parts.push(`<span class="dschip tok">${esc(f.token.kind)}${f.token.name ? ` · ${esc(f.token.name)}` : ''} token</span>`);
+    return parts.length ? `<div class="cites">${parts.join('')}</div>` : '';
+  };
+  const findingCards = vc
+    ? vc.screens.flatMap((scr) => (scr.findings ?? []).map((f) =>
+        `<div class="vfind"><div><span class="badge ${sevCls(f.severity)}">${esc(f.severity)}</span> ` +
+        `<b>${esc(f.category)}/${esc(f.dimension)}</b> — ${esc(f.screen || scr.screen)} ` +
+        `<span class="muted">(${esc(f.confidence)} confidence)</span></div>` +
+        dsTag(f) +
+        `<div>${esc(f.differenceDescription || '')}</div>` +
+        `<div class="muted"><b>Expected:</b> ${esc(f.expected)} &nbsp;·&nbsp; <b>Actual:</b> ${esc(f.actual)}</div>` +
+        (f.recommendation ? `<div class="muted"><b>Fix:</b> ${esc(f.recommendation)}</div>` : '') +
+        chips(f.sources) + '</div>')).join('')
+    : '';
+  // M3.5 — Recurring Patterns: one root cause explaining many findings.
+  const patterns = vc?.patterns ?? [];
+  const patternCards = patterns.length
+    ? `<h3 class="vsub">Recurring patterns (${patterns.length})</h3>` +
+      patterns.map((p) =>
+        `<div class="vfind"><div><span class="badge ${sevCls(p.severity)}">${esc(p.severity)}</span> ` +
+        `<b>${esc(p.title)}</b> <span class="muted">(${p.occurrences}×)</span></div>` +
+        dsTag(p) +
+        `<div>${esc(p.rootCause)}</div>` +
+        (p.recommendation ? `<div class="muted"><b>Root-cause fix:</b> ${esc(p.recommendation)}</div>` : '') +
+        (p.screens.length ? `<div class="muted"><b>Screens:</b> ${esc(p.screens.join(', '))}</div>` : '') +
+        '</div>').join('')
+    : '';
+  const compAffected = vh?.componentsAffected?.length
+    ? `<p class="muted"><b>Components affected:</b> ${vh.componentsAffected.map((c) => `<span class="dschip comp">${esc(c)}</span>`).join(' ')}</p>`
+    : '';
+  const visualIntel = vh
+    ? `<h2>Visual Testing Intelligence</h2>
+       <div class="grid">
+        <div class="card"><div class="n">${vc!.expectedFrames}</div>Figma frames</div>
+        <div class="card"><div class="n">${vh.screensValidated}</div>Screens validated</div>
+        <div class="card"><div class="n good">${vh.screensPassed}</div>Passed</div>
+        <div class="card"><div class="n bad">${vh.screensFailed}</div>Failed</div>
+        <div class="card"><div class="n">${vh.passRate}%</div>Visual pass rate</div>
+        <div class="card"><div class="n">${vh.coverage}%</div>Category coverage</div>
+       </div>
+       <p><span class="badge ${vhCls}">VISUAL HEALTH ${vh.visualHealth} · ${esc(vh.level.toUpperCase())}</span>${sevRow ? ` &nbsp; Findings — ${esc(sevRow)}` : ''}</p>
+       ${catRow ? `<p class="muted">By category — ${esc(catRow)}</p>` : ''}
+       ${compAffected}
+       ${patternCards}
+       ${patterns.length ? '<h3 class="vsub">All findings</h3>' : ''}
+       ${findingCards || '<p class="muted">No visual findings — screens matched the design.</p>'}`
+    : vc && !vc.compared
+      ? `<h2>Visual Testing Intelligence</h2><p class="muted">${esc(vc.notes || 'Visual comparison not performed.')}</p>`
+      : '';
+  // ── Activity Timeline section (M6 → embedded in the report, M7) ──
+  const fmtDur = (msv?: number | null) => {
+    if (msv == null) return '';
+    const sec = Math.round(msv / 1000);
+    if (sec < 60) return `${sec}s`;
+    const m = Math.floor(sec / 60);
+    return m < 60 ? `${m}m ${sec % 60}s` : `${Math.floor(m / 60)}h ${m % 60}m`;
+  };
+  const fmtT = (ts?: string | null) => (ts && !Number.isNaN(new Date(ts).getTime()) ? new Date(ts).toISOString().slice(11, 19) : '—');
+  const tl = st.timeline as
+    | { events: Array<{ ts: string | null; label: string; durationMs?: number | null }>; nodeCount: number; completedCount: number; failedCount: number; gateCount: number; totalDurationMs: number | null }
+    | undefined;
+  const timelineBlock = tl && tl.events?.length
+    ? `<h2 id="timeline">Activity Timeline</h2>
+       <p class="muted">${tl.completedCount}/${tl.nodeCount} steps${tl.failedCount ? ` · ${tl.failedCount} failed` : ''}${tl.gateCount ? ` · ${tl.gateCount} gate(s)` : ''}${tl.totalDurationMs != null ? ` · ${fmtDur(tl.totalDurationMs)}` : ''} · deterministic, 0 AI.</p>
+       <table><tr><th>Time</th><th>Event</th><th>Duration</th></tr>${tl.events
+         .map((e) => `<tr><td class="mono">${esc(fmtT(e.ts))}</td><td>${esc(e.label)}</td><td class="mono">${e.durationMs != null ? esc(fmtDur(e.durationMs)) : ''}</td></tr>`)
+         .join('')}</table>`
+    : '';
+
+  // ── Remaining sections as blocks (so the report is section-addressable) ──
+  const objectiveBlock = st.requirements?.businessObjective
+    ? `<h2 id="objective">Business objective</h2><p>${esc(st.requirements.businessObjective)}</p>${chips(st.requirements?.sources)}`
+    : '';
+  const impactBlock = st.impact
+    ? `<h2 id="impact">Impact analysis</h2><b>Impacted areas</b>${list(st.impact?.impactedAreas)}<b>Regression areas</b>${list(st.impact?.regressionAreas)}<b>Smoke coverage</b>${list(st.impact?.smokeCoverage)}`
+    : '';
+  const testcasesBlock = `<h2 id="testcases">Test cases &amp; results (${cases.length})</h2>
+<table><tr><th>#</th><th>Title</th><th>Type</th><th>Priority</th><th>Steps</th><th>Status</th><th>Evidence</th><th>Actual</th></tr>${caseRows}</table>`;
+  const defectsBlock = `<h2 id="defects">Defects (${defects.length})</h2>
+<table><tr><th>#</th><th>Title</th><th>Severity</th><th>Priority</th><th>Test case</th><th>Expected</th><th>Actual</th></tr>${defectRows}</table>`;
+  const exploratoryBlock = st.exploratory?.riskAreas?.length
+    ? `<h2 id="exploratory">Exploratory risk areas</h2>${list(st.exploratory?.riskAreas)}`
+    : '';
+  const coverageBlock = `<h2 id="coverage">Coverage matrix (platform · language)</h2>${matrix}`;
+
+  // ── Knowledge Lint section (M8) — governance check on knowledge proposals ──
+  const kl = st.knowledgeLint as
+    | { proposals: Array<{ docPath: string; summary: string; verdict: string; issues: Array<{ kind: string; severity: string; message: string }> }>;
+        summary: { total: number; ok: number; review: number; reject: number; duplicates: number; conflicts: number; placementIssues: number } }
+    | undefined;
+  const klCls = (v: string) => (v === 'ok' ? 'pass' : v === 'reject' ? 'fail' : 'note');
+  const knowledgeLintBlock = kl && kl.proposals.length
+    ? `<h2 id="knowledge-lint">Knowledge Lint</h2>
+       <p class="muted">${kl.summary.ok} ok · ${kl.summary.review} review · ${kl.summary.reject} reject${kl.summary.duplicates ? ` · ${kl.summary.duplicates} duplicate(s)` : ''}${kl.summary.conflicts ? ` · ${kl.summary.conflicts} conflict(s)` : ''} · deterministic governance check (§6), 0 AI.</p>
+       ${kl.proposals.map((p) =>
+         `<div class="vfind"><div><span class="badge ${klCls(p.verdict)}">${esc(p.verdict)}</span> <b>${esc(p.docPath)}</b></div>` +
+         `<div>${esc(p.summary)}</div>` +
+         (p.issues.length ? `<ul class="klissues">${p.issues.map((x) => `<li><span class="dschip ${x.severity === 'error' ? 'tok' : 'comp'}">${esc(x.kind)}</span> ${esc(x.message)}</li>`).join('')}</ul>` : '<div class="muted">No governance issues.</div>') +
+         '</div>').join('')}`
+    : '';
+
+  // ── Executive summary band — the Phase-2 intelligence at a glance ──
+  const bandItem = (label: string, cls: string, text: string) =>
+    `<div class="kpiband"><div class="kl">${esc(label)}</div><div><span class="badge ${cls}">${esc(text)}</span></div></div>`;
+  const execItems: string[] = [];
+  if (health) execItems.push(bandItem('Story Health', healthCls, `${health.score} · ${health.level.toUpperCase()}`));
+  if (review) execItems.push(bandItem('Review Confidence', reviewCls, `${review.score} · ${review.level.toUpperCase()}`));
+  if (parity) execItems.push(bandItem('Platform Parity', parityCls, `${parity.score} · ${parity.certification.toUpperCase()}`));
+  if (vh) execItems.push(bandItem('Visual Health', vhCls, `${vh.visualHealth} · ${vh.level.toUpperCase()}`));
+  if (recs.length) execItems.push(bandItem('Recommendations', 'note', `${recs.length} action(s)`));
+  const execSummary = execItems.length ? `<div class="band">${execItems.join('')}</div>` : '';
+
+  // ── Assemble present sections + a navigable table of contents ──
+  const sectionDefs: Array<[string, string, string]> = [
+    ['story-health', 'Story Health', storyHealthBlock],
+    ['recommendations', 'Recommendations', recommendationsBlock],
+    ['coverage', 'Coverage', coverageBlock],
+    ['parity', 'Platform Parity', parityBlock],
+    ['review', 'Review Confidence', reviewBlock],
+    ['visual', 'Visual Testing', `${visualIntel}${visualSection}`],
+    ['timeline', 'Activity Timeline', timelineBlock],
+    ['objective', 'Business objective', objectiveBlock],
+    ['impact', 'Impact analysis', impactBlock],
+    ['testcases', 'Test cases', testcasesBlock],
+    ['defects', 'Defects', defectsBlock],
+    ['exploratory', 'Exploratory', exploratoryBlock],
+    ['knowledge-lint', 'Knowledge Lint', knowledgeLintBlock],
+  ];
+  const present = sectionDefs.filter(([, , html]) => html && html.trim());
+  const toc = `<nav class="toc"><span class="tl">On this page</span>${present.map(([id, title]) => `<a href="#${id}">${esc(title)}</a>`).join('')}</nav>`;
+  const bodySections = present.map(([id, , html]) => `<section id="${id}" class="sec">${html}</section>`).join('\n');
+
+  const rv = ctx.run as { workflowVersion?: string; promptVersion?: string; platformVersion?: string };
+  const versionFooter =
+    rv.workflowVersion || rv.promptVersion || rv.platformVersion
+      ? `<p class="muted">Workflow ${esc(rv.workflowVersion ?? '—')} · Prompts ${esc(rv.promptVersion ?? '—')} · Platform ${esc(rv.platformVersion ?? '—')}</p>`
+      : '';
+
   return `<!doctype html><html><head><meta charset="utf-8"><title>QA Report ${esc(s.jiraKey)}</title>
 <style>body{font-family:Segoe UI,system-ui,sans-serif;color:#3D4A5C;max-width:1000px;margin:24px auto;padding:0 16px}
 h1{color:#0F1B2D}h2{color:#0E6E8C;border-bottom:1px solid #E2E8F0;padding-bottom:4px;margin-top:28px}
@@ -1693,10 +2185,31 @@ table{border-collapse:collapse;width:100%;margin:8px 0}td,th{border-bottom:1px s
 .vpane{border:1px solid #EEF2F6;border-radius:8px;padding:8px;background:#FAFBFC}
 .vlabel{font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:#6B7787;margin-bottom:6px}
 .vpane img{width:100%;height:auto;border-radius:4px;border:1px solid #E2E8F0}
+.vfind{border:1px solid #E2E8F0;border-left:3px solid #CBD5E1;border-radius:8px;padding:10px 12px;margin:8px 0;font-size:.85rem;display:flex;flex-direction:column;gap:3px}
+.vsub{color:#0F1B2D;font-size:.95rem;margin:18px 0 4px}
+.dschip{font-size:.68rem;padding:1px 7px;border-radius:6px;border:1px solid;font-weight:600}
+.dschip.comp{background:#E7F1FF;color:#0B4FA0;border-color:#BcD6F5}
+.dschip.tok{background:#F3ECFF;color:#5B2A9E;border-color:#DDCBF7}
+.cites{margin-top:4px;display:flex;flex-wrap:wrap;gap:4px}
+.cite{font-size:.68rem;padding:1px 6px;border-radius:999px;background:#EEF2F6;color:#334155;border:1px solid #D6DEE8;text-decoration:none}
+a.cite:hover{background:#DDE6F0}
 .vnone{color:#856404;background:#fff3cd;border:1px dashed #ffeeba;border-radius:4px;padding:18px;text-align:center;font-size:.82rem}
-.vdiff{margin-top:8px;font-size:.85rem;color:#3D4A5C}</style></head>
+.vdiff{margin-top:8px;font-size:.85rem;color:#3D4A5C}
+.mono{font-family:ui-monospace,Consolas,monospace;font-size:.8rem;color:#4A5568;white-space:nowrap}
+.band{display:flex;flex-wrap:wrap;gap:10px;margin:14px 0}
+.kpiband{border:1px solid #E2E8F0;border-radius:10px;padding:10px 14px;min-width:150px;background:#FAFBFC}
+.kpiband .kl{font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:#6B7787;margin-bottom:6px}
+.kpiband .badge{font-size:.82rem;padding:3px 10px}
+.toc{position:sticky;top:0;background:#fff;border:1px solid #E2E8F0;border-radius:10px;padding:10px 12px;margin:16px 0;display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;z-index:5}
+.toc .tl{font-weight:600;color:#0F1B2D;font-size:.82rem;margin-right:4px}
+.toc a{font-size:.8rem;color:#0E6E8C;text-decoration:none;padding:2px 8px;border-radius:999px;background:#EEF6F9}
+.toc a:hover{background:#DDEDF2}
+.sec{scroll-margin-top:64px}
+.klissues{margin:4px 0 0;padding-left:18px;font-size:.82rem}.klissues li{margin:2px 0}
+@media print{.toc{position:static}}</style></head>
 <body><h1>QA Report — ${esc(s.jiraKey)}</h1>
 <p class="muted">${esc(s.title)} · ${esc(s.platform)} · ${esc(s.environment ?? 'testing')} · ${executed ? esc((exec.matrix ?? []).join(', ')) : 'execution pending'}</p>
+${execSummary}
 <div class="grid">
 <div class="card"><div class="n">${cases.length}</div>Test cases</div>
 <div class="card"><div class="n">${st.hls?.scenarios?.length ?? 0}</div>HLS scenarios</div>
@@ -1705,16 +2218,10 @@ table{border-collapse:collapse;width:100%;margin:8px 0}td,th{border-bottom:1px s
 <div class="card"><div class="n">${sum.blocked ?? 0}</div>Blocked</div>
 <div class="card"><div class="n bad">${defects.length}</div>Defects</div>
 </div>
-<h2>Coverage matrix (platform · language)</h2>${matrix}
+${toc}
 ${executed ? '' : '<p class="muted">Execution has not produced results for this run yet.</p>'}
-${visualSection}
-<h2>Business objective</h2><p>${esc(st.requirements?.businessObjective)}</p>
-<h2>Impact analysis</h2><b>Impacted areas</b>${list(st.impact?.impactedAreas)}<b>Regression areas</b>${list(st.impact?.regressionAreas)}<b>Smoke coverage</b>${list(st.impact?.smokeCoverage)}
-<h2>Test cases &amp; results (${cases.length})</h2>
-<table><tr><th>#</th><th>Title</th><th>Type</th><th>Priority</th><th>Steps</th><th>Status</th><th>Evidence</th><th>Actual</th></tr>${caseRows}</table>
-<h2>Defects (${defects.length})</h2>
-<table><tr><th>#</th><th>Title</th><th>Severity</th><th>Priority</th><th>Test case</th><th>Expected</th><th>Actual</th></tr>${defectRows}</table>
-<h2>Exploratory risk areas</h2>${list(st.exploratory?.riskAreas)}
+${bodySections}
+${versionFooter}
 <p class="muted">Generated by the Breadfast QA Platform · badges per release-validation.md §2.</p></body></html>`;
 }
 

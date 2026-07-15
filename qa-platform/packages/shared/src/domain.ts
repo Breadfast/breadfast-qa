@@ -242,3 +242,199 @@ export const GATE_SOURCE: Partial<Record<LifecycleNode, LifecycleNode>> = {
   review_automation: 'automation_generation',
   review_report: 'html_report',
 };
+
+// ── Workflow Registry & Versioning (Phase 1 #3) ───────────────────────────
+/** Bump when the lifecycle graph (nodes, order, types, or gates) changes. */
+export const LIFECYCLE_VERSION = '1.0.0';
+/** Platform app/run-shape version — bump on a breaking change to run structure. */
+export const PLATFORM_VERSION = '0.1.0';
+
+/**
+ * Declarative per-node requirements used to build the Workflow Definition
+ * manifest (see workflow.ts). Approvals are derived from node.type==='gate', so
+ * only credential + integration requirements are encoded here. This DESCRIBES
+ * the workflow; it does not drive execution (execution still follows
+ * LIFECYCLE_GRAPH). Dynamic/registry-driven execution is intentionally deferred.
+ */
+export interface NodeRequirements {
+  credentials?: string[]; // Settings keys / credential categories a node needs
+  integrations?: string[]; // jira | figma | browserstack | playwright | slack
+}
+export const NODE_REQUIREMENTS: Partial<Record<LifecycleNode, NodeRequirements>> = {
+  fetch_jira: { integrations: ['jira'] },
+  figma_analysis: { integrations: ['figma'] },
+  gate_push_hls: { integrations: ['jira'] },
+  gate_upload_browserstack: {
+    credentials: ['browserstack.username', 'browserstack.accessKey'],
+    integrations: ['browserstack'],
+  },
+  exploratory_testing: { integrations: ['playwright'] },
+  execution: { integrations: ['playwright', 'browserstack'] },
+  gate_file_bugs: { integrations: ['jira'] },
+};
+
+/**
+ * Tester-facing grouping of the lifecycle graph into selectable PHASES. The New
+ * Story wizard renders one checkbox per phase; each maps to its underlying
+ * node(s) + the review gate that belongs to it. `mandatory` phases always run
+ * (setup/retrieval) and are not shown as unchecking options.
+ *
+ * `requires` lists other phase keys this phase depends on: unchecking a
+ * dependency cascades to uncheck its dependents (a phase can't run without the
+ * data an earlier phase produces — e.g. Execution needs Test cases).
+ */
+export interface LifecyclePhase {
+  key: string;
+  label: string;
+  description: string;
+  nodes: LifecycleNode[];
+  mandatory?: boolean;
+  requires?: string[];
+}
+
+export const LIFECYCLE_PHASES: LifecyclePhase[] = [
+  {
+    key: 'setup',
+    label: 'Setup & story retrieval',
+    description: 'Create the workspace, fetch the Jira story, compile execution instructions.',
+    nodes: ['create_workspace', 'fetch_jira', 'parse_instructions'],
+    mandatory: true,
+  },
+  {
+    key: 'requirements',
+    label: 'Requirements & impact analysis',
+    description: 'Requirements, AC, comments, linked stories, prerequisites, clarification, impact.',
+    nodes: [
+      'requirements_analysis', 'acceptance_criteria', 'comments_analysis', 'linked_stories',
+      'detect_prerequisites', 'clarification', 'impact_analysis', 'review_requirements',
+    ],
+  },
+  {
+    key: 'figma',
+    label: 'Figma analysis',
+    description: 'Fetch and analyze the design frames (design vs. requirements).',
+    nodes: ['figma_analysis'],
+  },
+  {
+    key: 'hls',
+    label: 'High-level scenarios (HLS)',
+    description: 'Generate HLS and push them to the Jira checklist.',
+    nodes: ['generate_hls', 'gate_push_hls'],
+  },
+  {
+    key: 'testcases',
+    label: 'Test cases',
+    description: 'Generate the detailed BrowserStack test cases.',
+    nodes: ['generate_testcases', 'review_testcases'],
+  },
+  {
+    key: 'browserstack',
+    label: 'BrowserStack upload',
+    description: 'Build the CSV and upload the cases to BrowserStack.',
+    nodes: ['generate_csv', 'gate_upload_browserstack'],
+    requires: ['testcases'],
+  },
+  {
+    key: 'exploratory',
+    label: 'Exploratory testing',
+    description: 'Exploratory charters and notes.',
+    nodes: ['exploratory_testing', 'review_exploratory'],
+  },
+  {
+    key: 'automation',
+    label: 'Automation generation',
+    description: 'Generate the story-specific automation specs (reuse-before-build).',
+    nodes: ['automation_generation', 'review_automation'],
+    requires: ['testcases'],
+  },
+  {
+    key: 'execution',
+    label: 'Execution',
+    description: 'Execute the test cases against the live app / device.',
+    nodes: ['execution'],
+    requires: ['testcases'],
+  },
+  {
+    key: 'report',
+    label: 'HTML report',
+    description: 'Generate the HTML execution report.',
+    nodes: ['html_report', 'review_report'],
+  },
+  {
+    key: 'defects',
+    label: 'File defects',
+    description: 'File the defects found during execution to Jira.',
+    nodes: ['gate_file_bugs'],
+    requires: ['execution'],
+  },
+  {
+    key: 'knowledge',
+    label: 'Knowledge base update',
+    description: 'Persist reusable knowledge learned from this story.',
+    nodes: ['knowledge_update'],
+  },
+];
+
+/** Phase keys enabled by default (everything). */
+export const DEFAULT_PHASE_KEYS = LIFECYCLE_PHASES.map((p) => p.key);
+
+/**
+ * Expand a set of selected phase keys into the concrete lifecycle nodes to run.
+ * Mandatory phases are always included. Unknown keys are ignored. Returns the
+ * nodes in canonical LIFECYCLE_NODES order.
+ */
+export function phasesToNodes(selectedPhaseKeys: string[]): LifecycleNode[] {
+  const selected = new Set(selectedPhaseKeys);
+  const enabled = new Set<LifecycleNode>();
+  for (const phase of LIFECYCLE_PHASES) {
+    if (phase.mandatory || selected.has(phase.key)) {
+      for (const n of phase.nodes) enabled.add(n);
+    }
+  }
+  return LIFECYCLE_NODES.filter((n) => enabled.has(n));
+}
+
+/**
+ * Cascade dependency rules over a selection: if a phase's required dependency is
+ * off, the phase is forced off too. Iterates to a fixpoint so chains resolve
+ * (e.g. testcases off → execution off → defects off). Returns the cleaned set.
+ */
+export function resolvePhaseSelection(selectedPhaseKeys: string[]): string[] {
+  const selected = new Set(selectedPhaseKeys.filter((k) => !LIFECYCLE_PHASES.find((p) => p.key === k)?.mandatory));
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const phase of LIFECYCLE_PHASES) {
+      if (!selected.has(phase.key) || !phase.requires) continue;
+      if (phase.requires.some((dep) => !selected.has(dep))) {
+        selected.delete(phase.key);
+        changed = true;
+      }
+    }
+  }
+  return LIFECYCLE_PHASES.filter((p) => !p.mandatory && selected.has(p.key)).map((p) => p.key);
+}
+
+/**
+ * Selectable models for the execution step. Value = model id passed to the
+ * Claude CLI; the empty string means "use the platform default".
+ */
+export const EXECUTION_MODELS = [
+  { value: '', label: 'Platform default (Sonnet 5)' },
+  { value: 'claude-opus-4-8', label: 'Opus 4.8 — most capable' },
+  { value: 'claude-sonnet-5', label: 'Sonnet 5 — balanced' },
+  { value: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5 — fast & cheap' },
+] as const;
+export const EXECUTION_MODEL_IDS = EXECUTION_MODELS.map((m) => m.value).filter(Boolean) as string[];
+
+/**
+ * Full Claude model catalog for the Settings dropdowns (primary + fast model).
+ * Ordered most→least capable. The Settings picker also injects whatever value is
+ * currently saved if it isn't in this list, so custom/older model ids never break.
+ */
+export const CLAUDE_MODELS = [
+  { value: 'claude-opus-4-8', label: 'Opus 4.8 — most capable' },
+  { value: 'claude-sonnet-5', label: 'Sonnet 5 — balanced' },
+  { value: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5 — fast & cheap' },
+  { value: 'claude-fable-5', label: 'Fable 5' },
+] as const;

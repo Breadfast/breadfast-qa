@@ -40,6 +40,20 @@ export class RunsController {
     return this.runs.getRun(id);
   }
 
+  /** AI Explainability (M2): per-artifact explanations + Review Confidence. */
+  @Get('runs/:id/explain')
+  @UseGuards(AuthenticatedGuard)
+  explain(@Param('id') id: string) {
+    return this.runs.explain(id);
+  }
+
+  /** Activity Timeline (M6): deterministic milestone timeline from persisted steps. */
+  @Get('runs/:id/timeline')
+  @UseGuards(AuthenticatedGuard)
+  timeline(@Param('id') id: string) {
+    return this.runs.timeline(id);
+  }
+
   /** Live timeline. SSE stream of RunEvents for one run. */
   @Sse('runs/:id/events')
   events(@Param('id') id: string): Observable<MessageEvent> {
@@ -120,5 +134,12 @@ export class RunsController {
   @HttpCode(200)
   ingest(@Body() event: RunEvent) {
     return this.runs.ingest(event);
+  }
+
+  /** LLM Request Log capture from the worker's ai() seam (#7). Unguarded — local worker. */
+  @Post('runs/:id/llm-log')
+  @HttpCode(200)
+  llmLog(@Param('id') id: string, @Body() rec: Record<string, unknown>) {
+    return this.runs.logLlmRequest(id, rec);
   }
 }

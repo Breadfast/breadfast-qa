@@ -80,6 +80,8 @@ model Story {
   testDataFile  String? // optional path to a test-data file
   executionInstructions String? // free-text AI guidance honored across the run (parse_instructions → directives)
   additionalInputs      String? // free-text extra data/credentials that don't fit a predefined field
+  enabledNodes  Json? // string[] of lifecycle node names to run (from selected phases); null = run all
+  executionModel String? // model id for the execution step (e.g. claude-opus-4-8); null = platform default
   workspacePath String? // D:\BreadfastQA\<JIRA_KEY>
   jiraHlsUrl    String?
   ownerId       String
@@ -111,7 +113,35 @@ model Run {
   finishedAt    DateTime?
   createdAt     DateTime  @default(now())
 
-  steps RunStep[]
+  // Workflow Registry & Versioning (Phase 1 #3) — stamped at createRun for
+  // reproducibility. All nullable so pre-existing runs are unaffected.
+  workflowVersion  String?
+  promptVersion    String?
+  platformVersion  String?
+  knowledgeVersion String?
+  frameworkVersion String?
+  workflowDefJson  Json? // snapshot of the WorkflowDefinition the run executed under
+
+  // Parity Certification (Phase 1 #5) — deterministic run-evaluation snapshot
+  // (score + missing dimensions + certification status). Written on completion.
+  parityJson Json?
+
+  // Review Confidence (Phase 2 M2) — deterministic evidence-based confidence
+  // (score + per-signal breakdown + reductions). Written on completion.
+  reviewJson Json?
+
+  // Story Health (Phase 2 M4) — deterministic six-dimension roll-up (overall
+  // score + per-dimension breakdown + reductions), derived by reusing parity +
+  // review + visual health. No AI. Written on completion.
+  storyHealthJson Json?
+
+  // Recommendations (Phase 2 M5) — deterministic + rule-based prioritized
+  // recommendations, derived by reusing parity + review + health + visual
+  // patterns + defects + traceability. No AI (ADR-001). Written on completion.
+  recommendationsJson Json?
+
+  steps       RunStep[]
+  llmRequests LlmRequestLog[]
 }
 
 model RunStep {
@@ -275,6 +305,37 @@ model Framework {
   lastGenerationStory      String?
   createdAt                DateTime  @default(now())
   updatedAt                DateTime  @updatedAt
+}
+
+// ── LLM Request Log (Phase 1 #7) ─────────────────────────────────────────────
+// One row per AI call, captured at the worker's ai() seam and persisted via the
+// API. The durable record behind Story Replay + AI Explainability, and the
+// source of exact per-call token/cost. Prompts are redacted of secrets before
+// storage (local-first: values live only in the local DB).
+model LlmRequestLog {
+  id              String   @id @default(cuid())
+  runId           String?
+  run             Run?     @relation(fields: [runId], references: [id], onDelete: Cascade)
+  runStepId       String?
+  node            String // lifecycle node name
+  schemaName      String?
+  model           String?
+  promptVersion   String?
+  workflowVersion String?
+  systemPrompt    String? // redacted
+  userPrompt      String? // redacted
+  rawResponse     String?
+  validatedOutput Json?
+  status          String // ok | repaired | parse_failed | schema_failed | error
+  repaired        Boolean  @default(false)
+  repairStage     String?
+  tokens          Int      @default(0)
+  costUsd         Float    @default(0)
+  durationMs      Int      @default(0)
+  attempt         Int      @default(1)
+  createdAt       DateTime @default(now())
+
+  @@index([runId, createdAt])
 }
 
 // ── Audit ──────────────────────────────────────────────────────────────────

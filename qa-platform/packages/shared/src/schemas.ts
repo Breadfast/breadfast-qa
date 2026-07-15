@@ -17,6 +17,7 @@ import {
   FRAMEWORK_TYPES,
   FRAMEWORK_PLATFORMS,
   FRAMEWORK_VALIDATION_STATUSES,
+  EXECUTION_MODEL_IDS,
   platformNeeds,
   type Platform,
 } from './domain.js';
@@ -61,6 +62,12 @@ export const CreateStoryInput = z
     // both are threaded into every node's context.
     executionInstructions: z.string().optional(),
     additionalInputs: z.string().optional(),
+    // Steps & model — which lifecycle phases to run + which model drives execution.
+    // `phases` = selected phase keys (see LIFECYCLE_PHASES); omitted/empty = run all.
+    // Mandatory phases always run regardless. `executionModel` = model id for the
+    // execution step; empty/omitted = platform default.
+    phases: z.array(z.string()).optional(),
+    executionModel: z.enum(EXECUTION_MODEL_IDS as [string, ...string[]]).optional(),
   })
   .superRefine((data, ctx) => {
     const needs = platformNeeds(data.platform as Platform);
@@ -97,6 +104,25 @@ export const TestDataUpsert = z.object({
 });
 export type TestDataUpsert = z.infer<typeof TestDataUpsert>;
 
+// ── Citation & Traceability (Phase 1 #4 — foundation) ─────────────────────
+// A single provenance link on an AI-generated artifact. Jira/BrowserStack/
+// Figma/KB-native (never an Azure DevOps concept). `ref` is the kind-specific
+// identifier: story key, AC id, comment id, figma frame name, KB doc anchor, or
+// test-case id. These fields are OPTIONAL everywhere they appear (default []),
+// so old runs and any model omission never break validation — the completion
+// work (resolver + rendering) lands in Phase 2.
+export const CITATION_KINDS = ['story', 'ac', 'comment', 'figma', 'rule', 'testcase', 'requirement'] as const;
+export type CitationKind = (typeof CITATION_KINDS)[number];
+export const Citation = z.object({
+  kind: z.enum(CITATION_KINDS),
+  ref: z.string(), // "B10-56336" | "AC-3" | "10457" | "checkout-empty" | "business-rules#cashback" | "TC-49835"
+  label: z.string().optional(),
+});
+export type Citation = z.infer<typeof Citation>;
+/** Reusable optional citation list — attach as `sources` on any result schema. */
+export const Citations = z.array(Citation).default([]);
+export type Citations = z.infer<typeof Citations>;
+
 // ── AI step result schemas (engine output contracts) ──────────────────────
 export const RequirementsAnalysis = z.object({
   businessObjective: z.string(),
@@ -107,6 +133,7 @@ export const RequirementsAnalysis = z.object({
   missingRequirements: z.array(z.string()).default([]),
   testabilityConcerns: z.array(z.string()).default([]),
   commentOverrides: z.array(z.string()).default([]),
+  sources: Citations, // Phase 1 #4 — optional provenance (AC/comment/rule/figma)
 });
 export type RequirementsAnalysis = z.infer<typeof RequirementsAnalysis>;
 
@@ -159,7 +186,7 @@ export type PrerequisiteCheck = z.infer<typeof PrerequisiteCheck>;
 export const Hls = z.object({
   storyName: z.string(),
   scenarios: z
-    .array(z.object({ index: z.number(), text: z.string() }))
+    .array(z.object({ index: z.number(), text: z.string(), sources: Citations }))
     .min(1),
 });
 export type Hls = z.infer<typeof Hls>;
@@ -177,6 +204,7 @@ export const TestCase = z.object({
   priority: z.enum(['Critical', 'High', 'Medium', 'Low']).default('Medium'),
   automationStatus: z.enum(['Not Automated', 'Automated', 'Automation Not Required']).default('Not Automated'),
   steps: z.array(TestCaseStep).min(1),
+  sources: Citations, // Phase 1 #4 — which AC/rule/requirement this case covers
 });
 export const TestCases = z.object({ cases: z.array(TestCase).min(1) });
 export type TestCases = z.infer<typeof TestCases>;
@@ -229,6 +257,130 @@ export const FigmaExportManifest = z.object({
 });
 export type FigmaExportManifest = z.infer<typeof FigmaExportManifest>;
 
+// ── Visual Comparison (Phase 1 #6 foundation → Phase 2 M3 intelligence) ────
+// Structured expected-Figma-frame ↔ actual-screenshot comparison against BOTH
+// the Acceptance Criteria (expected behavior) and the Figma design (expected
+// implementation). The AI vision comparator detects findings; the deterministic
+// layer in run-eval/visual.ts scores health, pass rate, coverage. Feeds Parity
+// Certification's "missing visual coverage".
+export const VISUAL_VERDICTS = ['pass', 'minor', 'major', 'no-frame'] as const;
+export type VisualVerdict = (typeof VISUAL_VERDICTS)[number];
+
+// The 11 top-level validation CATEGORIES (each a first-class, independently
+// validated area). The fine-grained checks within each live in visual.ts
+// (VISUAL_CHECKS) so the taxonomy is deterministic and injectable into the prompt.
+export const VISUAL_CATEGORIES = [
+  'layout', 'positioning', 'typography', 'content', 'color',
+  'components', 'dropdowns', 'states', 'navigation', 'responsive', 'accessibility',
+] as const;
+export type VisualCategory = (typeof VISUAL_CATEGORIES)[number];
+
+// Legacy dimension vocabulary (kept for back-compat; findings now use category +
+// a free-text `dimension` label drawn from VISUAL_CHECKS).
+export const VISUAL_DIMENSIONS = [
+  'typography', 'sentence-case', 'color', 'alignment', 'spacing',
+  'missing-component', 'unexpected-component', 'ordering',
+  'responsive', 'accessibility', 'content',
+] as const;
+export type VisualDimension = (typeof VISUAL_DIMENSIONS)[number];
+
+export const VISUAL_SEVERITIES = ['critical', 'major', 'minor', 'info'] as const;
+export type VisualSeverity = (typeof VISUAL_SEVERITIES)[number];
+export const VISUAL_FINDING_CONFIDENCE = ['high', 'medium', 'low'] as const;
+
+// ── Design-system awareness (M3.5) ─────────────────────────────────────────
+// A reusable-component vocabulary and a design-token taxonomy so findings can
+// reason about the design system ("Primary Button uses the wrong typography
+// token") instead of raw visual deltas ("font size mismatch"). Both are OPEN:
+// `component` is a free-text string (a suggested vocabulary, not an enum) and
+// the token `kind` is constrained, so a model may name a component we haven't
+// enumerated without breaking validation. This is the seam future Design-Token
+// validation / Component-Library comparison / Figma Variables feed into.
+export const UI_COMPONENTS = [
+  'Primary Button', 'Secondary Button', 'Tertiary Button', 'Icon Button',
+  'Dropdown', 'Text Field', 'Search Field', 'Checkbox', 'Radio', 'Toggle',
+  'Card', 'List Item', 'Chip', 'Badge', 'Avatar', 'Tab Bar', 'Segmented Control',
+  'Bottom Sheet', 'Modal', 'Dialog', 'Tooltip', 'Toast', 'Snackbar',
+  'Navigation Bar', 'App Bar', 'Tab', 'Stepper', 'Progress Bar', 'Skeleton',
+  'Empty State', 'Banner', 'Divider', 'Section Header', 'Card Header',
+] as const;
+
+export const DESIGN_TOKEN_KINDS = ['typography', 'color', 'spacing', 'layout', 'radius', 'shadow', 'component'] as const;
+export type DesignTokenKind = (typeof DESIGN_TOKEN_KINDS)[number];
+
+// A reference to the design token a finding implicates. `name` is the token id
+// when the model knows it (e.g. "color/primary", "type/button/label"); the
+// expected/actual values ground it. All optional — a finding may cite a token
+// kind without a resolved name yet (before Figma-Variable extraction lands).
+export const DesignTokenRef = z.object({
+  kind: z.enum(DESIGN_TOKEN_KINDS),
+  name: z.string().optional(),
+  expected: z.string().optional(),
+  actual: z.string().optional(),
+});
+export type DesignTokenRef = z.infer<typeof DesignTokenRef>;
+
+// A single visual finding — the full reviewer-grade record (M3 + M3.5 design-system).
+export const VisualFinding = z.object({
+  category: z.enum(VISUAL_CATEGORIES).default('content'),
+  dimension: z.string().default(''), // specific check, e.g. "sentence-case", "icon-label-spacing"
+  severity: z.enum(VISUAL_SEVERITIES).default('minor'),
+  screen: z.string().default(''),
+  component: z.string().optional(), // M3.5 — the reusable UI component this affects (e.g. "Primary Button")
+  token: DesignTokenRef.optional(), // M3.5 — the design token implicated (root cause)
+  expected: z.string().default(''), // what Figma / the AC specifies
+  actual: z.string().default(''), // what the app renders
+  differenceDescription: z.string().default(''), // the precise, self-explaining "why"
+  recommendation: z.string().default(''),
+  confidence: z.enum(VISUAL_FINDING_CONFIDENCE).default('medium'), // AI DETECTION certainty (not Review Confidence)
+  sources: Citations, // AC + Figma frame this finding references
+});
+export type VisualFinding = z.infer<typeof VisualFinding>;
+
+export const VisualScreenComparison = z.object({
+  screen: z.string(),
+  combo: z.string().default('web · en-US'), // per-platform frame is the reference
+  expectedFrame: z.string().optional(), // figma frame name/file (Expected evidence)
+  actualScreenshot: z.string().optional(), // captured screenshot path (Actual evidence)
+  verdict: z.enum(VISUAL_VERDICTS).default('no-frame'),
+  categoriesChecked: z.array(z.enum(VISUAL_CATEGORIES)).default([]), // which categories this screen was validated against
+  findings: z.array(VisualFinding).default([]),
+});
+export type VisualScreenComparison = z.infer<typeof VisualScreenComparison>;
+
+// A recurring issue detected across screens/components (M3.5 pattern detection).
+// One root cause that explains many findings — so reviewers fix the shared
+// Button / typography token once instead of chasing N duplicate findings.
+// Derived DETERMINISTICALLY from the findings (detectVisualPatterns in visual.ts),
+// never model-authored — same findings ⇒ same patterns.
+export const VisualPattern = z.object({
+  key: z.string(), // stable grouping key (dimension + component/token)
+  title: z.string(), // "Sentence case affecting 8 screens"
+  category: z.enum(VISUAL_CATEGORIES),
+  dimension: z.string().default(''),
+  component: z.string().optional(),
+  token: DesignTokenRef.optional(),
+  severity: z.enum(VISUAL_SEVERITIES).default('minor'), // highest severity among the grouped findings
+  occurrences: z.number().int().positive(),
+  screens: z.array(z.string()).default([]),
+  rootCause: z.string().default(''),
+  recommendation: z.string().default(''), // actionable, root-cause-level fix
+});
+export type VisualPattern = z.infer<typeof VisualPattern>;
+
+export const VisualComparison = z.object({
+  compared: z.boolean().default(false),
+  expectedFrames: z.number().int().nonnegative().default(0),
+  comparedScreens: z.number().int().nonnegative().default(0),
+  passRate: z.number().min(0).max(100).default(0),
+  categoriesCovered: z.array(z.enum(VISUAL_CATEGORIES)).default([]),
+  screens: z.array(VisualScreenComparison).default([]),
+  patterns: z.array(VisualPattern).default([]), // M3.5 — recurring root causes across screens
+  componentsAffected: z.array(z.string()).default([]), // M3.5 — reusable components with ≥1 finding
+  notes: z.string().default(''),
+});
+export type VisualComparison = z.infer<typeof VisualComparison>;
+
 export const ExploratoryNotes = z.object({
   charters: z.array(z.object({ area: z.string(), idea: z.string() })).default([]),
   riskAreas: z.array(z.string()).default([]),
@@ -280,6 +432,7 @@ export const Defect = z.object({
   expected: z.string().default(''),
   actual: z.string().default(''),
   evidence: z.array(z.string()).default([]),
+  sources: Citations, // Phase 1 #4 — the AC/design/rule this defect violates
 });
 export type Defect = z.infer<typeof Defect>;
 

@@ -14,7 +14,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "tsc -p tsconfig.json --watch",
-    "smoke": "node smoke.mjs"
+    "smoke": "node smoke.mjs",
+    "test": "npm run build && node --test \"*.test.mjs\""
   },
   "dependencies": {
     "@qa/shared": "*",

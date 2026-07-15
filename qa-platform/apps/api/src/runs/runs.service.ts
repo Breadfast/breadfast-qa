@@ -1,6 +1,22 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { prisma } from '@qa/db';
-import { GATE_SOURCE, LIFECYCLE_GRAPH, SETTING_GROUPS, type LifecycleNode, type RunEvent } from '@qa/shared';
+import {
+  GATE_SOURCE,
+  LIFECYCLE_GRAPH,
+  SETTING_GROUPS,
+  buildWorkflowDefinition,
+  resolveRunVersions,
+  buildActivityTimeline,
+  explainArtifact,
+  explainVisualFinding,
+  getPrompt,
+  type ArtifactExplanation,
+  type CitationContext,
+  type Citation,
+  type ExplainVersions,
+  type LifecycleNode,
+  type RunEvent,
+} from '@qa/shared';
 import { EventsBus } from './events.bus.js';
 
 @Injectable()
@@ -12,17 +28,37 @@ export class RunsService {
     const story = await prisma.story.findUnique({ where: { id: storyId } });
     if (!story) throw new NotFoundException(`Story ${storyId} not found`);
 
+    // The tester's phase selection resolves to a node allowlist on the story.
+    // Nodes NOT in the list are seeded as 'skipped' (a terminal status the runner
+    // steps right over), so the run only executes the chosen phases. null/empty =
+    // run everything (backward compatible with stories created before this field).
+    const enabled = Array.isArray(story.enabledNodes) ? new Set(story.enabledNodes as string[]) : null;
+
+    // Workflow Registry & Versioning (#3): stamp the run with the workflow +
+    // prompt + platform versions and a snapshot of the workflow definition it
+    // runs under, for reproducibility. knowledge/framework versions are left null
+    // as placeholders (filled by a later increment). All columns are nullable.
+    const enabledNodes = Array.isArray(story.enabledNodes) ? (story.enabledNodes as string[]) : null;
+    const versions = resolveRunVersions();
+    const workflowDef = buildWorkflowDefinition(enabledNodes);
+
     const run = await prisma.run.create({
       data: {
         storyId,
         triggeredById,
         status: 'queued',
+        workflowVersion: versions.workflowVersion,
+        promptVersion: versions.promptVersion,
+        platformVersion: versions.platformVersion,
+        knowledgeVersion: versions.knowledgeVersion,
+        frameworkVersion: versions.frameworkVersion,
+        workflowDefJson: workflowDef as unknown as object,
         steps: {
           create: LIFECYCLE_GRAPH.map((node, i) => ({
             name: node.name,
             type: node.type,
             ordinal: i,
-            status: 'pending',
+            status: enabled && !enabled.has(node.name) ? 'skipped' : 'pending',
           })),
         },
       },
@@ -43,6 +79,136 @@ export class RunsService {
         story: true,
       },
     });
+  }
+
+  /**
+   * Activity Timeline (M6) — deterministic milestone timeline built from the
+   * PERSISTED RunStep timing + Approval/Clarification rows. No AI (ADR-001).
+   */
+  async timeline(id: string) {
+    const run = await prisma.run.findUnique({
+      where: { id },
+      include: { steps: { orderBy: { ordinal: 'asc' }, include: { approval: true, clarification: true } } },
+    });
+    if (!run) throw new NotFoundException(`run ${id} not found`);
+    return buildActivityTimeline({
+      run: { createdAt: run.createdAt, startedAt: run.startedAt, finishedAt: run.finishedAt, status: run.status },
+      steps: run.steps.map((s) => ({
+        name: s.name, type: s.type, status: s.status, ordinal: s.ordinal,
+        startedAt: s.startedAt, finishedAt: s.finishedAt, tokens: s.tokens, costUsd: s.costUsd,
+        approval: s.approval
+          ? { action: s.approval.action, decision: s.approval.decision, createdAt: s.approval.createdAt, decidedAt: s.approval.decidedAt }
+          : null,
+        clarification: s.clarification
+          ? { createdAt: s.clarification.createdAt, answeredAt: s.clarification.answeredAt }
+          : null,
+      })),
+    });
+  }
+
+  /**
+   * AI Explainability (M2). Assembles a structured explanation for every
+   * supported artifact from PERSISTED run data — the reusable seam that also
+   * serves Story Replay + QA Analytics (no new AI call). Prompt version per
+   * artifact comes from the LLM Request Log (what actually ran); workflow/
+   * knowledge/framework/platform from the Run's version stamps.
+   */
+  async explain(runId: string) {
+    const run = await prisma.run.findUnique({ where: { id: runId }, include: { steps: true, story: true } });
+    if (!run) throw new NotFoundException(`Run ${runId} not found`);
+    const out = (name: string) => run.steps.find((s) => s.name === name)?.outputJson as Record<string, any> | undefined;
+
+    const logs = await prisma.llmRequestLog.findMany({ where: { runId }, orderBy: { createdAt: 'asc' } });
+    const promptVerByNode = new Map<string, string | null>();
+    for (const l of logs) if (!promptVerByNode.has(l.node)) promptVerByNode.set(l.node, l.promptVersion);
+
+    const jiraBase = await prisma.setting.findUnique({ where: { key: 'jira.baseUrl' } });
+    const ac = out('acceptance_criteria');
+    const figma = out('figma_analysis');
+    const citationContext: CitationContext = {
+      jiraBaseUrl: jiraBase?.value,
+      storyKey: run.story.jiraKey,
+      figmaFileKey: figma?.fileKey,
+      acById: Object.fromEntries(((ac?.criteria ?? []) as Array<{ id: string; text: string }>).map((a) => [a.id, a.text])),
+    };
+    const versionsFor = (node: string): ExplainVersions => ({
+      prompt: promptVerByNode.get(node) ?? null,
+      workflow: run.workflowVersion,
+      knowledge: run.knowledgeVersion,
+      framework: run.frameworkVersion,
+      platform: run.platformVersion,
+    });
+
+    const artifacts: ArtifactExplanation[] = [];
+    const push = (
+      kind: Parameters<typeof explainArtifact>[0]['artifactKind'],
+      label: string,
+      node: string,
+      sources?: Citation[],
+      evidence?: string[],
+    ) => artifacts.push(explainArtifact({ artifactKind: kind, artifactLabel: label, node, sources, evidence, versions: versionsFor(node), citationContext }));
+
+    const req = out('requirements_analysis');
+    if (req) push('requirements_analysis', 'Requirements Analysis', 'requirements_analysis', req.sources);
+    if (out('impact_analysis')) push('impact_analysis', 'Impact Analysis', 'impact_analysis');
+    for (const sc of out('generate_hls')?.scenarios ?? []) push('hls_scenario', `HLS ${sc.index}: ${sc.text}`, 'generate_hls', sc.sources);
+    for (const c of out('generate_testcases')?.cases ?? []) push('test_case', c.title, 'generate_testcases', c.sources);
+    for (const d of out('execution')?.defects ?? []) push('defect', d.title, 'execution', d.sources, d.evidence);
+
+    // Visual findings (M3): each self-explains via the shared visual explainer.
+    // The visual comparison ran under the visual_comparison prompt version.
+    const visual = out('html_report')?.visual as { screens?: any[] } | undefined;
+    if (visual?.screens?.length) {
+      const visualVersions: ExplainVersions = {
+        prompt: getPrompt('visual_comparison').version,
+        workflow: run.workflowVersion,
+        knowledge: run.knowledgeVersion,
+        framework: run.frameworkVersion,
+        platform: run.platformVersion,
+      };
+      for (const scr of visual.screens) {
+        for (const f of scr.findings ?? []) {
+          artifacts.push(explainVisualFinding(f, scr, visualVersions, citationContext));
+        }
+      }
+    }
+
+    // Recommendations (M5): deterministic — each is a first-class explainable
+    // artifact whose reason is its root cause and whose evidence is the signal(s)
+    // it was derived from. Produced by html_report; no prompt version (no AI).
+    const recommendations = (run.recommendationsJson ?? null) as
+      | Array<{ id: string; title: string; rootCause?: string; sources?: Citation[]; derivedFrom?: string[] }>
+      | null;
+    for (const r of recommendations ?? []) {
+      artifacts.push(
+        explainArtifact({
+          artifactKind: 'recommendation',
+          artifactLabel: r.title,
+          node: 'html_report',
+          sources: r.sources,
+          evidence: r.derivedFrom,
+          reason: r.rootCause,
+          versions: versionsFor('html_report'),
+          citationContext,
+        }),
+      );
+    }
+
+    return {
+      runId,
+      versions: {
+        workflow: run.workflowVersion,
+        prompt: run.promptVersion,
+        knowledge: run.knowledgeVersion,
+        framework: run.frameworkVersion,
+        platform: run.platformVersion,
+      },
+      reviewConfidence: run.reviewJson ?? null,
+      parity: run.parityJson ?? null,
+      storyHealth: run.storyHealthJson ?? null,
+      recommendations,
+      artifacts,
+    };
   }
 
   /** Worker claims the oldest queued run (FIFO). */
@@ -101,6 +267,20 @@ export class RunsService {
               totalTokens: { increment: event.tokens ?? 0 },
             },
           });
+        }
+        // Parity Certification (#5) + Review Confidence (M2) + Story Health (M4):
+        // the html_report step returns `parity` + `review` + `health` snapshots —
+        // persist them for run detail, explain, and analytics.
+        {
+          const out = event.output as { parity?: unknown; review?: unknown; health?: unknown; recommendations?: unknown } | undefined;
+          const data: { parityJson?: object; reviewJson?: object; storyHealthJson?: object; recommendationsJson?: object } = {};
+          if (out?.parity) data.parityJson = out.parity as object;
+          if (out?.review) data.reviewJson = out.review as object;
+          if (out?.health) data.storyHealthJson = out.health as object; // Story Health (M4)
+          if (out?.recommendations) data.recommendationsJson = out.recommendations as object; // Recommendations (M5)
+          if (Object.keys(data).length) {
+            await prisma.run.update({ where: { id: event.runId }, data });
+          }
         }
         break;
       case 'gate.awaiting':
@@ -228,6 +408,43 @@ export class RunsService {
   private async requeue(runId: string) {
     await prisma.run.update({ where: { id: runId }, data: { status: 'queued' } });
     this.bus.publish({ kind: 'run.status', runId, status: 'queued', at: new Date().toISOString() });
+  }
+
+  /**
+   * Persist an LLM Request Log record (#7) from the worker. Best-effort: an
+   * audit write must never break the run, so failures are swallowed. The `id`
+   * path param is the authoritative runId.
+   */
+  async logLlmRequest(runId: string, rec: Record<string, unknown>) {
+    try {
+      const s = (v: unknown) => (typeof v === 'string' ? v : undefined);
+      const n = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
+      await prisma.llmRequestLog.create({
+        data: {
+          runId,
+          runStepId: s(rec.runStepId),
+          node: s(rec.node) ?? 'unknown',
+          schemaName: s(rec.schemaName),
+          model: s(rec.model),
+          promptVersion: s(rec.promptVersion),
+          workflowVersion: s(rec.workflowVersion),
+          systemPrompt: s(rec.systemPrompt),
+          userPrompt: s(rec.userPrompt),
+          rawResponse: s(rec.rawResponse),
+          validatedOutput: (rec.validatedOutput as object) ?? undefined,
+          status: s(rec.status) ?? 'ok',
+          repaired: rec.repaired === true,
+          repairStage: s(rec.repairStage),
+          tokens: n(rec.tokens) ?? 0,
+          costUsd: n(rec.costUsd) ?? 0,
+          durationMs: n(rec.durationMs) ?? 0,
+          attempt: n(rec.attempt) ?? 1,
+        },
+      });
+    } catch {
+      /* best-effort audit write */
+    }
+    return { ok: true };
   }
 
   /** Cheap status-only read for the worker's cancellation poller + UI badges. */
