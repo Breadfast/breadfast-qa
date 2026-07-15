@@ -11,3 +11,5 @@ export * from './visual.js';
 export * from './recommendations.js';
 export * from './activity.js';
 export * from './knowledge-lint.js';
+export * from './analytics.js';
+export * from './coverage.js';

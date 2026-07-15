@@ -117,6 +117,13 @@ The JSON envelope yields `result`, `session_id` (`--resume`), `total_cost_usd`, 
 - **Phase D:** framework registry + project profiles + diagnostics + onboarding.
 - **Phase E:** cleanup + versioning + final parity audit.
 
+### Platform Intelligence roadmap (distinct from the infra phases above)
+- **Phase 1 — Foundation:** ✅ tolerant JSON repair · Prompt Registry · Workflow Registry & versioning · Run Evaluation (Parity Certification) · LLM Request Log · citation foundation. → [phase1-foundation.md](./docs/design/phase1-foundation.md)
+- **Phase 2 — Platform Intelligence (M1–M8):** ✅ citations · explainability + review confidence · visual testing intelligence · story health · recommendations · activity timeline · enhanced reports · knowledge lint. → [phase2-platform-intelligence.md](./docs/design/phase2-platform-intelligence.md) · [validation](./docs/design/phase2-validation-review.md)
+- **Phase 3 — QA Analytics (incl. Team Insights):** ✅ deterministic cross-run aggregation; `GET /analytics` + web. → [phase3-analytics.md](./docs/design/phase3-analytics.md)
+- **Phase 4 — Coverage Matrix:** ✅ deterministic cross-story coverage; `GET /coverage` + web. → [phase4-coverage.md](./docs/design/phase4-coverage.md)
+- All four are deterministic (ADR-001, 0 new AI beyond the bounded visual comparator) and leave the frozen 27-node workflow + Platform Parity unchanged. **Certification phase** (docs/certification) validates pilot readiness.
+
 ## Security
 
 Domain-restricted SSO; secrets encrypted at rest (AES-256-GCM); `/settings/resolved` guarded by a local worker token; every external write gated + recorded in `AuditLog`; DRY-RUN default on fresh installs; secrets and personal data never enter git (clean-repo migration + `.gitignore`).
