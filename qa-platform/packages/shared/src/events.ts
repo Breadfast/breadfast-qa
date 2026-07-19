@@ -4,7 +4,20 @@
  * SSE (GET /runs/:id/events); the web RunTimeline patches its cache from them.
  * This is the single source of truth for the live-progress wire format.
  */
-import type { RunStatus, StepStatus, StepType, GatedAction } from './domain.js';
+import type { RunStatus, RunPauseReason, StepStatus, StepType, GatedAction } from './domain.js';
+
+/**
+ * Structured failure diagnostics captured when a step's status becomes 'failed'
+ * or 'interrupted' — persisted to RunStep.errorJson so the Failure Details UI
+ * panel doesn't need to parse the free-text `logs` blob. `stack` is sanitized
+ * (secrets redacted) before it ever leaves the worker.
+ */
+export interface StepError {
+  message: string;
+  isTimeout: boolean;
+  durationMs: number;
+  stack?: string;
+}
 
 /**
  * A single credential a node discovered it needs mid-run. Self-documenting so
@@ -23,7 +36,14 @@ export type CredentialSpec = {
 };
 
 export type RunEvent =
-  | { kind: 'run.status'; runId: string; status: RunStatus; at: string }
+  | {
+      kind: 'run.status';
+      runId: string;
+      status: RunStatus;
+      /** Set when status is (becoming) 'paused'/'pausing'; cleared otherwise. */
+      reason?: RunPauseReason;
+      at: string;
+    }
   | {
       kind: 'step.started';
       runId: string;
@@ -47,6 +67,8 @@ export type RunEvent =
       output?: unknown;
       tokens?: number;
       costUsd?: number;
+      /** Present when status is 'failed' or 'interrupted'. */
+      error?: StepError;
       at: string;
     }
   | {

@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { prisma } from '@qa/db';
+import { prisma, Prisma } from '@qa/db';
 import {
   GATE_SOURCE,
   LIFECYCLE_GRAPH,
@@ -68,6 +68,40 @@ export class RunsService {
     return run;
   }
 
+  /**
+   * Paused-run queue (Run Lifecycle Management, §6b): every run across ALL
+   * stories currently needing tester attention (paused/failed/cancelled),
+   * with enough context to act on it — resume, retry, or drill in — without
+   * opening each story page individually. `blockingStep` is whichever step
+   * caused the run to stop (failed/interrupted/cancelled/awaiting a gate or
+   * clarification); null for a plain manual pause, which stopped cleanly at a
+   * step boundary rather than on any particular step.
+   */
+  async listInterrupted() {
+    const runs = await prisma.run.findMany({
+      where: { status: { in: ['paused', 'failed', 'cancelled'] } },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        story: { select: { id: true, jiraKey: true, title: true } },
+        steps: {
+          where: { status: { in: ['failed', 'interrupted', 'cancelled', 'awaiting_approval', 'awaiting_input'] } },
+          orderBy: { ordinal: 'asc' },
+          select: { id: true, name: true, type: true, status: true, attempt: true },
+        },
+      },
+    });
+    return runs.map((r) => ({
+      id: r.id,
+      status: r.status,
+      pauseReason: r.pauseReason,
+      totalCostUsd: r.totalCostUsd,
+      createdAt: r.createdAt,
+      finishedAt: r.finishedAt,
+      story: r.story,
+      blockingStep: r.steps[0] ?? null,
+    }));
+  }
+
   getRun(id: string) {
     return prisma.run.findUnique({
       where: { id },
@@ -88,7 +122,10 @@ export class RunsService {
   async timeline(id: string) {
     const run = await prisma.run.findUnique({
       where: { id },
-      include: { steps: { orderBy: { ordinal: 'asc' }, include: { approval: true, clarification: true } } },
+      include: {
+        steps: { orderBy: { ordinal: 'asc' }, include: { approval: true, clarification: true } },
+        statusEvents: { orderBy: { at: 'asc' } },
+      },
     });
     if (!run) throw new NotFoundException(`run ${id} not found`);
     return buildActivityTimeline({
@@ -103,6 +140,7 @@ export class RunsService {
           ? { createdAt: s.clarification.createdAt, answeredAt: s.clarification.answeredAt }
           : null,
       })),
+      statusEvents: run.statusEvents.map((e) => ({ status: e.status, reason: e.reason, at: e.at })),
     });
   }
 
@@ -211,18 +249,38 @@ export class RunsService {
     };
   }
 
-  /** Worker claims the oldest queued run (FIFO). */
+  /**
+   * Worker claims the oldest queued run (FIFO). Compare-and-swap: the plain
+   * findFirst+update this replaced was a TOCTOU race if two worker processes
+   * claim concurrently — not a real risk with a single worker, but the paused-
+   * run queue (Run Lifecycle Management) lets a tester requeue several runs at
+   * once, so this is now a correctness requirement, not just tidiness. Bounded
+   * retry: if another worker wins the race for the oldest candidate, try the
+   * next-oldest rather than looping forever.
+   */
   async claimNext(workerId: string) {
-    const next = await prisma.run.findFirst({
-      where: { status: 'queued' },
-      orderBy: { createdAt: 'asc' },
-    });
-    if (!next) return null;
-    return prisma.run.update({
-      where: { id: next.id },
-      data: { status: 'running', workerId, startedAt: new Date() },
-      include: { steps: { orderBy: { ordinal: 'asc' } }, story: true },
-    });
+    for (let attempt = 0; attempt < 5; attempt++) {
+      // No `skip` needed: once another worker wins a candidate its status is no
+      // longer 'queued', so it naturally drops out of this filter next attempt.
+      const next = await prisma.run.findFirst({
+        where: { status: 'queued' },
+        orderBy: { createdAt: 'asc' },
+      });
+      if (!next) return null;
+      const { count } = await prisma.run.updateMany({
+        where: { id: next.id, status: 'queued' }, // guard: still queued at write time
+        data: { status: 'running', workerId, startedAt: new Date() },
+      });
+      if (count === 1) {
+        return prisma.run.findUnique({
+          where: { id: next.id },
+          include: { steps: { orderBy: { ordinal: 'asc' } }, story: true },
+        });
+      }
+      // Someone else claimed `next` between findFirst and updateMany — retry
+      // against the next-oldest candidate instead of re-claiming the same one.
+    }
+    return null;
   }
 
   /**
@@ -231,22 +289,58 @@ export class RunsService {
    */
   async ingest(event: RunEvent) {
     switch (event.kind) {
-      case 'run.status':
+      case 'run.status': {
+        // pauseReason rides along with the status that caused it, and is
+        // cleared the moment the run leaves paused/pausing — never left
+        // stale from a prior pause once the run moves on. The worker's OWN
+        // 'paused' event (runner.ts's isPausing()/PausedForInput branches)
+        // never carries a reason — it's derived here from what's actually
+        // blocking (a gate/ask/credential step) or, if nothing is, from
+        // whatever pauseRun() already stamped moments earlier (a manual
+        // pause finalizing at a step boundary).
+        const pauseReason =
+          event.status === 'paused' || event.status === 'pausing'
+            ? event.reason ?? (await this.derivePauseReason(event.runId))
+            : null;
         await prisma.run.update({
           where: { id: event.runId },
           data: {
             status: event.status,
+            pauseReason,
             ...(event.status === 'succeeded' || event.status === 'failed'
               ? { finishedAt: new Date() }
               : {}),
           },
         });
+        // Record the DERIVED reason (whatever actually ended up on the run),
+        // not the raw event's — the worker's own 'paused' event rarely
+        // carries one, so recording that verbatim would leave every gate/
+        // ask/credential/manual pause unlabeled in the Activity Timeline.
+        await this.recordStatusEvent(event.runId, event.status, pauseReason ?? event.reason);
         break;
+      }
       case 'step.started':
         await prisma.runStep.update({
           where: { id: event.stepId },
           data: { status: 'running', startedAt: new Date() },
         });
+        break;
+      case 'step.log':
+        // Persist the live progress/diagnostic lines the worker emits (incl. the
+        // runner's "ERROR …" line on failure) into RunStep.logs so a failed or
+        // completed run stays fully diagnosable from the UI + DB after the live
+        // SSE stream is gone — no reliance on the worker's inherited terminal
+        // stdout. Append + cap; the worker serializes ingests per run (each
+        // ingest() is awaited), so this read-modify-write is race-free per step.
+        {
+          const LOG_CAP = 64 * 1024; // keep the tail; oldest lines drop first
+          const existing = (await prisma.runStep.findUnique({
+            where: { id: event.stepId },
+            select: { logs: true },
+          }))?.logs;
+          const next = ((existing ? existing + '\n' : '') + event.line).slice(-LOG_CAP);
+          await prisma.runStep.update({ where: { id: event.stepId }, data: { logs: next } });
+        }
         break;
       case 'step.finished':
         await prisma.runStep.update({
@@ -257,6 +351,10 @@ export class RunsService {
             tokens: event.tokens ?? 0,
             costUsd: event.costUsd ?? 0,
             finishedAt: new Date(),
+            // Structured Failure Recovery diagnostics — cleared on a successful
+            // finish so a later retry's success doesn't leave a stale error
+            // behind from a previous attempt.
+            errorJson: event.error ? (event.error as object) : event.status === 'succeeded' ? Prisma.JsonNull : undefined,
           },
         });
         if (event.costUsd || event.tokens) {
@@ -332,7 +430,7 @@ export class RunsService {
       data: { decision, feedback, decidedById: userId, decidedAt: new Date() },
       include: { runStep: { select: { runId: true } } },
     });
-    await this.requeue(approval.runStep.runId);
+    await this.requeue(approval.runStep.runId, 'gate');
     return approval;
   }
 
@@ -343,7 +441,7 @@ export class RunsService {
       data: { answersJson: answers as object, answeredById: userId, answeredAt: new Date() },
       include: { runStep: { select: { runId: true } } },
     });
-    await this.requeue(clar.runStep.runId);
+    await this.requeue(clar.runStep.runId, 'ask');
     return clar;
   }
 
@@ -373,8 +471,9 @@ export class RunsService {
         data: { answersJson: { decision: 'cancel' }, answeredById: userId, answeredAt: new Date() },
       });
       await prisma.runStep.update({ where: { id: stepId }, data: { status: 'cancelled', finishedAt: new Date() } });
-      await prisma.run.update({ where: { id: runId }, data: { status: 'cancelled', finishedAt: new Date() } });
+      await prisma.run.update({ where: { id: runId }, data: { status: 'cancelled', finishedAt: new Date(), pauseReason: null } });
       this.bus.publish({ kind: 'run.status', runId, status: 'cancelled', at: new Date().toISOString() });
+      await this.recordStatusEvent(runId, 'cancelled', 'credential');
       return { cancelled: true };
     }
 
@@ -400,14 +499,56 @@ export class RunsService {
         answeredAt: new Date(),
       },
     });
-    await this.requeue(runId);
+    await this.requeue(runId, 'credential');
     return { ok: true, decision, saved: decision === 'save' ? filled.length : 0 };
   }
 
-  /** Put a paused run back in the queue and announce it so a worker re-claims. */
-  private async requeue(runId: string) {
-    await prisma.run.update({ where: { id: runId }, data: { status: 'queued' } });
+  /**
+   * Put a paused run back in the queue and announce it so a worker re-claims.
+   * `reason` labels the cause for the Activity Timeline (e.g. 'gate'/'ask'/
+   * 'credential' when a per-step answer unblocks the run) — free-text, not the
+   * RunEvent wire's RunPauseReason (that field is only about *why paused*).
+   */
+  private async requeue(runId: string, reason?: string) {
+    await prisma.run.update({ where: { id: runId }, data: { status: 'queued', pauseReason: null } });
     this.bus.publish({ kind: 'run.status', runId, status: 'queued', at: new Date().toISOString() });
+    await this.recordStatusEvent(runId, 'queued', reason);
+  }
+
+  /**
+   * Derive WHY a run is (becoming) 'paused' when the worker's own event
+   * didn't say — true for every gate/ask/credential pause (those pause via a
+   * plain `ingest(status(run.id, 'paused'))` with no reason field) and for a
+   * manual pause finalizing at a step boundary. Looks at whichever step is
+   * currently awaiting a decision; with none, falls back to whatever reason
+   * is already stamped on the run (pauseRun() sets it directly, moments
+   * before the worker's finalizing event arrives here).
+   */
+  private async derivePauseReason(runId: string): Promise<string | null> {
+    const blocking = await prisma.runStep.findFirst({
+      where: { runId, status: { in: ['awaiting_approval', 'awaiting_input'] } },
+      include: { clarification: true },
+    });
+    if (blocking?.status === 'awaiting_approval') return 'gate';
+    if (blocking?.status === 'awaiting_input') {
+      const q = blocking.clarification?.questionsJson as { credentialRequest?: unknown } | undefined;
+      return q && typeof q === 'object' && 'credentialRequest' in q ? 'credential' : 'ask';
+    }
+    const existing = await prisma.run.findUnique({ where: { id: runId }, select: { pauseReason: true } });
+    return existing?.pauseReason ?? 'manual';
+  }
+
+  /**
+   * Append a Run.status transition to the audit history (RunStatusEvent) that
+   * powers the Activity Timeline's pause/resume/retry/restart/cancel entries.
+   * Best-effort like logLlmRequest: an audit write must never break the run.
+   */
+  private async recordStatusEvent(runId: string, status: string, reason?: string | null) {
+    try {
+      await prisma.runStatusEvent.create({ data: { runId, status, reason: reason ?? null } });
+    } catch {
+      /* best-effort audit write */
+    }
   }
 
   /**
@@ -447,6 +588,41 @@ export class RunsService {
     return { ok: true };
   }
 
+  /**
+   * Artifact versioning (Run Lifecycle Management, §5b): the next version
+   * number for a logical artifact name (e.g. "hls/hls.md") within this run's
+   * story. Pure read — `name`'s version-suffix-stripped form is the stable
+   * identity versions share; the worker asks this BEFORE writing so it knows
+   * whether to suffix the file path (v2+) or write the bare name (v1).
+   */
+  async nextArtifactVersion(runId: string, name: string): Promise<{ version: number }> {
+    const run = await prisma.run.findUnique({ where: { id: runId }, select: { storyId: true } });
+    if (!run) throw new NotFoundException(`Run ${runId} not found`);
+    const latest = await prisma.artifact.findFirst({
+      where: { storyId: run.storyId, name },
+      orderBy: { version: 'desc' },
+      select: { version: true },
+    });
+    return { version: (latest?.version ?? 0) + 1 };
+  }
+
+  /**
+   * Record a written artifact version (Run Lifecycle Management, §5b).
+   * Best-effort like logLlmRequest: an audit write must never break the run.
+   */
+  async recordArtifact(runId: string, rec: { kind: string; name: string; version: number; localPath: string }) {
+    try {
+      const run = await prisma.run.findUnique({ where: { id: runId }, select: { storyId: true } });
+      if (!run) return { ok: false };
+      await prisma.artifact.create({
+        data: { storyId: run.storyId, runId, kind: rec.kind, name: rec.name, version: rec.version, localPath: rec.localPath },
+      });
+    } catch {
+      /* best-effort audit write */
+    }
+    return { ok: true };
+  }
+
   /** Cheap status-only read for the worker's cancellation poller + UI badges. */
   async getStatus(id: string) {
     const run = await prisma.run.findUnique({ where: { id }, select: { status: true } });
@@ -464,58 +640,163 @@ export class RunsService {
     const run = await prisma.run.findUnique({ where: { id } });
     if (!run) throw new NotFoundException(`Run ${id} not found`);
     if (run.status === 'queued' || run.status === 'paused') {
-      await prisma.run.update({ where: { id }, data: { status: 'cancelled', finishedAt: new Date() } });
+      await prisma.run.update({ where: { id }, data: { status: 'cancelled', finishedAt: new Date(), pauseReason: null } });
       this.bus.publish({ kind: 'run.status', runId: id, status: 'cancelled', at: new Date().toISOString() });
+      await this.recordStatusEvent(id, 'cancelled');
       return { status: 'cancelled' };
     }
     if (run.status === 'running') {
       await prisma.run.update({ where: { id }, data: { status: 'cancelling' } });
       this.bus.publish({ kind: 'run.status', runId: id, status: 'cancelling', at: new Date().toISOString() });
+      await this.recordStatusEvent(id, 'cancelling');
       return { status: 'cancelling' };
     }
     throw new BadRequestException(`Run ${id} is ${run.status} — nothing to cancel`);
   }
 
   /**
-   * Resume a cancelled/failed run exactly at the step that was interrupted —
-   * NOT a full restart. Shares resetStepsFrom with regenerateStep.
+   * Manual Pause (Run Lifecycle Management): stop gracefully at the next step
+   * boundary rather than aborting the in-flight step (that's Stop/cancel). A
+   * queued run has no active worker holding it, so it's paused immediately; a
+   * running run is flipped to 'pausing' and the worker's poller (same
+   * mechanism as the existing Stop poll, just without aborting) notices within
+   * one interval, lets the current step finish normally, then stops.
+   */
+  async pauseRun(id: string) {
+    const run = await prisma.run.findUnique({ where: { id } });
+    if (!run) throw new NotFoundException(`Run ${id} not found`);
+    if (run.status === 'queued') {
+      await prisma.run.update({ where: { id }, data: { status: 'paused', pauseReason: 'manual' } });
+      this.bus.publish({ kind: 'run.status', runId: id, status: 'paused', reason: 'manual', at: new Date().toISOString() });
+      await this.recordStatusEvent(id, 'paused', 'manual');
+      return { status: 'paused' };
+    }
+    if (run.status === 'running') {
+      await prisma.run.update({ where: { id }, data: { status: 'pausing', pauseReason: 'manual' } });
+      this.bus.publish({ kind: 'run.status', runId: id, status: 'pausing', reason: 'manual', at: new Date().toISOString() });
+      await this.recordStatusEvent(id, 'pausing', 'manual');
+      return { status: 'pausing' };
+    }
+    throw new BadRequestException(`Run ${id} is ${run.status} — nothing to pause`);
+  }
+
+  /**
+   * Resume a run. Three distinct cases, dispatched by status/pauseReason:
+   *  - cancelled/failed: the interrupted step needs re-execution — reuses the
+   *    existing resetStepsFrom(fromOrdinal) behavior (unchanged from before).
+   *  - paused with pauseReason 'manual'/'usage_limit': the run stopped cleanly
+   *    at a step boundary (or the interrupted step was left non-terminal, see
+   *    the 'interrupted' step status) — nothing needs resetting, just requeue.
+   *  - paused with pauseReason 'gate'/'ask'/'credential': there's a dedicated
+   *    approve/answer/credential action for this; a generic Resume would just
+   *    re-throw PausedForInput immediately, so it's rejected with guidance.
    */
   async resumeRun(id: string) {
     const run = await prisma.run.findUnique({ where: { id }, include: { steps: { orderBy: { ordinal: 'asc' } } } });
     if (!run) throw new NotFoundException(`Run ${id} not found`);
-    if (run.status !== 'cancelled' && run.status !== 'failed') {
-      throw new BadRequestException(`Run ${id} is ${run.status} — nothing to resume`);
+
+    if (run.status === 'cancelled' || run.status === 'failed') {
+      const resumable = run.steps.filter((s) => s.status === 'cancelled' || s.status === 'failed' || s.status === 'interrupted');
+      if (!resumable.length) throw new BadRequestException('No interrupted step found to resume from');
+      const fromOrdinal = Math.min(...resumable.map((s) => s.ordinal));
+      await this.resetStepsFrom(id, fromOrdinal, 'resume');
+      return { resumed: true, fromOrdinal };
     }
-    const resumable = run.steps.filter((s) => s.status === 'cancelled' || s.status === 'failed');
-    if (!resumable.length) throw new BadRequestException('No interrupted step found to resume from');
-    const fromOrdinal = Math.min(...resumable.map((s) => s.ordinal));
-    await this.resetStepsFrom(id, fromOrdinal);
-    return { resumed: true, fromOrdinal };
+
+    if (run.status === 'paused') {
+      if (run.pauseReason === 'manual' || run.pauseReason === 'usage_limit') {
+        await this.requeue(id, 'resume');
+        return { resumed: true };
+      }
+      throw new BadRequestException(
+        `Run ${id} is paused waiting on a ${run.pauseReason ?? 'gate/ask/credential'} — use that action instead of Resume`,
+      );
+    }
+
+    throw new BadRequestException(`Run ${id} is ${run.status} — nothing to resume`);
   }
 
   /**
-   * Regenerate: reset the gate's upstream source node (GATE_SOURCE map) through
-   * the gate itself back to pending, with tester feedback threaded into the
-   * source node's next prompt. The gate's own prior decision is cleared so it
-   * re-asks for approval once the regenerated content is ready — ask/gate nodes
-   * strictly BETWEEN source and gate keep their existing human answers and
-   * short-circuit straight through on replay.
+   * Regenerate: a gate-scoped convenience over Restart From Step — resolves
+   * the gate's upstream source node (GATE_SOURCE map) and restarts from there
+   * with tester feedback threaded in. The gate itself sits at ordinal >=
+   * source, so it's inside the reset range restartFromStep/resetStepsFrom
+   * already covers — its prior decision is cleared along with everything
+   * else in range, no separate step needed. Kept as its own method for the
+   * existing gate-card UX/controller contract.
    */
-  async regenerateStep(stepId: string, feedback: string, _userId: string) {
+  async regenerateStep(stepId: string, feedback: string, userId: string) {
     const gateStep = await prisma.runStep.findUnique({ where: { id: stepId } });
     if (!gateStep) throw new NotFoundException(`Step ${stepId} not found`);
     const sourceName = GATE_SOURCE[gateStep.name as LifecycleNode];
     if (!sourceName) throw new BadRequestException(`"${gateStep.name}" has no regenerate source — use Approve/Reject`);
     const sourceStep = await prisma.runStep.findFirst({ where: { runId: gateStep.runId, name: sourceName } });
     if (!sourceStep) throw new NotFoundException(`Source step "${sourceName}" not found on this run`);
-
-    await prisma.runStep.update({ where: { id: sourceStep.id }, data: { feedback } });
-    await prisma.approval.updateMany({
-      where: { runStepId: gateStep.id },
-      data: { decision: null, feedback: null, decidedById: null, decidedAt: null },
-    });
-    await this.resetStepsFrom(gateStep.runId, sourceStep.ordinal);
+    await this.restartFromStep(sourceStep.id, feedback, userId);
     return { regenerating: true, from: sourceName };
+  }
+
+  /**
+   * Restart From Step (Run Lifecycle Management): re-run this step AND every
+   * step after it, discarding what they already produced — works on ANY step
+   * regardless of its current status (succeeded, failed, skipped...), unlike
+   * Retry Failed Step which only ever touches a single failed/interrupted
+   * step. Refuses while a worker currently owns the run (running/pausing/
+   * cancelling) — resetting steps out from under an active execution would
+   * race the worker's in-memory step snapshot.
+   */
+  async restartFromStep(stepId: string, feedback: string | undefined, _userId: string) {
+    const step = await prisma.runStep.findUnique({ where: { id: stepId }, include: { run: { select: { status: true } } } });
+    if (!step) throw new NotFoundException(`Step ${stepId} not found`);
+    if (['running', 'pausing', 'cancelling'].includes(step.run.status)) {
+      throw new BadRequestException(`Run is ${step.run.status} — pause or stop it before restarting from a step`);
+    }
+    if (feedback) await prisma.runStep.update({ where: { id: stepId }, data: { feedback } });
+    await this.resetStepsFrom(step.runId, step.ordinal, 'restart');
+    return { restarted: true, from: step.name };
+  }
+
+  /**
+   * Retry Failed Step (Run Lifecycle Management): re-run ONLY the step that
+   * failed/was interrupted — not the whole run from that point. There's
+   * nothing downstream to reset: a failure/interruption is a hard stop, so no
+   * step after it ever started. Distinct from Restart From Step, which
+   * discards and rebuilds everything from a chosen point forward.
+   */
+  async retryStep(stepId: string, _userId: string) {
+    const step = await prisma.runStep.findUnique({ where: { id: stepId } });
+    if (!step) throw new NotFoundException(`Step ${stepId} not found`);
+    if (step.status !== 'failed' && step.status !== 'interrupted') {
+      throw new BadRequestException(`Step "${step.name}" is ${step.status} — only a failed/interrupted step can be retried`);
+    }
+    await prisma.runStep.update({
+      where: { id: stepId },
+      data: { status: 'pending', startedAt: null, finishedAt: null, attempt: { increment: 1 } },
+    });
+    await this.requeue(step.runId, 'retry');
+    return { retried: true, step: step.name, attempt: step.attempt + 1 };
+  }
+
+  /**
+   * Bulk Retry Failed Steps — the paused-run queue's primary bulk action. A
+   * single run only ever has ONE failed/interrupted step at a time (the loop
+   * stops at the first failure), so "the failed step" per run is unambiguous.
+   * Applies retryStep run-by-run and reports per-run outcomes so a partial
+   * failure in the batch is visible, never silently swallowed.
+   */
+  async retryFailedRuns(runIds: string[], userId: string): Promise<{ results: Array<{ runId: string; ok: boolean; error?: string }> }> {
+    const results: Array<{ runId: string; ok: boolean; error?: string }> = [];
+    for (const runId of runIds) {
+      try {
+        const step = await prisma.runStep.findFirst({ where: { runId, status: { in: ['failed', 'interrupted'] } } });
+        if (!step) throw new BadRequestException(`Run ${runId} has no failed/interrupted step`);
+        await this.retryStep(step.id, userId);
+        results.push({ runId, ok: true });
+      } catch (e) {
+        results.push({ runId, ok: false, error: (e as Error).message });
+      }
+    }
+    return { results };
   }
 
   /** Skip a gate checkpoint the tester doesn't need — gate-type steps only. */
@@ -530,15 +811,63 @@ export class RunsService {
 
   /**
    * Shared primitive: reset every step at ordinal >= fromOrdinal back to
-   * pending and re-queue the run so a worker resumes exactly there. Used by
-   * both resumeRun (after Stop) and regenerateStep (with feedback).
+   * pending — including wiping their stale outputJson/logs/errorJson/tokens/
+   * costUsd and Approval/Clarification rows, since Restart From Step means
+   * "discard what these steps produced, not just re-flag them pending" — and
+   * re-queue the run so a worker resumes exactly there. Run-level rollups
+   * (totalTokens/totalCostUsd) are recomputed from the steps that REMAIN
+   * (ordinal < fromOrdinal) rather than decremented incrementally, so there's
+   * no drift risk. If the reset range reaches back to/through html_report,
+   * its Parity/Review/Story Health/Recommendations snapshots are cleared too
+   * — they'd otherwise show a stale pre-restart snapshot until it reruns.
+   * Used by resumeRun (after Stop/failure), retryStep, and restartFromStep.
    */
-  private async resetStepsFrom(runId: string, fromOrdinal: number) {
+  private async resetStepsFrom(runId: string, fromOrdinal: number, reason?: string) {
+    const resetSteps = await prisma.runStep.findMany({
+      where: { runId, ordinal: { gte: fromOrdinal } },
+      select: { id: true },
+    });
+    const resetIds = resetSteps.map((s) => s.id);
+
     await prisma.runStep.updateMany({
       where: { runId, ordinal: { gte: fromOrdinal } },
-      data: { status: 'pending', startedAt: null, finishedAt: null },
+      data: {
+        status: 'pending', startedAt: null, finishedAt: null,
+        outputJson: Prisma.JsonNull, logs: null, errorJson: Prisma.JsonNull,
+        tokens: 0, costUsd: 0,
+      },
     });
-    await prisma.run.update({ where: { id: runId }, data: { status: 'queued', finishedAt: null } });
+    if (resetIds.length) {
+      await prisma.approval.deleteMany({ where: { runStepId: { in: resetIds } } });
+      await prisma.clarification.deleteMany({ where: { runStepId: { in: resetIds } } });
+    }
+
+    const remaining = await prisma.runStep.findMany({
+      where: { runId, ordinal: { lt: fromOrdinal } },
+      select: { tokens: true, costUsd: true },
+    });
+    const totalTokens = remaining.reduce((sum, s) => sum + s.tokens, 0);
+    const totalCostUsd = remaining.reduce((sum, s) => sum + s.costUsd, 0);
+
+    const htmlReportOrdinal = LIFECYCLE_GRAPH.findIndex((n) => n.name === 'html_report');
+    const clearsHtmlReport = htmlReportOrdinal >= 0 && fromOrdinal <= htmlReportOrdinal;
+
+    await prisma.run.update({
+      where: { id: runId },
+      data: {
+        status: 'queued', finishedAt: null, pauseReason: null,
+        totalTokens, totalCostUsd,
+        ...(clearsHtmlReport
+          ? {
+              parityJson: Prisma.JsonNull,
+              reviewJson: Prisma.JsonNull,
+              storyHealthJson: Prisma.JsonNull,
+              recommendationsJson: Prisma.JsonNull,
+            }
+          : {}),
+      },
+    });
     this.bus.publish({ kind: 'run.status', runId, status: 'queued', at: new Date().toISOString() });
+    await this.recordStatusEvent(runId, 'queued', reason);
   }
 }

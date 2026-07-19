@@ -25,15 +25,47 @@ export interface ActivityStepInput {
   clarification?: { createdAt?: TimeInput; answeredAt?: TimeInput } | null;
 }
 
+/**
+ * A single Run.status transition (Run Lifecycle Management). `reason` carries
+ * either the pause reason (gate|ask|credential|manual|usage_limit, when status
+ * is 'paused'/'pausing') or the resume-cause (resume|retry|restart|
+ * version_drift, when status is 'queued'/'running') — see REASON_KIND below
+ * for the exact mapping. Sourced from the RunStatusEvent table, written once
+ * per transition by RunsService.ingest()'s 'run.status' case.
+ */
+export interface ActivityStatusEventInput {
+  status: string;
+  reason?: string | null;
+  at: TimeInput;
+}
+
 export interface ActivityTimelineInput {
   run: { createdAt?: TimeInput; startedAt?: TimeInput; finishedAt?: TimeInput; status?: string };
   steps: ActivityStepInput[];
+  statusEvents?: ActivityStatusEventInput[];
 }
 
 export type ActivityKind =
   | 'run_created' | 'run_started' | 'node_started' | 'node_finished' | 'node_failed'
   | 'gate_awaiting' | 'gate_approved' | 'gate_rejected'
-  | 'clarification_asked' | 'clarification_answered' | 'run_finished';
+  | 'clarification_asked' | 'clarification_answered' | 'run_finished'
+  // Run Lifecycle Management transitions (sourced from RunStatusEvent):
+  | 'run_paused' | 'run_auto_paused' | 'run_resumed' | 'run_retried'
+  | 'run_restarted' | 'run_cancelled' | 'run_version_drift';
+
+/**
+ * Maps a RunStatusEvent's (status, reason) to the ActivityKind it renders as.
+ * Deliberately narrow: gate/ask/credential pauses are already visible via
+ * gate_awaiting/clarification_asked, so they're intentionally NOT duplicated
+ * here — only tester/system-initiated lifecycle actions get their own entry.
+ */
+const REASON_KIND: Record<string, ActivityKind> = {
+  'paused:manual': 'run_paused',
+  'paused:usage_limit': 'run_auto_paused',
+  'queued:resume': 'run_resumed',
+  'queued:retry': 'run_retried',
+  'queued:restart': 'run_restarted',
+};
 
 export interface ActivityEvent {
   ts: string | null; // ISO 8601 (null ⇒ not yet reached; sorts last)
@@ -78,6 +110,8 @@ function ms(a: string | null, b: string | null): number | null {
 const KIND_ORDER: Record<ActivityKind, number> = {
   run_created: 0, run_started: 1, node_started: 2, clarification_asked: 3, clarification_answered: 4,
   gate_awaiting: 5, gate_approved: 6, gate_rejected: 6, node_finished: 7, node_failed: 7, run_finished: 8,
+  run_paused: 9, run_auto_paused: 9, run_cancelled: 9,
+  run_resumed: 10, run_retried: 10, run_restarted: 10, run_version_drift: 10,
 };
 
 const HUMAN_NODE = (n: string) => n.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
@@ -137,6 +171,29 @@ export function buildActivityTimeline(input: ActivityTimelineInput): ActivityTim
 
   if (runFinished) {
     events.push({ ts: runFinished, kind: 'run_finished', status: input.run.status, durationMs: ms(runStarted, runFinished), label: `Run ${input.run.status ?? 'finished'}` });
+  }
+
+  // Run Lifecycle Management: pause/resume/retry/restart/cancel transitions.
+  // `reason==='version_drift'` is independent of status (logged alongside a
+  // resume when the run's stamped versions differ from the platform's current
+  // ones) and always renders regardless of the status:reason lookup below.
+  const LABEL: Partial<Record<ActivityKind, string>> = {
+    run_paused: 'Run paused',
+    run_auto_paused: 'Paused automatically — Claude usage limit reached',
+    run_resumed: 'Run resumed',
+    run_retried: 'Retrying failed step',
+    run_restarted: 'Restarted from an earlier step',
+    run_cancelled: 'Run cancelled',
+    run_version_drift: 'Resumed under an updated platform version',
+  };
+  for (const se of input.statusEvents ?? []) {
+    const ts = toIso(se.at);
+    if (se.reason === 'version_drift') {
+      events.push({ ts, kind: 'run_version_drift', label: LABEL.run_version_drift! });
+      continue;
+    }
+    const kind = se.status === 'cancelled' ? 'run_cancelled' : REASON_KIND[`${se.status}:${se.reason ?? ''}`];
+    if (kind) events.push({ ts, kind, label: LABEL[kind]! });
   }
 
   // Deterministic chronological order; unresolved (null ts) events sort last but

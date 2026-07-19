@@ -46,6 +46,57 @@ export class ClaudeCancelledError extends Error {
   }
 }
 
+/**
+ * Claude usage/rate limit hit (Run Lifecycle Management — Claude Usage Limit
+ * Protection). Reactive only, by design: neither the `claude` CLI nor
+ * Anthropic expose a queryable "% of plan used" signal, so there is no way to
+ * warn BEFORE the limit is hit — only to recognize the CLI's own failure
+ * signature when it happens and pause cleanly instead of failing the run.
+ * `resetHint`, when the CLI's message includes one, is shown to the tester
+ * verbatim rather than parsed into a timestamp (format is not guaranteed).
+ */
+export class UsageLimitError extends Error {
+  constructor(readonly resetHint?: string) {
+    super(`Claude usage limit reached${resetHint ? ` — ${resetHint}` : ''}`);
+    this.name = 'UsageLimitError';
+  }
+}
+
+/**
+ * Heuristic, env-configurable detection of a usage/rate-limit signature in
+ * the CLI's output. Deliberately a text match, not an API call: there is
+ * nothing else to check against. `QA_USAGE_LIMIT_PATTERNS` (comma-separated
+ * regex fragments, case-insensitive) lets this be tuned without a redeploy
+ * once real production error text is observed — the defaults below are a
+ * best-effort starting set, not a confirmed sample of the CLI's real wording.
+ */
+const DEFAULT_USAGE_LIMIT_PATTERNS = [
+  'usage limit',
+  'usage_limit',
+  'rate limit',
+  'rate_limit',
+  '\\b5-hour limit\\b',
+  '\\bweekly limit\\b',
+  'claude ai usage limit',
+];
+
+function usageLimitPatterns(): RegExp[] {
+  const extra = (process.env.QA_USAGE_LIMIT_PATTERNS ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return [...DEFAULT_USAGE_LIMIT_PATTERNS, ...extra].map((p) => new RegExp(p, 'i'));
+}
+
+function looksLikeUsageLimit(text: string): boolean {
+  return Boolean(text) && usageLimitPatterns().some((re) => re.test(text));
+}
+
+/** Best-effort "resets at/in ..." fragment straight out of the CLI's message. */
+function extractResetHint(text: string): string | undefined {
+  return text.match(/resets?\s+(?:at|in)\s+[^.\n]{1,60}/i)?.[0];
+}
+
 export interface ClaudeRunResult {
   text: string;
   sessionId: string | null;
@@ -139,9 +190,14 @@ export async function runClaude(opts: ClaudeRunOptions): Promise<ClaudeRunResult
       if (cancelled) return reject(new ClaudeCancelledError());
       const env = extractEnvelope(stdout);
       if (!env) {
+        const combined = stderr || stdout;
+        if (looksLikeUsageLimit(combined)) return reject(new UsageLimitError(extractResetHint(combined)));
         return reject(
           new ClaudeRunError(`could not parse claude JSON output (exit ${code})`, stderr || stdout, code),
         );
+      }
+      if (env.is_error && looksLikeUsageLimit(env.result ?? '')) {
+        return reject(new UsageLimitError(extractResetHint(env.result ?? '')));
       }
       resolve({
         text: env.result ?? '',

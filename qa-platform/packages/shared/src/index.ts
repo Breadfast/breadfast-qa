@@ -1,5 +1,6 @@
 export * from './domain.js';
 export * from './schemas.js';
+export * from './context-builder.js';
 export * from './events.js';
 export * from './prompts.js';
 export * from './workflow.js';

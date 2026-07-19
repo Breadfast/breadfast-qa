@@ -61,7 +61,17 @@ import {
   companionDir, companionPath, storyDir, figmaAuthPath,
   playwrightFrameworkDir, javaFrameworkDir,
 } from '@qa/shared/paths';
-import { ingest, getSettings, getResolvedFrameworks, logLlmRequest, getRunDetail, type RunDetail, type StepDetail } from './api-client.js';
+import {
+  ingest,
+  getSettings,
+  getResolvedFrameworks,
+  logLlmRequest,
+  getRunDetail,
+  nextArtifactVersion,
+  recordArtifact,
+  type RunDetail,
+  type StepDetail,
+} from './api-client.js';
 import { fetchJiraIssue, jiraSourceMarkdown, jiraContextBlock, extractFigmaUrls, type JiraSource } from './jira.js';
 import { exportStoryFrames, type FigmaExportResult } from './figma.js';
 import { fileDefects, resolveBugConfig, type DefectInput } from './jira-write.js';
@@ -849,7 +859,14 @@ export const NODES: Record<string, NodeFn> = {
         agentic: true,
         permissionMode: 'default',
         allowedTools: ['Read'],
-        timeoutMs: 8 * 60 * 1000,
+        // CERTIFICATION DECISION (2026-07-16): analyze ALL exported frames to
+        // maximize Platform Parity. A single Figma board node can fan out to
+        // 60+ frames (B10-56759: one node → 60+ PNGs), and an agentic Read loop
+        // over that many images blew the old 8-min cap (run cmrn79iss timed out
+        // at 480000ms → uncaught → step failed). Raised to 25 min to comfortably
+        // cover large boards. Future: intelligent frame selection / batched
+        // analysis (see docs/certification). Do not lower without that in place.
+        timeoutMs: 25 * 60 * 1000,
       });
     } else {
       const why = urls.length
@@ -1037,10 +1054,8 @@ export const NODES: Record<string, NodeFn> = {
 
   async generate_csv(ctx) {
     const tc = ctx.state.testcases as TestCases | undefined;
-    const dir = (ctx.state.workspacePath as string) ?? storyDir(ctx.run.story.jiraKey);
     const csv = toBrowserstackCsv(tc, ctx.run.story);
-    const file = path.join(dir, 'testcases', `${ctx.run.story.jiraKey}_browserstack_testcases.csv`);
-    await writeFile(file, csv, 'utf8');
+    const file = await artifact(ctx, `testcases/${ctx.run.story.jiraKey}_browserstack_testcases.csv`, csv);
     await ctx.log(`CSV written (24-col canonical): ${file}`);
     return { csvPath: file, rows: tc?.cases.length ?? 0 };
   },
@@ -1465,8 +1480,6 @@ export const NODES: Record<string, NodeFn> = {
   },
 
   async html_report(ctx) {
-    const dir = (ctx.state.workspacePath as string) ?? storyDir(ctx.run.story.jiraKey);
-    const file = path.join(dir, 'execution-reports', `test_report_${ctx.run.story.jiraKey}.html`);
     // Parity Certification (#5): deterministic run evaluation over accumulated
     // state. Stashed in ctx.state so renderReport can show it, returned so the
     // API persists it to Run.parityJson.
@@ -1572,7 +1585,7 @@ export const NODES: Record<string, NodeFn> = {
     } catch (e) {
       await ctx.log(`activity timeline skipped: ${(e as Error).message}`);
     }
-    await writeFile(file, renderReport(ctx), 'utf8');
+    const file = await artifact(ctx, `execution-reports/test_report_${ctx.run.story.jiraKey}.html`, renderReport(ctx));
     // Root index README per the folder standard (release-validation.md §6).
     await artifact(ctx, 'README.md',
       `# ${ctx.run.story.jiraKey} — QA Artifacts\n\n${ctx.run.story.title}\n\n` +
@@ -2404,12 +2417,35 @@ function parseProvisioned(out: string): Record<string, unknown> | null {
   try { return JSON.parse(m[1]); } catch { return null; }
 }
 
-/** Write a file under the story's workspace folder, creating parent dirs. */
+/** Map a relative artifact path to its ARTIFACT_KINDS bucket. */
+function artifactKindOf(rel: string): string {
+  if (rel.endsWith('.csv')) return 'csv';
+  if (/execution-reports\/.*\.html$/.test(rel)) return 'report';
+  return 'evidence';
+}
+
+/** Insert a version suffix before the extension: "hls/hls.md" v2 -> "hls/hls.v2.md". */
+function withVersionSuffix(rel: string, version: number): string {
+  const ext = path.extname(rel);
+  return `${rel.slice(0, rel.length - ext.length)}.v${version}${ext}`;
+}
+
+/**
+ * Write a file under the story's workspace folder, creating parent dirs, and
+ * record it in the Artifact table (Run Lifecycle Management, §5b). A Restart
+ * From Step that re-runs this node never clobbers the prior file: version 2+
+ * gets a `.vN`-suffixed path and its own Artifact row, so the previous
+ * version stays on disk and queryable — `rel` is the artifact's stable
+ * logical name across versions.
+ */
 async function artifact(ctx: NodeContext, rel: string, content: string): Promise<string> {
   const dir = (ctx.state.workspacePath as string) ?? storyDir(ctx.run.story.jiraKey);
-  const file = path.join(dir, rel);
+  const version = await nextArtifactVersion(ctx.run.id, rel);
+  const versionedRel = version > 1 ? withVersionSuffix(rel, version) : rel;
+  const file = path.join(dir, versionedRel);
   await mkdir(path.dirname(file), { recursive: true });
   await writeFile(file, content, 'utf8');
+  void recordArtifact(ctx.run.id, { kind: artifactKindOf(rel), name: rel, version, localPath: file });
   return file;
 }
 

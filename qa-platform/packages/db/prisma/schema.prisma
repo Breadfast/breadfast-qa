@@ -103,8 +103,14 @@ model Run {
   storyId       String
   story         Story     @relation(fields: [storyId], references: [id], onDelete: Cascade)
   status        String    @default("queued")
+  // Why the run is currently 'paused': gate | ask | credential | manual | usage_limit.
+  // Reused across all pause flavors instead of a separate RunStatus value per reason
+  // (Run Lifecycle Management — see ARCHITECTURE.md once documented).
+  pauseReason   String?
   workerId      String?
-  engineSession String? // claude --resume session id
+  engineSession String? // claude --resume session id — intentionally never wired up;
+                         // see ARCHITECTURE.md Context Builder guarantee (no cross-call
+                         // Claude memory dependence).
   triggeredById String
   triggeredBy   User      @relation(fields: [triggeredById], references: [id])
   totalTokens   Int       @default(0)
@@ -140,8 +146,9 @@ model Run {
   // patterns + defects + traceability. No AI (ADR-001). Written on completion.
   recommendationsJson Json?
 
-  steps       RunStep[]
-  llmRequests LlmRequestLog[]
+  steps            RunStep[]
+  llmRequests      LlmRequestLog[]
+  statusEvents     RunStatusEvent[]
 }
 
 model RunStep {
@@ -162,11 +169,35 @@ model RunStep {
   // Tester feedback from a Regenerate action, threaded into this node's next
   // AI prompt; cleared once the node consumes it on its next successful run.
   feedback   String?
+  // Retry Failed Step increments this; a plain re-run via Restart From Step does
+  // not (that's a fresh attempt at a different generation, not a retry of a
+  // transient failure). Starts at 1 for every step's first execution.
+  attempt    Int       @default(1)
+  // Structured failure diagnostics (message, isTimeout, durationMs, sanitized
+  // stack) captured when status becomes 'failed' or 'interrupted' — the durable
+  // record behind the Failure Details UI panel, independent of the free-text logs.
+  errorJson  Json?
 
   approval      Approval?
   clarification Clarification?
 
   @@unique([runId, ordinal])
+}
+
+// History of Run.status transitions — buildActivityTimeline derives everything
+// else from RunStep/Approval/Clarification + the run's CURRENT status, which
+// can't show "this run was paused twice" without a record of past transitions.
+// Written once per transition, in RunsService.ingest()'s existing 'run.status'
+// case — no new call sites needed. No AI (ADR-001); pure audit bookkeeping.
+model RunStatusEvent {
+  id     String   @id @default(cuid())
+  runId  String
+  run    Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  status String
+  reason String?
+  at     DateTime @default(now())
+
+  @@index([runId, at])
 }
 
 model Approval {
@@ -213,6 +244,13 @@ model Artifact {
   story     Story    @relation(fields: [storyId], references: [id], onDelete: Cascade)
   runId     String?
   kind      String // report | screenshot | video | csv | trace | evidence | figma_frame
+  // Logical name the versions share (e.g. "report", "testcases.csv") so all
+  // versions of "the same" artifact can be listed/ordered together. version 1
+  // is the first write; a Restart From Step that would otherwise overwrite the
+  // same path instead writes version N+1 to a suffixed path, keeping the old
+  // file + row intact (Run Lifecycle Management — nothing generated is lost).
+  name      String   @default("")
+  version   Int      @default(1)
   localPath String?
   objectUrl String?
   mime      String?

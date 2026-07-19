@@ -479,6 +479,21 @@ export const RegenerateStepInput = z.object({
 });
 export type RegenerateStepInput = z.infer<typeof RegenerateStepInput>;
 
+// Restart From Step (Run Lifecycle Management): re-run this step and every
+// step after it, discarding what they already produced. Feedback is optional
+// (unlike Regenerate's, which is gate-scoped and always has one) since a plain
+// restart after a prompt/config fix doesn't require re-stating why.
+export const RestartStepInput = z.object({
+  feedback: z.string().optional(),
+});
+export type RestartStepInput = z.infer<typeof RestartStepInput>;
+
+// Bulk Retry Failed Steps across the paused-run queue.
+export const RetryFailedRunsInput = z.object({
+  runIds: z.array(z.string().min(1)).min(1, 'at least one runId is required'),
+});
+export type RetryFailedRunsInput = z.infer<typeof RetryFailedRunsInput>;
+
 // Runtime credential prompt: the tester's response to a `credential.awaiting`
 // pause. `use-once` threads the values into just this run; `save` also persists
 // them to Settings for future stories; `cancel` stops the run.

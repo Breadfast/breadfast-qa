@@ -72,13 +72,21 @@ export type StoryStatus = (typeof STORY_STATUSES)[number];
 export const RUN_STATUSES = [
   'queued',
   'running',
-  'paused', // blocked on a gate or clarification
+  'paused', // blocked on a gate/clarification/credential, a manual Pause, or an
+            // auto-pause (usage limit) — see Run.pauseReason for which
+  'pausing', // graceful-stop requested; worker finishes the in-flight step
+             // normally, then stops before starting the next one (cf. 'cancelling',
+             // which aborts the in-flight step immediately)
   'cancelling', // stop requested; worker's poller will abort the active step
   'succeeded',
   'failed',
   'cancelled',
 ] as const;
 export type RunStatus = (typeof RUN_STATUSES)[number];
+
+/** Why a Run is currently 'paused' — drives the Run Details pause banner/copy. */
+export const RUN_PAUSE_REASONS = ['gate', 'ask', 'credential', 'manual', 'usage_limit'] as const;
+export type RunPauseReason = (typeof RUN_PAUSE_REASONS)[number];
 
 /** A workflow node is one of four kinds — see docs ARCHITECTURE.md §UX Flow. */
 export const STEP_TYPES = ['code', 'ai', 'gate', 'ask'] as const;
@@ -94,6 +102,9 @@ export const STEP_STATUSES = [
   'failed',
   'skipped',
   'cancelled', // interrupted by a Stop request; NOT terminal — a resume re-executes it
+  'interrupted', // interrupted by a system-detected pause (e.g. Claude usage limit);
+                 // NOT terminal — a resume re-executes it. Distinct from 'cancelled'
+                 // so the UI never implies the tester stopped it themselves.
 ] as const;
 export type StepStatus = (typeof STEP_STATUSES)[number];
 

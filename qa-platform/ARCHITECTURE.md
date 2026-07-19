@@ -99,6 +99,17 @@ The JSON envelope yields `result`, `session_id` (`--resume`), `total_cost_usd`, 
 
 27 nodes, in the order defined by `LIFECYCLE_GRAPH` (`packages/shared/src/domain.ts`) — enumerated in [parity-baseline.md](./docs/design/parity-baseline.md) §2. Every node persists input/output to `RunStep` → runs are resumable and audited. Gates block on an `Approval` row; clarifications and `config.needed` block on a `Clarification`-style row.
 
+## Run Lifecycle Management
+
+Orchestration state around the frozen 27-node graph, not a redesign of it — no node's behavior or order changes.
+
+- **Pause vs. Cancel.** Cancel (`'cancelling'` → `'cancelled'`) aborts the in-flight step immediately. Pause (`'pausing'` → `'paused'`) is graceful: the worker's poller flags it but never aborts — the current step finishes normally, and the run stops at the next step boundary. `Run.pauseReason` (`gate | ask | credential | manual | usage_limit`) carries *why* a `'paused'` run is paused, so the UI/Activity Timeline never need a bespoke status per reason.
+- **Retry vs. Restart.** *Retry Failed Step* resets only the one `failed`/`interrupted` step (there's nothing downstream to reset — a failure is a hard stop) and increments `RunStep.attempt`. *Restart From Step* works on **any** step regardless of status and discards everything from that step onward: `outputJson`/`logs`/`errorJson`/tokens/cost are cleared, `Approval`/`Clarification` rows for the reset range are dropped, run-level rollups are recomputed from what remains, and Parity/Review/Story Health/Recommendations are cleared if the reset range reaches `html_report`. Both share one primitive (`resetStepsFrom` in `RunsService`); `regenerateStep` (gate "Regenerate") is a thin wrapper over Restart.
+- **Claude usage-limit protection is reactive, not proactive.** Neither the `claude` CLI nor Anthropic expose a queryable "% of plan used" signal, so there's no way to warn before the limit hits — only to recognize the CLI's own failure signature (`UsageLimitError` in `packages/engine/src/claude-runner.ts`, an env-configurable text-pattern match) and auto-pause (`pauseReason: 'usage_limit'`) instead of failing the run.
+- **No cross-session Claude memory dependence.** Every node is a stateless, one-shot `claude -p` call; its prompt is rebuilt every time — first run or a resume weeks later, same machine or a different one — from `buildRunContext()` (`packages/shared/src/context-builder.ts`), which reconstructs state purely from persisted, succeeded `RunStep.outputJson` rows. `Run.engineSession`/`claude --resume` stays deliberately unused: wiring it up would reintroduce exactly the memory dependence this design avoids.
+- **Artifact versioning.** Files (`Artifact` model) are versioned, not overwritten: a Restart that re-runs a node writes a new `.vN`-suffixed file + `Artifact` row rather than clobbering the previous version.
+- **Verification:** `scripts/verify-run-lifecycle.mjs` (same real-DB harness pattern as `phase1/2-validate.mjs`) — the cross-session guarantee is proven by calling `buildRunContext()` against a freshly-queried run, not anything held in the test's own process state.
+
 ## Data separation
 
 | Shared (git) | Personal (runtime workspace, gitignored) |
@@ -122,7 +133,8 @@ The JSON envelope yields `result`, `session_id` (`--resume`), `total_cost_usd`, 
 - **Phase 2 — Platform Intelligence (M1–M8):** ✅ citations · explainability + review confidence · visual testing intelligence · story health · recommendations · activity timeline · enhanced reports · knowledge lint. → [phase2-platform-intelligence.md](./docs/design/phase2-platform-intelligence.md) · [validation](./docs/design/phase2-validation-review.md)
 - **Phase 3 — QA Analytics (incl. Team Insights):** ✅ deterministic cross-run aggregation; `GET /analytics` + web. → [phase3-analytics.md](./docs/design/phase3-analytics.md)
 - **Phase 4 — Coverage Matrix:** ✅ deterministic cross-story coverage; `GET /coverage` + web. → [phase4-coverage.md](./docs/design/phase4-coverage.md)
-- All four are deterministic (ADR-001, 0 new AI beyond the bounded visual comparator) and leave the frozen 27-node workflow + Platform Parity unchanged. **Certification phase** (docs/certification) validates pilot readiness.
+- **Phase 5 — Run Lifecycle Management:** ✅ manual pause/resume, retry-failed-step (single + bulk), restart-from-any-step, artifact versioning, reactive Claude usage-limit auto-pause, cross-story paused-run queue. See "Run Lifecycle Management" above.
+- All five are deterministic (ADR-001, 0 new AI beyond the bounded visual comparator) and leave the frozen 27-node workflow + Platform Parity unchanged. **Certification phase** (docs/certification) validates pilot readiness.
 
 ## Security
 

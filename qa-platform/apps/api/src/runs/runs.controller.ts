@@ -17,7 +17,15 @@ import { RunsService } from './runs.service.js';
 import { EventsBus } from './events.bus.js';
 import { AuthenticatedGuard } from '../common/authenticated.guard.js';
 import type { SessionUser } from '../auth/session.serializer.js';
-import { ApproveGateInput, AnswerClarificationInput, RegenerateStepInput, SubmitCredentialInput, type RunEvent } from '@qa/shared';
+import {
+  ApproveGateInput,
+  AnswerClarificationInput,
+  RegenerateStepInput,
+  RestartStepInput,
+  RetryFailedRunsInput,
+  SubmitCredentialInput,
+  type RunEvent,
+} from '@qa/shared';
 
 @Controller()
 export class RunsController {
@@ -32,6 +40,18 @@ export class RunsController {
   create(@Param('storyId') storyId: string, @Req() req: Request) {
     const user = req.user as SessionUser;
     return this.runs.createRun(storyId, user.id);
+  }
+
+  /**
+   * Paused-run queue (Run Lifecycle Management, §6b). MUST be declared before
+   * the `runs/:id` route below — Nest/Express match in registration order, so
+   * a literal segment route needs to win before the `:id` wildcard would
+   * otherwise swallow it.
+   */
+  @Get('runs/interrupted')
+  @UseGuards(AuthenticatedGuard)
+  interrupted() {
+    return this.runs.listInterrupted();
   }
 
   @Get('runs/:id')
@@ -99,10 +119,43 @@ export class RunsController {
     return this.runs.skipStep(stepId, user.id);
   }
 
+  /** Retry Failed Step (Run Lifecycle Management): re-run just this one step. */
+  @Post('runs/:runId/steps/:stepId/retry')
+  @UseGuards(AuthenticatedGuard)
+  retry(@Param('stepId') stepId: string, @Req() req: Request) {
+    const user = req.user as SessionUser;
+    return this.runs.retryStep(stepId, user.id);
+  }
+
+  /** Bulk Retry Failed Steps across the paused-run queue. */
+  @Post('runs/retry-failed')
+  @UseGuards(AuthenticatedGuard)
+  retryFailed(@Body() body: RetryFailedRunsInput, @Req() req: Request) {
+    const user = req.user as SessionUser;
+    const dto = RetryFailedRunsInput.parse(body);
+    return this.runs.retryFailedRuns(dto.runIds, user.id);
+  }
+
+  /** Restart From Step (Run Lifecycle Management): re-run this step + everything after it. */
+  @Post('runs/:runId/steps/:stepId/restart')
+  @UseGuards(AuthenticatedGuard)
+  restart(@Param('stepId') stepId: string, @Body() body: RestartStepInput, @Req() req: Request) {
+    const user = req.user as SessionUser;
+    const dto = RestartStepInput.parse(body);
+    return this.runs.restartFromStep(stepId, dto.feedback, user.id);
+  }
+
   @Post('runs/:id/cancel')
   @UseGuards(AuthenticatedGuard)
   cancel(@Param('id') id: string) {
     return this.runs.cancelRun(id);
+  }
+
+  /** Manual Pause (Run Lifecycle Management): graceful stop at the next step boundary. */
+  @Post('runs/:id/pause')
+  @UseGuards(AuthenticatedGuard)
+  pause(@Param('id') id: string) {
+    return this.runs.pauseRun(id);
   }
 
   @Post('runs/:id/resume')
@@ -141,5 +194,17 @@ export class RunsController {
   @HttpCode(200)
   llmLog(@Param('id') id: string, @Body() rec: Record<string, unknown>) {
     return this.runs.logLlmRequest(id, rec);
+  }
+
+  /** Artifact versioning (Run Lifecycle Management, §5b). Unguarded — local worker. */
+  @Get('runs/:id/artifacts/next-version')
+  nextArtifactVersion(@Param('id') id: string, @Query('name') name: string) {
+    return this.runs.nextArtifactVersion(id, name);
+  }
+
+  @Post('runs/:id/artifacts')
+  @HttpCode(200)
+  recordArtifact(@Param('id') id: string, @Body() rec: { kind: string; name: string; version: number; localPath: string }) {
+    return this.runs.recordArtifact(id, rec);
   }
 }

@@ -87,6 +87,39 @@ export async function getRunStatus(runId: string): Promise<string | null> {
   }
 }
 
+/**
+ * Artifact versioning (Run Lifecycle Management, §5b). Pure read: the next
+ * version number for a logical artifact name within this run's story. Falls
+ * back to 1 on any failure — worst case a restart re-clobbers a file it
+ * would otherwise have versioned, no worse than today's un-versioned writes.
+ */
+export async function nextArtifactVersion(runId: string, name: string): Promise<number> {
+  try {
+    const res = await fetch(`${BASE}/runs/${runId}/artifacts/next-version?name=${encodeURIComponent(name)}`);
+    if (!res.ok) return 1;
+    const body = (await res.json()) as { version: number };
+    return body.version ?? 1;
+  } catch {
+    return 1;
+  }
+}
+
+/** Record a written artifact version. Fire-and-forget: never blocks the run. */
+export async function recordArtifact(
+  runId: string,
+  rec: { kind: string; name: string; version: number; localPath: string },
+): Promise<void> {
+  try {
+    await fetch(`${BASE}/runs/${runId}/artifacts`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(rec),
+    });
+  } catch {
+    /* fire-and-forget */
+  }
+}
+
 /** Resolved settings map (BrowserStack/Jira/etc.) for the local worker. */
 export async function getSettings(): Promise<Record<string, string>> {
   try {
