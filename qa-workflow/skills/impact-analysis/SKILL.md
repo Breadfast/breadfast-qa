@@ -2,7 +2,7 @@
 name: impact-analysis
 type: task
 version: 1.0
-description: Impact Analysis — scaffold stub; authored in the implementation phase.
+description: Impact Analysis (QA_PROCESS / CLAUDE.md STEP 4). Produce Impacted / Regression / Smoke / Automation areas from requirements + figma-analysis. Runs as a subagent in qa-shift-left.
 phase: Impact Analysis
 workflow: [qa-shift-left]
 runsAs: subagent
@@ -15,18 +15,29 @@ produces:
 methodology: docs/ai/regression-strategy.md
 ---
 
-# impact-analysis (task skill — scaffold)
+# impact-analysis (task skill)
 
-> **Scaffold stub.** Thin wrapper; the **how** lives in `docs/ai/regression-strategy.md` (source of truth).
-> Contract fields above are provisional and validated in the implementation phase.
+> Thin wrapper. The **how** is in [`docs/ai/regression-strategy.md`](../../../docs/ai/regression-strategy.md) §1
+> and `CLAUDE.md` §2 STEP 4. Do not re-inline methodology.
 
 ## Purpose
-See `docs/ai/regression-strategy.md`. Produces: `impact`.
+Determine the blast radius of the change and the regression/smoke/automation scope.
 
-## Inputs / Outputs
-- Consumes (by path): artifacts [requirements, figma-analysis]; sources []; domains [].
-- Produces: `impact` under `<TICKET>/`; returns `{ artifactPath, status, summary }` to the workflow.
+## Inputs (by path — reused, not regenerated)
+- `<storyDir>/requirements-analysis/requirements.md`
+- `<storyDir>/figma-analysis/analysis.md`
 
-## qa-state
-Update `<TICKET>/qa-state.json` per `docs/ai/architecture/qa-artifact-contract.md` and validate
-against `docs/ai/architecture/qa-state.schema.json`.
+## Steps (per methodology)
+1. Read the requirements + figma-analysis artifacts.
+2. Produce: **Impacted Areas · Regression Areas · Smoke Coverage · Automation Impact.**
+3. Write **`impact-analysis/impact.md`**.
+
+## Output & recording
+- Writes: `<storyDir>/impact-analysis/impact.md`.
+- Return: `{ artifactPath, regressionAreaCount, summary }`.
+- Recorded with provenance from its upstream artifacts:
+  ```
+  node qa-workflow/bin/qa-cli.js record "<storyDir>" impact \
+       --path impact-analysis/impact.md --generator impact-analysis@1.0 \
+       --derive-artifacts requirements,figma-analysis
+  ```
