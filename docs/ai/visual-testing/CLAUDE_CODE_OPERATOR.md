@@ -62,6 +62,21 @@ The canon is *deterministic-first, AI only on the residual*. As the AI operator 
 - Every finding must be **objective and reproducible from the two images** — never a UX opinion, never a redesign suggestion.
 - The same two images must always yield the same findings.
 
+### 4.1 Responsibility boundary — visual testing is business-agnostic
+Visual testing is **design-conformance only**: the Figma baseline is the source of truth, and business
+rules do **not** enter the comparison. A phase that compares against a baseline depends on the baseline,
+not on the rules that produced it. Business knowledge flows *upstream* into the baseline:
+- **Requirements / Figma Analysis / Test Design** decide *what* is correct and *which* Figma frame is
+  expected for a given state (e.g. conditional sections per perk type).
+- **Execution + screen identity** tag each screenshot with its `screenId` + state, so it pairs to the
+  right expected frame.
+- Visual testing then compares the **paired** Expected↔Actual using only the comparison rules
+  (dynamic-content exclusions §6, tolerances).
+
+If a needed expected state is missing, or the Figma copy itself is wrong, that is a **baseline gap** to
+fix in Figma Analysis (or a **coverage gap** to report) — never a reason to inject domain knowledge into
+the comparison. Consequence: the visual-testing skill declares **no** business `domains`.
+
 ---
 
 ## 5. Validation dimensions (systematic comparison)

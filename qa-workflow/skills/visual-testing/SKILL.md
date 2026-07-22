@@ -9,7 +9,7 @@ runsAs: subagent
 consumes:
   sources: []
   artifacts: [figma-analysis]
-  domains: [marketing]
+  domains: []          # business-agnostic — see "Responsibility boundary" below
 produces:
   artifacts: [visual-findings]
 methodology: docs/ai/visual-testing/CLAUDE_CODE_OPERATOR.md
@@ -22,8 +22,18 @@ methodology: docs/ai/visual-testing/CLAUDE_CODE_OPERATOR.md
 > (identify → pair → re-baseline → reconstruct → compare 18 dimensions → **dynamic-vs-defect exclusion
 > rules** → finding schema → group → annotated evidence → Design Bug). Do not re-inline it.
 
+## Responsibility boundary — business-agnostic
+Visual testing is **design-conformance**: the Figma baseline is the source of truth. Business rules do
+**not** enter the comparison. They flow *upstream* into the baseline — `requirements` / `figma-analysis`
+/ `test-design` decide *what* is correct and *which* frame is expected for a given state; execution +
+screen identity tag each screenshot with its `screenId`+state so it pairs to the right frame. This skill
+then compares the paired Expected↔Actual using only the **comparison rules** (dynamic-content
+exclusions, tolerances). A missing expected state or wrong Figma copy is a **baseline gap** to fix in
+`figma-analysis` (or a coverage gap) — never a reason to inject domain knowledge here. Hence `domains: []`.
+
 ## Inputs (by path)
-`figma-analysis` (Expected frames + analysis) + captured screenshots from Execution.
+`figma-analysis` (Expected frames + analysis) + captured screenshots (Actual, from Execution) + the
+comparison rules (dynamic-content exclusion taxonomy + tolerances, per the operator playbook §6).
 
 ## Steps (per playbook)
 1. Per screen: pair Expected (Figma) ↔ Actual; re-baseline to the correct design version; reconstruct multi-image screens.
@@ -37,6 +47,6 @@ methodology: docs/ai/visual-testing/CLAUDE_CODE_OPERATOR.md
 ```
 node qa-workflow/bin/qa-cli.js record "<storyDir>" visual-findings \
      --path evidence/visual-findings.md --generator visual-testing@1.0 \
-     --derive-artifacts figma-analysis --domains marketing
+     --derive-artifacts figma-analysis
 ```
 Returns `{ screens, confirmedDefects, excludedStateDiffs }` (compact).
