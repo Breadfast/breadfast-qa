@@ -1,0 +1,217 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadfast.qa/schemas/qa-state.schema.json",
+  "title": "QA State Ledger",
+  "description": "Per-story reuse/freshness ledger written by Workflow 1 and reconciled by Workflow 2. One file per story at <TICKET>/qa-state.json. See qa-artifact-contract.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "ticket", "sources", "artifacts"],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1,
+      "description": "Contract version. Bump only on breaking schema changes."
+    },
+    "ticket": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9]+-[0-9]+$",
+      "description": "Jira issue key, e.g. B10-56729."
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Timestamp of the last reconcile/update."
+    },
+    "generatedBy": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]+@[0-9]+\\.[0-9]+$",
+      "description": "The workflow that last wrote this file, as <workflow>@<major.minor>, e.g. qa-shift-left@1.0."
+    },
+    "sources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["jira"],
+      "description": "Current known fingerprints of the story's inputs.",
+      "properties": {
+        "jira": { "$ref": "#/$defs/jiraSource" },
+        "figma": { "$ref": "#/$defs/figmaSource" }
+      }
+    },
+    "domains": {
+      "type": "object",
+      "description": "Consumed business-domain fingerprints, keyed by domain id (card, payment, marketing, ...).",
+      "propertyNames": { "$ref": "#/$defs/domainId" },
+      "additionalProperties": { "$ref": "#/$defs/domainFingerprint" }
+    },
+    "artifacts": {
+      "type": "object",
+      "description": "One record per artifact, keyed by artifact key (requirements, figma-analysis, clarifications, impact, hls, and optional Workflow-2 outputs).",
+      "propertyNames": { "$ref": "#/$defs/artifactKey" },
+      "additionalProperties": { "$ref": "#/$defs/artifactRecord" }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "Lowercase hex SHA-256."
+    },
+    "artifactKey": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "description": "Baseline: requirements | figma-analysis | clarifications | impact | hls. Optional WF2: testcases | browserstack-import | automation | execution | visual-findings | defects | qa-summary. Pattern allows forward-compatible additions."
+    },
+    "domainId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "generatorRef": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]+@[0-9]+\\.[0-9]+$",
+      "description": "<skill>@<major.minor>. A higher version than the stored one marks the artifact stale (methodology-refined rule)."
+    },
+    "jiraSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["updated", "hash"],
+      "properties": {
+        "updated": { "type": "string", "format": "date-time", "description": "Jira issue `updated` at last reconcile." },
+        "hash": { "$ref": "#/$defs/sha256", "description": "sha256(normalize(hashed Jira fields))." },
+        "fieldsHashed": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["summary", "description", "ac", "comments", "attachments", "links"] },
+          "uniqueItems": true,
+          "description": "Exactly which fields fed the hash."
+        }
+      }
+    },
+    "figmaSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fileKey"],
+      "properties": {
+        "fileKey": { "type": "string", "description": "Per-story Figma file key from the ticket's Figma URL." },
+        "nodeIds": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^[0-9]+[:-][0-9]+$" },
+          "uniqueItems": true,
+          "description": "Frame node ids compared (accepts 1:211 or 1-211 forms)."
+        },
+        "lastModified": { "type": "string", "format": "date-time", "description": "Figma file `lastModified`." },
+        "version": { "type": "string", "description": "Figma file `version` id." },
+        "framesHash": {
+          "oneOf": [ { "$ref": "#/$defs/sha256" }, { "type": "null" } ],
+          "description": "sha256 over exported frame PNGs; null until frames are exported."
+        }
+      }
+    },
+    "domainFingerprint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version"],
+      "properties": {
+        "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+$", "description": "Domain skill version consumed." },
+        "checksum": { "$ref": "#/$defs/sha256", "description": "sha256 of the domain skill content." }
+      }
+    },
+    "artifactRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "status", "generator"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Artifact path relative to the story folder, e.g. requirements-analysis/requirements.md."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["complete", "partial", "missing", "stale", "modified"],
+          "description": "complete = reusable; modified = hand-edited after generation, authoritative & reused (human edit wins); partial/missing/stale force regeneration. See qa-artifact-contract.md Reconcile steps 3 & 5."
+        },
+        "generatedAt": { "type": "string", "format": "date-time" },
+        "generator": { "$ref": "#/$defs/generatorRef" },
+        "derivedFrom": {
+          "type": "object",
+          "description": "Fingerprints of the sources/upstream-artifacts used at generation time, keyed by name (jira | figma | <artifactKey>). Values are the sha256 that were current when this artifact was produced; a mismatch vs. the live fingerprint marks it stale.",
+          "propertyNames": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+          "additionalProperties": { "$ref": "#/$defs/sha256" }
+        },
+        "checksum": { "$ref": "#/$defs/sha256", "description": "sha256 of the artifact file content (detects on-disk drift/tamper)." },
+        "domains": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/domainId" },
+          "uniqueItems": true,
+          "description": "Business domains this artifact consumed."
+        },
+        "notes": { "type": "string" }
+      }
+    }
+  },
+  "examples": [
+    {
+      "schemaVersion": 1,
+      "ticket": "B10-56729",
+      "updatedAt": "2026-07-22T14:00:00Z",
+      "generatedBy": "qa-shift-left@1.0",
+      "sources": {
+        "jira": {
+          "updated": "2026-07-22T09:12:00Z",
+          "hash": "0000000000000000000000000000000000000000000000000000000000000000",
+          "fieldsHashed": ["summary", "description", "ac", "comments"]
+        },
+        "figma": {
+          "fileKey": "tvvGnEaxVjJvMWOTl4zjZC",
+          "nodeIds": ["1:211"],
+          "lastModified": "2026-07-20T18:00:00Z",
+          "version": "123456789",
+          "framesHash": "3333333333333333333333333333333333333333333333333333333333333333"
+        }
+      },
+      "domains": {
+        "card": { "version": "1.0", "checksum": "1111111111111111111111111111111111111111111111111111111111111111" }
+      },
+      "artifacts": {
+        "requirements": {
+          "path": "requirements-analysis/requirements.md",
+          "status": "complete",
+          "generatedAt": "2026-07-22T10:00:00Z",
+          "generator": "story-analysis@1.0",
+          "derivedFrom": { "jira": "0000000000000000000000000000000000000000000000000000000000000000" },
+          "checksum": "2222222222222222222222222222222222222222222222222222222222222222",
+          "domains": ["card"]
+        },
+        "figma-analysis": {
+          "path": "figma-analysis/analysis.md",
+          "status": "complete",
+          "generatedAt": "2026-07-22T10:05:00Z",
+          "generator": "figma-analysis@1.0",
+          "derivedFrom": { "figma": "3333333333333333333333333333333333333333333333333333333333333333" },
+          "checksum": "4444444444444444444444444444444444444444444444444444444444444444"
+        },
+        "impact": {
+          "path": "impact-analysis/impact.md",
+          "status": "complete",
+          "generatedAt": "2026-07-22T10:20:00Z",
+          "generator": "impact-analysis@1.0",
+          "derivedFrom": {
+            "requirements": "2222222222222222222222222222222222222222222222222222222222222222",
+            "figma-analysis": "4444444444444444444444444444444444444444444444444444444444444444"
+          },
+          "checksum": "5555555555555555555555555555555555555555555555555555555555555555"
+        },
+        "hls": {
+          "path": "hls/hls.md",
+          "status": "complete",
+          "generatedAt": "2026-07-22T10:35:00Z",
+          "generator": "test-design@1.0",
+          "derivedFrom": {
+            "requirements": "2222222222222222222222222222222222222222222222222222222222222222",
+            "figma-analysis": "4444444444444444444444444444444444444444444444444444444444444444",
+            "impact": "5555555555555555555555555555555555555555555555555555555555555555"
+          },
+          "checksum": "6666666666666666666666666666666666666666666666666666666666666666"
+        }
+      }
+    }
+  ]
+}
