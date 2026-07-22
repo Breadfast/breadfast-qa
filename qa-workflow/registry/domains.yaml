@@ -1,0 +1,44 @@
+# QA domains & index registry (seed).
+# Migrates into breadfast-workflow/registry/domains.yaml.
+# Domain rules are NOT split per-domain in docs/ai/business yet (overview/rules/products/roles);
+# domain-splitting is a follow-up. Wrappers currently reference the shared business docs.
+
+schemaVersion: 1
+
+domains:
+  card:
+    version: "1.0"
+    description: Card perks, partners, regulations, security, card services
+    sources:
+      - docs/ai/business/business-rules.md
+      - docs/ai/business/products.md
+  payment:
+    version: "1.0"
+    description: Breadfast Pay flows, funding, transactions
+    sources:
+      - docs/ai/business/business-rules.md
+      - docs/ai/business/products.md
+  marketing:
+    version: "1.0"
+    description: Perks marketing, sections, mobile display, copy/localization
+    sources:
+      - docs/ai/business/products.md
+
+workflows:
+  - id: qa-shift-left
+    file: workflows/qa-shift-left.md
+  - id: qa-implementation-validation
+    file: workflows/qa-implementation-validation.md
+
+skills:
+  # phase task skills (thin wrappers over docs/ai/**)
+  - { id: story-analysis,      runsAs: subagent, workflow: qa-shift-left }
+  - { id: figma-analysis,      runsAs: subagent, workflow: qa-shift-left }
+  - { id: impact-analysis,     runsAs: subagent, workflow: qa-shift-left }
+  - { id: test-design,         runsAs: subagent, workflow: [qa-shift-left, qa-implementation-validation] }
+  - { id: exploratory-testing, runsAs: inline,   workflow: qa-implementation-validation }
+  - { id: visual-testing,      runsAs: subagent, workflow: qa-implementation-validation }
+  - { id: browserstack-mgmt,   runsAs: inline,   workflow: qa-implementation-validation }
+  - { id: automation-gen,      runsAs: subagent, workflow: qa-implementation-validation }
+  - { id: defect-reporting,    runsAs: inline,   workflow: qa-implementation-validation }
+  # clarification is the existing grill-me skill (inline, interactive) — not re-authored here

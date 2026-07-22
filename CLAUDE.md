@@ -7,6 +7,8 @@
 > business rules, page objects, helpers, coordinates, or story-specific data here.
 >
 > **Default testing scope: iOS + Android, in Arabic (ar/EG) and English (en/US) — all four.**
+>
+> **QA methodology authority:** [`docs/ai/QA_PROCESS.md`](docs/ai/QA_PROCESS.md) is the authoritative, platform-agnostic QA methodology (six gated phases: Requirements → Figma → Test Design → Execution → Visual Testing → QA Summary). This file stays scoped to execution behavior, orchestration, routing, and AI behavior — Section 2 below operationalizes that methodology against today's tooling, but QA_PROCESS.md wins on any conflict. The QA Platform (`qa-platform/`) is now a **legacy execution engine**: it receives completion of in-progress work, certification/hardening, critical bug fixes, and migration support only — no new platform-specific capabilities. Claude Code is the primary execution environment going forward.
 
 ---
 
@@ -27,6 +29,9 @@ CLAUDE.md orchestrates; `docs/ai/` holds the detail. Routing:
 
 | Need | Read |
 |------|------|
+| **Canonical QA methodology (authoritative — six gated phases + exit criteria)** | [docs/ai/QA_PROCESS.md](docs/ai/QA_PROCESS.md) |
+| **QA workflow architecture (Pre-Dev/Post-Dev split, artifact reuse contract, plugin-alignment)** | [docs/ai/architecture/adr-001-qa-workflow-independent-plugin-aligned.md](docs/ai/architecture/adr-001-qa-workflow-independent-plugin-aligned.md) · [contract](docs/ai/architecture/qa-artifact-contract.md) · [schema](docs/ai/architecture/qa-state.schema.json) · scaffold [qa-workflow/](qa-workflow/) |
+| **Execution engine requirements (session/browser lifecycle for Claude Code as executor)** | [docs/ai/execution-engine.md](docs/ai/execution-engine.md) |
 | Methodology, test design, **Figma visual comparison**, screenshot strategy | [docs/ai/testing-process.md](docs/ai/testing-process.md) |
 | Mobile sessions, Appium caps, tap/OTP/keypad patterns, **CSV import**, quirks | [docs/ai/browserstack-process.md](docs/ai/browserstack-process.md) |
 | Exploratory charters, failure-pattern heuristics, fragile flows, timing | [docs/ai/exploratory-testing.md](docs/ai/exploratory-testing.md) |
@@ -49,6 +54,8 @@ CLAUDE.md orchestrates; `docs/ai/` holds the detail. Routing:
 ---
 
 ## 2. Mandatory Story Process
+
+> Operationalizes [docs/ai/QA_PROCESS.md](docs/ai/QA_PROCESS.md)'s six phases against today's tooling (Jira/Figma/BrowserStack). QA_PROCESS.md is authoritative on methodology; this section is how Claude Code currently executes it — if the two ever diverge, QA_PROCESS.md wins.
 
 When given a Jira story, follow these steps **in order**. Do **not** generate test cases before story analysis + clarification are complete.
 
@@ -95,11 +102,13 @@ Generate test cases → generate the BrowserStack-compatible CSV → **ask for c
 1. **Application discovery** — if URL missing, ask for it. Explore navigation, behavior, journeys, dependencies, story impact, using the existing Playwright framework/page-objects/helpers/fixtures.
 2. **Exploratory testing** — generate notes ([docs/ai/exploratory-testing.md](docs/ai/exploratory-testing.md)).
 3. **Automation** — reuse framework assets; create new page objects/suites/utilities only when needed; story name traceable in automation assets; automate all generated test cases; validate against expected results. ([docs/ai/automation/](docs/ai/automation/)).
-4. **Execution & reporting** — execute; generate HTML report (tests, pass/fail, screenshots, evidence, coverage, defects).
-5. **Defect reporting** — file Jira bugs ([docs/ai/bug-reporting.md](docs/ai/bug-reporting.md)).
+4. **Execution & reporting** — execute; generate the HTML report (tests, pass/fail, screenshots, evidence, coverage, defects).
+5. **Visual Testing** ([docs/ai/QA_PROCESS.md](docs/ai/QA_PROCESS.md) Phase 5) — compare each captured screen against its Figma design, deterministic-first, AI only on the residual; produce visual findings + report. ([docs/ai/testing-process.md](docs/ai/testing-process.md) §4.)
+6. **Defect reporting** — file Jira bugs, functional and visual ([docs/ai/bug-reporting.md](docs/ai/bug-reporting.md)).
+7. **QA Summary** ([docs/ai/QA_PROCESS.md](docs/ai/QA_PROCESS.md) Phase 6) — consolidate functional + visual results, coverage, risks, and a clear recommendation into the story's report.
 
 ## 4. Mobile Story Process (user provides iOS + Android BrowserStack app IDs)
-Run the full cycle without skipping: Story Analysis → Figma Analysis → Clarification → Impact → HLS → Test Cases → BrowserStack Import → **Execution (4 combos, end-to-end)** → Figma Validation → Report → Defects.
+Run the full cycle without skipping: Story Analysis → Figma Analysis → Clarification → Impact → HLS → Test Cases → BrowserStack Import → **Execution (4 combos, end-to-end)** → **Visual Testing** ([docs/ai/QA_PROCESS.md](docs/ai/QA_PROCESS.md) Phase 5 — deterministic-first, AI only on the residual) → **QA Summary** (Phase 6) → Defects.
 - **Cross-platform validation:** validate Android + iOS; compare against Figma, AC, business requirements; document platform differences. ([docs/ai/testing-process.md](docs/ai/testing-process.md) §3.4.)
 - **Appium automation:** analyze the existing native framework (androidNative/iosNative/page-objects/helpers/configs), follow conventions, never duplicate, automate all generated test cases. (Mobile WebDriver layer: [docs/ai/automation/appium-framework.md](docs/ai/automation/appium-framework.md).)
 - **Reporting:** HTML report + screenshots + videos + defect summary + coverage summary ([docs/ai/release-validation.md](docs/ai/release-validation.md)).
