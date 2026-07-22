@@ -2,7 +2,7 @@
 name: automation-gen
 type: task
 version: 1.0
-description: Automation Generation — scaffold stub; authored in the implementation phase.
+description: Automation Generation (QA_PROCESS Phase 4). Automate the generated test cases reusing framework assets (Playwright/Appium/Java). Runs as a subagent.
 phase: Automation Generation
 workflow: [qa-implementation-validation]
 runsAs: subagent
@@ -15,18 +15,26 @@ produces:
 methodology: docs/ai/automation/playwright-framework.md
 ---
 
-# automation-gen (task skill — scaffold)
+# automation-gen (task skill)
 
-> **Scaffold stub.** Thin wrapper; the **how** lives in `docs/ai/automation/playwright-framework.md` (source of truth).
-> Contract fields above are provisional and validated in the implementation phase.
+> Thin wrapper. The **how** is in [`docs/ai/automation/`](../../../docs/ai/automation/) —
+> [`playwright-framework.md`](../../../docs/ai/automation/playwright-framework.md),
+> [`coding-standards.md`](../../../docs/ai/automation/coding-standards.md),
+> [`reusable-components.md`](../../../docs/ai/automation/reusable-components.md) (reuse-before-build),
+> and the canonical Java/Appium framework at `D:\projects`.
 
-## Purpose
-See `docs/ai/automation/playwright-framework.md`. Produces: `automation`.
+## Reuse-before-build
+Search the framework catalogs first; never duplicate existing page objects, helpers, fixtures, or API
+clients. New reusable assets go in shared `automation/` (mirrored to the runnable `b55168_pom`).
 
-## Inputs / Outputs
-- Consumes (by path): artifacts [testcases]; sources []; domains [].
-- Produces: `automation` under `<TICKET>/`; returns `{ artifactPath, status, summary }` to the workflow.
+## Steps
+1. Map each generated case to framework page-objects/helpers; identify gaps.
+2. Author specs under the story's `automation/tests/`; story name traceable in assets.
+3. Automate **all** generated cases; validate against expected results.
 
-## qa-state
-Update `<TICKET>/qa-state.json` per `docs/ai/architecture/qa-artifact-contract.md` and validate
-against `docs/ai/architecture/qa-state.schema.json`.
+## Recording
+```
+node qa-workflow/bin/qa-cli.js record "<storyDir>" automation \
+     --path automation/README.md --generator automation-gen@1.0 --derive-artifacts testcases
+```
+Returns `{ specsAdded, reusedAssets, gaps }` (compact).

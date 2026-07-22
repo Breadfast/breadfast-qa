@@ -12,9 +12,11 @@
  *   node qa-workflow/bin/qa-cli.js checksum <file>
  *   node qa-workflow/bin/qa-cli.js record <storyDir> <key> --path <rel> --generator <name@x.y>
  *          [--derive-sources jira,figma] [--derive-artifacts requirements,...] [--domains card,...] [--status complete]
+ *   node qa-workflow/bin/qa-cli.js reconcile <storyDir> [--figma-file K --figma-nodes 1:1 --figma-version v]
+ *          [--immaterial] [--apply-modified] [--expected requirements,figma-analysis,...]   # live jira issue JSON on stdin (optional)
  *   node qa-workflow/bin/qa-cli.js show <storyDir>
  *
- * Jira issue JSON (stdin for fingerprint-jira):
+ * Jira issue JSON (stdin for fingerprint-jira / reconcile):
  *   { "updated": "<iso>", "summary": "...", "description": "...", "ac": "...", "comments": [ {"id":1,"body":"..."} ] }
  */
 
@@ -22,6 +24,7 @@ const fs = require('fs');
 const path = require('path');
 const qs = require('../lib/qa-state');
 const { fingerprintJira, fingerprintFigma, fileChecksum } = require('../lib/freshness/fingerprint');
+const { reconcile } = require('../lib/freshness/reconcile');
 
 function parseFlags(argv) {
   const flags = {}; const positional = [];
@@ -120,6 +123,37 @@ function main() {
       qs.setArtifact(state, key, record);
       qs.save(dir, state);
       process.stdout.write(JSON.stringify({ key, ...record }, null, 2) + '\n');
+      break;
+    }
+    case 'reconcile': {
+      // Compute the reuse/regenerate plan for Workflow 2. Live fingerprints come from the caller:
+      //   - live Jira issue JSON on stdin (optional; else the stored hash = no jira change)
+      //   - --figma-file/--figma-nodes/--figma-version[/--figma-frames] (optional; else stored = no change)
+      //   - --immaterial  → treat a jira-only change to clarifications as immaterial (carry forward)
+      //   - --apply-modified → re-baseline hand-edited artifacts (status "modified") and save
+      //   - --expected a,b  → override the reconciled key set (default: baseline)
+      const [dir] = positional;
+      const state = qs.load(dir);
+      if (!state) die('no qa-state.json in ' + dir);
+
+      const stdin = readStdin().trim();
+      const liveJira = stdin ? fingerprintJira(JSON.parse(stdin)).hash
+        : (state.sources && state.sources.jira && state.sources.jira.hash) || null;
+      const liveFigma = flags['figma-file']
+        ? fingerprintFigma({ fileKey: flags['figma-file'], nodeIds: csv(flags['figma-nodes']), version: flags['figma-version'], framesHash: flags['figma-frames'] })
+        : (state.sources && state.sources.figma ? fingerprintFigma(state.sources.figma) : null);
+
+      const opts = {};
+      if (flags.expected) opts.expected = csv(flags.expected);
+      if (flags.immaterial) opts.materiality = () => false;
+
+      const plan = reconcile(state, { jira: { hash: liveJira }, figma: liveFigma, domains: {} }, qs.makeIo(dir), opts);
+
+      if (flags['apply-modified'] && plan.modified.length) {
+        qs.applyModified(state, plan.modified);
+        qs.save(dir, state);
+      }
+      process.stdout.write(JSON.stringify(plan, null, 2) + '\n');
       break;
     }
     case 'show': {

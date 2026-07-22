@@ -2,7 +2,7 @@
 name: browserstack-mgmt
 type: task
 version: 1.0
-description: BrowserStack Management — scaffold stub; authored in the implementation phase.
+description: BrowserStack Test Management (QA_PROCESS Phase 3 / CLAUDE.md STEP 7). Generate the BrowserStack CSV from testcases, upload, and verify the import. Inline (creds + destination + verify).
 phase: BrowserStack Management
 workflow: [qa-implementation-validation]
 runsAs: inline
@@ -15,18 +15,20 @@ produces:
 methodology: docs/ai/browserstack-process.md
 ---
 
-# browserstack-mgmt (task skill — scaffold)
+# browserstack-mgmt (task skill)
 
-> **Scaffold stub.** Thin wrapper; the **how** lives in `docs/ai/browserstack-process.md` (source of truth).
-> Contract fields above are provisional and validated in the implementation phase.
+> Thin wrapper. The **how** is in [`docs/ai/browserstack-process.md`](../../../docs/ai/browserstack-process.md)
+> §10.5–10.6 (CSV format, upload, import verification). Credentials are configured (see
+> `automation/config/credentials.js`) — do not ask the user; use the loader.
 
-## Purpose
-See `docs/ai/browserstack-process.md`. Produces: `browserstack-import`.
+## Steps
+1. Convert `testcases/testcases.csv` to the BrowserStack-compatible CSV (granular steps, each with its Expected Result).
+2. Confirm project/folder destination (ask only if not provided/saved).
+3. Upload; **verify the import**: folder count matches, cases land directly (no nested folder), granular steps render.
+4. Write `browserstack/import-report.md` (destination, counts, verification result).
 
-## Inputs / Outputs
-- Consumes (by path): artifacts [testcases]; sources []; domains [].
-- Produces: `browserstack-import` under `<TICKET>/`; returns `{ artifactPath, status, summary }` to the workflow.
-
-## qa-state
-Update `<TICKET>/qa-state.json` per `docs/ai/architecture/qa-artifact-contract.md` and validate
-against `docs/ai/architecture/qa-state.schema.json`.
+## Recording
+```
+node qa-workflow/bin/qa-cli.js record "<storyDir>" browserstack-import \
+     --path browserstack/import-report.md --generator browserstack-mgmt@1.0 --derive-artifacts testcases
+```

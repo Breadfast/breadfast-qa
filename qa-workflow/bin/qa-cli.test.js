@@ -48,6 +48,48 @@ test('record derives from an upstream artifact checksum', () => {
   assert.ok(rec.derivedFrom.requirements && rec.derivedFrom['figma-analysis']);
 });
 
+test('reconcile: fresh reuses all; changed jira cascades', () => {
+  const dir = tmp();
+  run(['init', dir, 'B10-9']);
+  const issue = { updated: 't', summary: 's', description: 'd', ac: 'a', comments: [] };
+  run(['fingerprint-jira', dir], JSON.stringify(issue));
+  run(['fingerprint-figma', dir, '--file', 'K', '--nodes', '1:1', '--version', 'v']);
+  for (const [key, rel, src] of [['requirements', 'r.md', 'jira'], ['figma-analysis', 'f.md', 'figma'], ['clarifications', 'c.md', 'jira']]) {
+    fs.writeFileSync(path.join(dir, rel), key);
+    run(['record', dir, key, '--path', rel, '--generator', key.replace('-analysis', '') + '@1.0', '--derive-sources', src]);
+  }
+  fs.writeFileSync(path.join(dir, 'i.md'), 'i'); run(['record', dir, 'impact', '--path', 'i.md', '--generator', 'impact-analysis@1.0', '--derive-artifacts', 'requirements,figma-analysis']);
+  fs.writeFileSync(path.join(dir, 'h.md'), 'h'); run(['record', dir, 'hls', '--path', 'h.md', '--generator', 'test-design@1.0', '--derive-artifacts', 'requirements,figma-analysis,impact']);
+
+  // No stdin, no figma flags → nothing changed → reuse all 5
+  const fresh = JSON.parse(run(['reconcile', dir]));
+  assert.equal(fresh.reuse.length, 5);
+  assert.equal(fresh.stale.length, 0);
+
+  // Changed jira → requirements + impact + hls stale (+ clarifications, material by default)
+  const changed = JSON.parse(run(['reconcile', dir], JSON.stringify({ ...issue, ac: 'a-CHANGED' })));
+  assert.ok(changed.stale.includes('requirements') && changed.stale.includes('impact') && changed.stale.includes('hls'));
+  assert.ok(changed.reuse.includes('figma-analysis'));
+
+  // Immaterial flag → clarifications carried forward
+  const immaterial = JSON.parse(run(['reconcile', dir, '--immaterial'], JSON.stringify({ ...issue, ac: 'a-CHANGED' })));
+  assert.ok(immaterial.reuse.includes('clarifications'));
+});
+
+test('reconcile --apply-modified re-baselines a hand-edited artifact', () => {
+  const dir = tmp();
+  run(['init', dir, 'B10-8']);
+  run(['fingerprint-jira', dir], JSON.stringify({ updated: 't', summary: 's', description: 'd', ac: 'a', comments: [] }));
+  run(['fingerprint-figma', dir, '--file', 'K', '--nodes', '1:1', '--version', 'v']);
+  fs.writeFileSync(path.join(dir, 'r.md'), 'orig');
+  run(['record', dir, 'requirements', '--path', 'r.md', '--generator', 'story-analysis@1.0', '--derive-sources', 'jira']);
+  fs.writeFileSync(path.join(dir, 'r.md'), 'HAND EDITED'); // drift, no source change
+  const plan = JSON.parse(run(['reconcile', dir, '--apply-modified', '--expected', 'requirements']));
+  assert.equal(plan.modified.length, 1);
+  const state = JSON.parse(run(['show', dir]));
+  assert.equal(state.artifacts.requirements.status, 'modified');
+});
+
 test('unknown command exits non-zero', () => {
   assert.throws(() => run(['bogus']));
 });

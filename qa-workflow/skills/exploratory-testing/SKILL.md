@@ -2,31 +2,36 @@
 name: exploratory-testing
 type: task
 version: 1.0
-description: Exploratory Testing — scaffold stub; authored in the implementation phase.
+description: Exploratory Testing (QA_PROCESS Phase 4 / Web+Mobile process). Charter-based exploration of the delivered build to surface risks before/with scripted execution. Inline (drives the app).
 phase: Exploratory Testing
 workflow: [qa-implementation-validation]
 runsAs: inline
 consumes:
   sources: []
-  artifacts: [requirements]
+  artifacts: [requirements, figma-analysis, impact]
   domains: []
 produces:
   artifacts: [exploratory-notes]
 methodology: docs/ai/exploratory-testing.md
 ---
 
-# exploratory-testing (task skill — scaffold)
+# exploratory-testing (task skill)
 
-> **Scaffold stub.** Thin wrapper; the **how** lives in `docs/ai/exploratory-testing.md` (source of truth).
-> Contract fields above are provisional and validated in the implementation phase.
+> Thin wrapper. The **how** is in [`docs/ai/exploratory-testing.md`](../../../docs/ai/exploratory-testing.md)
+> (charters, failure-pattern heuristics, fragile flows, timing). Do not re-inline methodology.
 
-## Purpose
-See `docs/ai/exploratory-testing.md`. Produces: `exploratory-notes`.
+## Inputs (by path)
+`requirements` · `figma-analysis` · `impact` (for risk hot-spots) + the running app (web/mobile).
 
-## Inputs / Outputs
-- Consumes (by path): artifacts [requirements]; sources []; domains [].
-- Produces: `exploratory-notes` under `<TICKET>/`; returns `{ artifactPath, status, summary }` to the workflow.
+## Steps
+1. Derive charters from impact/regression areas and figma gaps.
+2. Explore; log observations, anomalies, and candidate defects with repro notes.
+3. Write `evidence/exploratory-notes.md`; feed findings into `test-design` (Phase B) and defects.
 
-## qa-state
-Update `<TICKET>/qa-state.json` per `docs/ai/architecture/qa-artifact-contract.md` and validate
-against `docs/ai/architecture/qa-state.schema.json`.
+## Recording
+```
+node qa-workflow/bin/qa-cli.js record "<storyDir>" exploratory-notes \
+     --path evidence/exploratory-notes.md --generator exploratory-testing@1.0 \
+     --derive-artifacts requirements,figma-analysis,impact
+```
+Returns `{ artifactPath, charters, findings }` (compact).
