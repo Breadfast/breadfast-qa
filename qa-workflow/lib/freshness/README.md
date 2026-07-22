@@ -1,13 +1,16 @@
-# lib/freshness/ — the Reconcile engine (scaffold)
+# lib/freshness/ — the Reconcile engine
 
 Implements the freshness algorithm in
 [`../../../docs/ai/architecture/qa-artifact-contract.md`](../../../docs/ai/architecture/qa-artifact-contract.md) §5.
+Zero-dependency (built-in `crypto` only). Drift-shaped: the same fingerprint/invalidate core the
+plugin's `drift` command can reuse for skills.
 
-**Contract (to implement):**
-- `fingerprintJira(issue)` → `{ updated, hash, fieldsHashed }`
-- `fingerprintFigma({fileKey,nodeIds,lastModified,version,framesHash?})` → figma fingerprint
-- `reconcile(qaState, liveSources)` → `{ reuse[], stale[], modified[], conflicts[] }` (DAG-ordered)
-- honors: human-edit detection (edits win), conflict surfacing, clarifications materiality gate,
-  `version:`-bump invalidation, domain-fingerprint invalidation.
+| Module | Exports | Purpose |
+|---|---|---|
+| `dag.js` | `DAG`, `BASELINE`, `topoOrder`, `dependentsOf` | artifact dependency graph (cascade edges + context) |
+| `fingerprint.js` | `sha256`, `normalizeJira`, `fingerprintJira`, `fingerprintFigma`, `fileChecksum` | source/artifact fingerprints |
+| `reconcile.js` | `reconcile(qaState, live, io, opts)` | pure classifier → `{ reuse, stale, modified, conflicts, reasons, sourceChanged }` |
 
-Drift-shaped: the same fingerprint/invalidate core the plugin's `drift` command will reuse for skills.
+`reconcile()` is pure (file checks injected via `io`) and fully unit-tested in `freshness.test.js`:
+human-edit detection (edits win), conflict surfacing, cascade, clarifications materiality gate,
+`version:`-bump and domain-change invalidation, topological ordering.

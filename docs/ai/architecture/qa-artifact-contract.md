@@ -30,7 +30,7 @@ Workflow 2 outputs **may** also be tracked (optional, same record shape): `testc
 ```
 - `requirements ← jira`
 - `figma-analysis ← figma`
-- `clarifications ← jira (AC/comments)`  *(with requirements + figma-analysis as context)*
+- `clarifications ← jira (AC/comments)`  *(requirements + figma-analysis are **context**, not cascade edges — they inform clarification but do not invalidate it; its only staleness trigger is a **material** jira change, so regenerating requirements does not needlessly re-open the interactive gate)*
 - `impact ← requirements, figma-analysis`
 - `hls ← requirements, figma-analysis, impact, clarifications`
 

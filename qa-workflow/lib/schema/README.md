@@ -1,13 +1,13 @@
-# lib/schema/ — validators (scaffold)
+# lib/schema/ — qa-state validator
 
-The canonical `qa-state` schema currently lives with the design docs:
+`validate.js` exports `validateQaState(state) → { valid, errors[] }`.
+
+**Zero-dependency by design:** it mirrors the canonical JSON Schema
 [`../../../docs/ai/architecture/qa-state.schema.json`](../../../docs/ai/architecture/qa-state.schema.json)
-(validated with Ajv 2020).
+(which remains the formal spec) so `qa-workflow` needs no `ajv` install. Keep the two in sync — if the
+schema changes, update this validator and `validate.test.js`.
 
-**To implement:**
-- A validator wrapper that loads `qa-state.schema.json` and validates a story's `qa-state.json`
-  before every write (Reconcile step 8).
-- Skill-frontmatter validation against the `templates/` shapes.
+Tested in `validate.test.js`. Used by `../qa-state.js` `save()` before every write.
 
-On implementation the canonical schema **moves here** (single source), and the design doc links to it.
-On plugin migration this folder merges into the plugin's `lib/schema/`.
+> On plugin migration, both the canonical schema and this validator consolidate into the plugin's
+> `lib/schema/` (which may swap the hand-rolled validator for ajv against the same JSON Schema).
