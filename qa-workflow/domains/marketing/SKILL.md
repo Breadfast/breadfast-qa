@@ -1,9 +1,10 @@
 ---
 name: marketing
-type: knowledge
-version: 1.0
 description: Perks marketing, sections, mobile display, copy/localization
-sources: [docs/ai/business/products.md]
+metadata:
+  type: knowledge
+  version: 1.0
+  sources: [docs/ai/business/products.md]
 ---
 
 # marketing (knowledge skill — scaffold)

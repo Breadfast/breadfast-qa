@@ -1,9 +1,10 @@
 ---
 name: payment
-type: knowledge
-version: 1.0
 description: Breadfast Pay flows, funding, transactions
-sources: [docs/ai/business/business-rules.md, docs/ai/business/products.md]
+metadata:
+  type: knowledge
+  version: 1.0
+  sources: [docs/ai/business/business-rules.md, docs/ai/business/products.md]
 ---
 
 # payment (knowledge skill — scaffold)

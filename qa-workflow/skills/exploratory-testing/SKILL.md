@@ -1,18 +1,19 @@
 ---
 name: exploratory-testing
-type: task
-version: 1.0
 description: Exploratory Testing (QA_PROCESS Phase 4 / Web+Mobile process). Charter-based exploration of the delivered build to surface risks before/with scripted execution. Inline (drives the app).
-phase: Exploratory Testing
-workflow: [qa-implementation-validation]
-runsAs: inline
-consumes:
-  sources: []
-  artifacts: [requirements, figma-analysis, impact]
-  domains: []
-produces:
-  artifacts: [exploratory-notes]
-methodology: docs/ai/exploratory-testing.md
+metadata:
+  type: task
+  version: 1.0
+  phase: Exploratory Testing
+  workflow: [qa-implementation-validation]
+  runsAs: inline
+  consumes:
+    sources: []
+    artifacts: [requirements, figma-analysis, impact]
+    domains: []
+  produces:
+    artifacts: [exploratory-notes]
+  methodology: docs/ai/exploratory-testing.md
 ---
 
 # exploratory-testing (task skill)

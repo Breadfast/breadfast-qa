@@ -1,18 +1,19 @@
 ---
 name: visual-testing
-type: task
-version: 1.0
 description: Visual Testing (QA_PROCESS Phase 5). Compare each actual screen to its Figma design, apply the dynamic-vs-defect rules, and produce annotated Design-Bug evidence. Runs as a subagent.
-phase: Phase 5 — Visual Testing
-workflow: [qa-implementation-validation]
-runsAs: subagent
-consumes:
-  sources: []
-  artifacts: [figma-analysis]
-  domains: []          # business-agnostic — see "Responsibility boundary" below
-produces:
-  artifacts: [visual-findings]
-methodology: docs/ai/visual-testing/CLAUDE_CODE_OPERATOR.md
+metadata:
+  type: task
+  version: 1.0
+  phase: Phase 5 — Visual Testing
+  workflow: [qa-implementation-validation]
+  runsAs: subagent
+  consumes:
+    sources: []
+    artifacts: [figma-analysis]
+    domains: []          # business-agnostic — see "Responsibility boundary" below
+  produces:
+    artifacts: [visual-findings]
+  methodology: docs/ai/visual-testing/CLAUDE_CODE_OPERATOR.md
 ---
 
 # visual-testing (task skill)

@@ -1,18 +1,19 @@
 ---
 name: figma-analysis
-type: task
-version: 1.0
 description: Figma Analysis (QA_PROCESS Phase 2). Export this story's Figma frames (EN+AR, scale=2) and produce a design-analysis artifact + the expected-side baseline. Runs as a subagent in qa-shift-left.
-phase: Phase 2 — Figma Analysis
-workflow: [qa-shift-left]
-runsAs: subagent
-consumes:
-  sources: [figma]
-  artifacts: []
-  domains: []
-produces:
-  artifacts: [figma-analysis]
-methodology: docs/ai/testing-process.md
+metadata:
+  type: task
+  version: 1.0
+  phase: Phase 2 — Figma Analysis
+  workflow: [qa-shift-left]
+  runsAs: subagent
+  consumes:
+    sources: [figma]
+    artifacts: []
+    domains: []
+  produces:
+    artifacts: [figma-analysis]
+  methodology: docs/ai/testing-process.md
 ---
 
 # figma-analysis (task skill)

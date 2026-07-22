@@ -1,18 +1,19 @@
 ---
 name: test-design
-type: task
-version: 1.0
 description: Test Design (QA_PROCESS Phase 3). HLS generation (shift-left) and detailed test-case generation (validation). Runs as a subagent.
-phase: HLS + Test Case Generation
-workflow: [qa-shift-left, qa-implementation-validation]
-runsAs: subagent
-consumes:
-  sources: []
-  artifacts: [requirements, figma-analysis, impact, clarifications]
-  domains: [card, payment, marketing]
-produces:
-  artifacts: [hls, testcases]
-methodology: docs/ai/testing-process.md
+metadata:
+  type: task
+  version: 1.0
+  phase: HLS + Test Case Generation
+  workflow: [qa-shift-left, qa-implementation-validation]
+  runsAs: subagent
+  consumes:
+    sources: []
+    artifacts: [requirements, figma-analysis, impact, clarifications]
+    domains: [card, payment, marketing]
+  produces:
+    artifacts: [hls, testcases]
+  methodology: docs/ai/testing-process.md
 ---
 
 # test-design (task skill)

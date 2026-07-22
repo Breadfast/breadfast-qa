@@ -1,18 +1,19 @@
 ---
 name: defect-reporting
-type: task
-version: 1.0
 description: Defect Reporting (QA_PROCESS Phase 6). File Jira bugs — functional and visual Design bugs — with evidence, severity, and priority. Inline (files to Jira).
-phase: Defect Reporting
-workflow: [qa-implementation-validation]
-runsAs: inline
-consumes:
-  sources: []
-  artifacts: [execution, visual-findings]
-  domains: []
-produces:
-  artifacts: [defects]
-methodology: docs/ai/bug-reporting.md
+metadata:
+  type: task
+  version: 1.0
+  phase: Defect Reporting
+  workflow: [qa-implementation-validation]
+  runsAs: inline
+  consumes:
+    sources: []
+    artifacts: [execution, visual-findings]
+    domains: []
+  produces:
+    artifacts: [defects]
+  methodology: docs/ai/bug-reporting.md
 ---
 
 # defect-reporting (task skill)

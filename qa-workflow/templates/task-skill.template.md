@@ -1,18 +1,19 @@
 ---
 name: <skill-name>                # lowercase-kebab, unique
-type: task
-version: 1.0                      # bump (minor) to force targeted artifact regeneration — the `lock` seam
 description: <one line; used for skill selection — say when to use it>
-phase: <QA_PROCESS phase, e.g. "Phase 2 — Figma Analysis">
-workflow: [qa-shift-left]         # which workflow(s) invoke this skill
-runsAs: subagent                  # subagent (read-heavy, returns artifact by path) | inline (needs the user)
-consumes:
-  sources: []                     # e.g. [jira, figma]
-  artifacts: []                   # upstream artifact keys, e.g. [requirements, figma-analysis]
-  domains: []                     # business domains consumed, e.g. [card, payment]
-produces:
-  artifacts: []                   # artifact keys this skill writes, e.g. [impact]
-methodology: docs/ai/<file>.md    # SOURCE OF TRUTH — this skill is a thin wrapper, do not re-inline
+metadata:
+  type: task
+  version: 1.0                      # bump (minor) to force targeted artifact regeneration — the `lock` seam
+  phase: <QA_PROCESS phase, e.g. "Phase 2 — Figma Analysis">
+  workflow: [qa-shift-left]         # which workflow(s) invoke this skill
+  runsAs: subagent                  # subagent (read-heavy, returns artifact by path) | inline (needs the user)
+  consumes:
+    sources: []                     # e.g. [jira, figma]
+    artifacts: []                   # upstream artifact keys, e.g. [requirements, figma-analysis]
+    domains: []                     # business domains consumed, e.g. [card, payment]
+  produces:
+    artifacts: []                   # artifact keys this skill writes, e.g. [impact]
+  methodology: docs/ai/<file>.md    # SOURCE OF TRUTH — this skill is a thin wrapper, do not re-inline
 ---
 
 # <Skill Name> (task skill)

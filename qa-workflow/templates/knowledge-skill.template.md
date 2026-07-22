@@ -1,9 +1,10 @@
 ---
 name: <domain-id>                 # lowercase-kebab, unique (e.g. card, payment, marketing)
-type: knowledge
-version: 1.0                      # bump when the domain rules change — invalidates artifacts that consumed it
 description: <one line; the domain this knowledge covers>
-sources: [docs/ai/business/<file>.md]   # authoritative business docs this wraps
+metadata:
+  type: knowledge
+  version: 1.0                      # bump when the domain rules change — invalidates artifacts that consumed it
+  sources: [docs/ai/business/<file>.md]   # authoritative business docs this wraps
 ---
 
 # <Domain> (knowledge skill)

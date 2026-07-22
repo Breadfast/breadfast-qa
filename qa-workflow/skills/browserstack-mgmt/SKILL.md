@@ -1,18 +1,19 @@
 ---
 name: browserstack-mgmt
-type: task
-version: 1.0
 description: BrowserStack Test Management (QA_PROCESS Phase 3 / CLAUDE.md STEP 7). Generate the BrowserStack CSV from testcases, upload, and verify the import. Inline (creds + destination + verify).
-phase: BrowserStack Management
-workflow: [qa-implementation-validation]
-runsAs: inline
-consumes:
-  sources: []
-  artifacts: [testcases]
-  domains: []
-produces:
-  artifacts: [browserstack-import]
-methodology: docs/ai/browserstack-process.md
+metadata:
+  type: task
+  version: 1.0
+  phase: BrowserStack Management
+  workflow: [qa-implementation-validation]
+  runsAs: inline
+  consumes:
+    sources: []
+    artifacts: [testcases]
+    domains: []
+  produces:
+    artifacts: [browserstack-import]
+  methodology: docs/ai/browserstack-process.md
 ---
 
 # browserstack-mgmt (task skill)

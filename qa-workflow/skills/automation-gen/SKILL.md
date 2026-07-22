@@ -1,18 +1,19 @@
 ---
 name: automation-gen
-type: task
-version: 1.0
 description: Automation Generation (QA_PROCESS Phase 4). Automate the generated test cases reusing framework assets (Playwright/Appium/Java). Runs as a subagent.
-phase: Automation Generation
-workflow: [qa-implementation-validation]
-runsAs: subagent
-consumes:
-  sources: []
-  artifacts: [testcases]
-  domains: []
-produces:
-  artifacts: [automation]
-methodology: docs/ai/automation/playwright-framework.md
+metadata:
+  type: task
+  version: 1.0
+  phase: Automation Generation
+  workflow: [qa-implementation-validation]
+  runsAs: subagent
+  consumes:
+    sources: []
+    artifacts: [testcases]
+    domains: []
+  produces:
+    artifacts: [automation]
+  methodology: docs/ai/automation/playwright-framework.md
 ---
 
 # automation-gen (task skill)

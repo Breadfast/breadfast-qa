@@ -1,18 +1,19 @@
 ---
 name: story-analysis
-type: task
-version: 1.0
 description: Requirements Analysis (QA_PROCESS Phase 1). Fetch the Jira story (description, AC, comments) and produce a structured requirements artifact. Runs as a subagent in qa-shift-left.
-phase: Phase 1 — Requirements Analysis
-workflow: [qa-shift-left]
-runsAs: subagent
-consumes:
-  sources: [jira]
-  artifacts: []
-  domains: [card, payment]
-produces:
-  artifacts: [requirements]
-methodology: docs/ai/QA_PROCESS.md
+metadata:
+  type: task
+  version: 1.0
+  phase: Phase 1 — Requirements Analysis
+  workflow: [qa-shift-left]
+  runsAs: subagent
+  consumes:
+    sources: [jira]
+    artifacts: []
+    domains: [card, payment]
+  produces:
+    artifacts: [requirements]
+  methodology: docs/ai/QA_PROCESS.md
 ---
 
 # story-analysis (task skill)

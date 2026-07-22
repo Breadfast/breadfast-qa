@@ -1,18 +1,19 @@
 ---
 name: impact-analysis
-type: task
-version: 1.0
 description: Impact Analysis (QA_PROCESS / CLAUDE.md STEP 4). Produce Impacted / Regression / Smoke / Automation areas from requirements + figma-analysis. Runs as a subagent in qa-shift-left.
-phase: Impact Analysis
-workflow: [qa-shift-left]
-runsAs: subagent
-consumes:
-  sources: []
-  artifacts: [requirements, figma-analysis]
-  domains: []
-produces:
-  artifacts: [impact]
-methodology: docs/ai/regression-strategy.md
+metadata:
+  type: task
+  version: 1.0
+  phase: Impact Analysis
+  workflow: [qa-shift-left]
+  runsAs: subagent
+  consumes:
+    sources: []
+    artifacts: [requirements, figma-analysis]
+    domains: []
+  produces:
+    artifacts: [impact]
+  methodology: docs/ai/regression-strategy.md
 ---
 
 # impact-analysis (task skill)

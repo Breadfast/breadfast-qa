@@ -1,9 +1,10 @@
 ---
 name: card
-type: knowledge
-version: 1.0
 description: Card perks, partners, regulations, security, card services
-sources: [docs/ai/business/business-rules.md, docs/ai/business/products.md]
+metadata:
+  type: knowledge
+  version: 1.0
+  sources: [docs/ai/business/business-rules.md, docs/ai/business/products.md]
 ---
 
 # card (knowledge skill — scaffold)
