@@ -1,0 +1,38 @@
+{
+  "_note": "TEMPLATE — copy to <domain>.<screen>.json (no leading underscore) and fill in. Files starting with _ are NOT loaded. Replace all placeholder values. `profiles` is optional; omit to use the built-in default profile.",
+  "profiles": [
+    {
+      "id": "REPLACE-profile-id",
+      "mode": "design-conformance",
+      "enabledLayers": ["identity", "component-tree", "visibility", "text", "styles"],
+      "tolerances": { "px": 2, "colorDeltaE": 2, "fontPx": 1, "spacingPx": 2 }
+    }
+  ],
+  "screens": [
+    {
+      "id": "REPLACE-stable-screen-id",
+      "displayName": "REPLACE Human Name",
+      "domain": "REPLACE-domain",
+      "owner": "REPLACE-team",
+      "profileId": "REPLACE-profile-id",
+      "expectedComponents": [
+        {
+          "componentId": "REPLACE-with-real-test-id",
+          "role": "button",
+          "accessibleName": "REPLACE expected copy",
+          "required": true,
+          "order": 0
+        }
+      ],
+      "variants": [
+        {
+          "platform": "web",
+          "locale": "en-US",
+          "figmaFileKey": "REPLACE-figma-file-key",
+          "figmaNodeId": "REPLACE:node-id",
+          "figmaFrameName": "REPLACE frame name (for drift detection)"
+        }
+      ]
+    }
+  ]
+}

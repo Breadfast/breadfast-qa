@@ -1,0 +1,32 @@
+{
+  "_note": "EXAMPLE ONLY — illustrates a fully-authored screen. The leading underscore means this file is NOT loaded by the registry. Do NOT treat these ids/node-ids as real; copy the SHAPE into a real <domain>.<screen>.json and fill with your project's actual test-ids + Figma node-ids.",
+  "profiles": [
+    {
+      "id": "standard-mobile",
+      "mode": "design-conformance",
+      "enabledLayers": ["identity", "component-tree", "visibility", "text", "styles"],
+      "tolerances": { "px": 2, "colorDeltaE": 2.5, "fontPx": 1, "spacingPx": 2 }
+    }
+  ],
+  "screens": [
+    {
+      "id": "address-list",
+      "displayName": "Address List",
+      "domain": "address",
+      "owner": "BCard Squad",
+      "profileId": "standard-mobile",
+      "expectedComponents": [
+        { "componentId": "address-list-title", "role": "heading", "accessibleName": "My Addresses", "required": true, "order": 0 },
+        { "componentId": "address-add-button", "role": "button", "accessibleName": "Add New Address", "required": true, "order": 1,
+          "styles": { "color": "#ffffff", "font-size": "16px" } },
+        { "componentId": "address-card", "role": "group", "required": true, "order": 2, "maxCardinality": 20 },
+        { "componentId": "address-empty-state", "role": "text", "accessibleName": "No addresses yet", "required": false }
+      ],
+      "variants": [
+        { "platform": "ios", "locale": "en-US", "figmaFileKey": "EXAMPLEfilekey", "figmaNodeId": "10:20", "figmaFrameName": "Address / List / EN" },
+        { "platform": "ios", "locale": "ar-EG", "figmaFileKey": "EXAMPLEfilekey", "figmaNodeId": "10:21", "figmaFrameName": "Address / List / AR" },
+        { "platform": "android", "locale": "en-US", "figmaFileKey": "EXAMPLEfilekey", "figmaNodeId": "10:22", "figmaFrameName": "Address / List / EN" }
+      ]
+    }
+  ]
+}
