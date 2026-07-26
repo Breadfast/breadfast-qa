@@ -1,0 +1,47 @@
+{
+  "reusableAssets": [
+    "LoginPage.fillLoginFormAndSubmit (D:\\breadfast-qa\\automation\\pages\\LoginPage.js) — beforeEach admin auth",
+    "PerkDetailsPage.* (D:\\breadfast-qa\\automation\\pages\\PerkDetailsPage.js) — openPerkByStatus, isDeleteButtonPresent, isEditButtonPresent, isDeleteButtonEnabled, isEditButtonEnabled, getDeleteButtonStyle(isMagenta), clickDelete, clickEdit, attemptDeleteExpectNoPrompt, attemptEditExpectNoEditMode, isInEditMode, isPerkTypeLocked, getDisplayedStatus, getStartDateValue",
+    "PerksPage delete modal + table nav (composed via PerkDetailsPage.perks, D:\\breadfast-qa\\automation\\pages\\PerksPage.js) — isDeleteDialogVisible, getDeleteDialogText, confirmDeleteAndCapture, cancelDeleteDialog, goToPerksTable, clickViewAction",
+    "PerksPage edit-mode field-state readers — isFieldPresent, isFieldEditable, isFieldLocked, isFieldEditableByLabel, getEditableFieldMatrix (AC-06/07/12/13/24)",
+    "ApiHelper (D:\\breadfast-qa\\automation\\helpers\\ApiHelper.js) — loginAndGetToken, createGeneralCashbackPerk, listPerks, buildMerchantIds for status/type fixtures and post-delete/post-save verification",
+    "ConfigReader (D:\\breadfast-qa\\automation\\helpers\\ConfigReader.js) — getCardServicesAdminPanelBaseURL, getAdminUserName, getAdminPassword",
+    "BasePage (D:\\breadfast-qa\\automation\\pages\\BasePage.js) — waitForVisible, isElementDisplayed, goToUrl"
+  ],
+  "newPageObjects": [
+    "None — PerkDetailsPage.js and the PerksPage edit-mode field-state readers (isFieldEditable/isFieldLocked/getEditableFieldMatrix) already exist in D:\\breadfast-qa\\automation\\pages. Follow-up hardening only: re-ground header Delete/Edit and locked-field selectors + the magenta colour value against live DOM once card-panel-testing recovers from the 502 (currently grounded in Figma node 5893-378873 + Angular Material conventions)."
+  ],
+  "specs": [
+    {
+      "name": "perk_details_header_buttons.spec.js",
+      "framework": "playwright",
+      "description": "Header Delete/Edit presence for Planned/Active/Expired, dimmed Delete for Active and Expired, and Figma header-state match. 6 tests, BS #1,2,3,8,9,27 (AC-01/03/13). test() titles verbatim from BrowserStack."
+    },
+    {
+      "name": "perk_details_delete_flow.spec.js",
+      "framework": "playwright",
+      "description": "Planned-perk Delete: active magenta styling, confirmation prompt on click, cancel keeps perk intact, confirm permanently deletes (env-gated RUN_PERK_DELETE=1, verified via PerksPage.confirmDeleteAndCapture + ApiHelper.listPerks). 4 tests, BS #4,5,6,7 (AC-02)."
+    },
+    {
+      "name": "perk_edit_planned_full.spec.js",
+      "framework": "playwright",
+      "description": "Planned Edit opens full edit mode with all fields editable except type; Perk type field locked. 2 tests, BS #11,12 (AC-05) via getEditableFieldMatrix + isPerkTypeLocked."
+    },
+    {
+      "name": "perk_edit_active_common_fields.spec.js",
+      "framework": "playwright",
+      "description": "Active Edit: only permitted fields editable, common fields editable across all types, locked fields greyed/read-only, Perk type locked, EN/AR variant support, and save preserves status + start date (env-gated RUN_PERK_EDIT_SAVE=1). 7 tests, BS #13,14,22,23,24,25,26 (AC-06/07/13/14)."
+    },
+    {
+      "name": "perk_edit_active_type_specific.spec.js",
+      "framework": "playwright",
+      "description": "Type-specific editable matrix for Active perks: Discount/Coupon coupon code+type, Merchant/Category/General cashback limit, General exclusions, Category name&MCC locked while Section editable, and non-Discount perks expose no coupon fields. 7 tests, BS #15,16,17,18,19,20,21 (AC-08/09/10/11/12)."
+    },
+    {
+      "name": "perk_edit_expired_readonly.spec.js",
+      "framework": "playwright",
+      "description": "Expired Edit button dimmed/non-interactive (read-only), via attemptEditExpectNoEditMode. 1 test, BS #10 (AC-04)."
+    }
+  ],
+  "notes": "Web/Playwright only per execution directives. NAMING AUDIT (tester ask): 27 BrowserStack test cases <-> 27 automation test() blocks, 1:1, verbatim titles, no missing/duplicate/inconsistent mappings — nothing to fix. Per-spec counts: header_buttons 6, delete_flow 4, planned_full 2, active_common_fields 7, active_type_specific 7, expired_readonly 1. Reuse-before-build enforced against docs/ai/automation/**: PerkDetailsPage + PerksPage edit-mode readers + ApiHelper + LoginPage + ConfigReader cover all needs; no new page objects. Destructive cases (BS#6 delete, BS#25/26 save) gated behind RUN_PERK_DELETE / RUN_PERK_EDIT_SAVE. Selector caveat: header + locked-field selectors and magenta colour are Figma/Angular-Material-grounded (live 502 during authoring) and must be re-confirmed against live DOM. Figma scope frames: node-id 5893-378873 (View Planned/Active/Expired). Specs in B10-56759/automation/tests; shared pages in D:\\breadfast-qa\\automation\\pages mirrored to D:\\Playwright\\b55168_pom (playwright.config.js + deps)."
+}

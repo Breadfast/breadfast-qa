@@ -18,7 +18,8 @@ npx playwright test tests/create_perk_basic_details_section.spec.js     # AC6, A
 npx playwright test tests/create_perk_new_sections.spec.js              # AC9-11
 npx playwright test tests/create_perk_restructuring_and_coupon.spec.js  # AC12-17
 npx playwright test tests/create_perk_preview.spec.js                   # AC18
-# all five:
+npx playwright test tests/create_perk_image_specs_and_icon.spec.js      # AC4, AC5
+# all six:
 npx playwright test tests/create_perk_*.spec.js
 ```
 Login uses `ConfigReader.getAdminUserName()/getAdminPassword()` (admin panel `agent`).
@@ -48,19 +49,42 @@ Each `test(...)` title is written to match its BrowserStack case title. Spec→A
 - `create_perk_new_sections` → AC9, AC10, AC11
 - `create_perk_restructuring_and_coupon` → AC12, AC13, AC14, AC15, AC16, AC17
 - `create_perk_preview` → AC18
+- `create_perk_image_specs_and_icon` → AC4, AC5
 
-## Run status (validated live 2026-07-14, `create_perk_labels_and_title.spec.js`)
-- ✅ **AC1** page title "Create perk", ✅ **AC2** sentence-case section headings, ✅ **AC8** "Cover photo EN/AR" + "Logo EN/AR" labels — PASS.
-- ❌ **AC3 (candidate DEFECT):** the Perk title EN **and** AR fields accept **30 characters** with real keyboard input — the 20-char limit is **not enforced at the input level** (no `maxlength`, no truncation, no counter/error observed). File a bug or confirm the limit is only validated on save.
-- Fixed two pre-existing fragilities in the shared `PerksPage` while running: the create heading locator still expected the old title-case "Create Perks" (AC1 renamed it), and `Add Perk` matched two elements (strict-mode). Both corrected.
+Full traceability incl. visual sources & results: [`ac-coverage-matrix.md`](./ac-coverage-matrix.md).
 
-## Known follow-ups (not yet automated)
-- **AC7 auto-fill rule** (non-Breadfast merchant → subheader = merchant name;
-  Category cashback → category name): needs the merchant/category selector flow and
-  the stakeholder-confirmed "Breadfast merchant = name contains 'Breadfast'" rule
-  (per the Jira comment thread) before asserting auto-filled values.
-- **`PerksPage.fillCategoryPerk`** remains a stub — the Category cashback MCC/category
-  picker selectors still need a live-DOM capture.
-- **Char-cap assertions** assume the field hard-caps input; if the form instead shows
-  a counter + validation error without truncating, switch those assertions to check
-  the error message / counter instead of `inputValue().length`.
+## Run status — re-verified live 2026-07-20 (Chromium)
+**27 tests · 25 passed · 2 failed.** Both failures are ONE product defect, **DEF-3** ("Funding" section
+missing for every perk type — contradicts Figma; see `defects/defects.md`), confirmed across 3 consecutive
+live runs (deterministic, not flaky). Test titles were also renamed this session to match their
+BrowserStack Test Case titles exactly (see `ac-coverage-matrix.md` for the TC# ↔ spec mapping).
+
+The 2026-07-14 baseline below recorded 4 different failures (DEF-1, the character-cap checks) — those were
+**retracted as false positives** on 2026-07-20: the caps ARE enforced, via an inline "Maximum length
+should be N characters." validation error, not truncation. The original assertions checked the wrong
+enforcement mechanism; fixed via `PerksPage.checkMaxLengthValidation()`. See `ac-coverage-matrix.md` note 4.
+
+## Run status (superseded) — full suite validated live 2026-07-14 (Chromium)
+**26 tests · 22 passed · 4 failed.** The 4 failures were believed to be one product defect (DEF-1) — see
+above for the 2026-07-20 retraction.
+
+- ✅ **AC1/AC2/AC8** page title, sentence-case headings, "Cover photo EN/AR" + "Logo EN/AR" labels.
+- ✅ **AC5** wrong-spec cover image rejected, conforming 1080×1080 accepted (enforcement works). ✅ **AC4** sidebar Perks nav item + icon present (glyph = manual — no Figma sidebar frame).
+- ✅ **AC6** Section dropdown (all 4 types + options). ✅ **AC7** subheader shown by default for General. ✅ **AC9/AC10/AC11** Usage / Branches (coupon only) / Cashback processing sections. ✅ **AC12–AC17** removals, renames, Funding, Coupon type, and section order. ✅ **AC18** preview renders title/subheader/usage.
+- ❌ **AC3 (title EN+AR, 20), AC7 (subheader, 30), AC9 (usage, 200), AC11 (cashback processing, 45) → DEF-1:** none of these caps are enforced at the input level (no `maxlength`, no truncation, no counter/error). See [`../defects/defects.md`](../defects/defects.md). Open question for dev: is the limit enforced server-side on save?
+
+### Fixes applied this run
+- `getSectionOrder()` scanned only `<h4>`, but **"Basic details" renders as a plain container (not a heading)** — confirmed from the live a11y tree. AC17 now asserts "Basic details" presence separately, then the `h4` section sequence (`Value→…→Funding`). Order itself was always correct.
+- Added `attemptImageUploadExpectRejection()` (AC5 negative) + `getPerksSidebarNav()` (AC4) to shared `PerksPage`, and exported `PHOTOS` for spec reuse.
+- Mirrored the shared `LoginPage` absolute-URL fix into the runnable copy (parity).
+
+## Known follow-ups (deferred, not yet automated — with reason)
+- **AC7 auto-fill rule** (non-Breadfast merchant → subheader = merchant name; Category cashback →
+  category name) + conditional *hide* for non-Breadfast coupon/merchant, and the auto-filled Preview
+  variants (AC18 comment override): need the merchant/category selector DOM captured live and the
+  Phase-1 "Breadfast = name contains 'Breadfast'" rule (Jira comment 123128 confirms Phase 1 auto-detect).
+- **`PerksPage.fillCategoryPerk` / `setLimits`** remain stubs — Category MCC/category picker and
+  limit-field selectors still need a live-DOM capture.
+- **AC2/AC13 case-sensitivity:** heading checks are case-insensitive today; add a case-sensitive
+  assertion once the intended casing per screen is confirmed (Figma shows Title-Case leakage on the
+  General-cashback screen).

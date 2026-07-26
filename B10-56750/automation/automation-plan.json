@@ -1,0 +1,35 @@
+{
+  "reusableAssets": [
+    "LoginPage.fillLoginFormAndSubmit(user, pass) — Admin Portal UI login (automation/pages/LoginPage.js)",
+    "ApiHelper.loginAndGetToken(request) — Admin login → JWT, reused for the TC19 true-concurrency API test (automation/helpers/ApiHelper.js)",
+    "PerksPage.goToPerksPage / clickAddPerk / selectPerkTypeByName / fillGeneralCashbackMandatory / submitPerkExpectSuccess — Create-perk UI flow, reused as-is from B10-56729 (automation/pages/PerksPage.js)",
+    "PerksPage.selectSection / getSectionOptions / selectFirstSection / hasSectionHeader — the Section dropdown itself (B10-56729 block) — reused, NOT re-selectored (reuse-before-build)",
+    "PerksPage.goToPerksTable / selectCategoryFilter / applyFilters / getColumnValues — B10-56757 perks-table methods, reused for the AC-11/AC-17 cross-story checks",
+    "PerksPage.PHOTOS (coverSpec/logoSpec) — exact-spec image assets, reused for the TC20 E2E happy path",
+    "ConfigReader singleton getters — non-secret env/URL config (automation/helpers/ConfigReader.js)",
+    "playwright.config.js fullyParallel:false / workers:1 self-contained-project convention — copied verbatim from B10-56757/automation/playwright.config.js"
+  ],
+  "newPageObjects": [
+    "Added the ENTIRE 'Add Section' modal method group to the existing PerksPage.js (no parallel page object): openAddSectionModal, fillAddSectionModal, submitAddSection, cancelAddSectionModal, closeAddSectionModalViaX, getAddSectionErrorText, isAddSectionNameFieldMarkedInvalid, isAddSectionModalVisible, getAddSectionModalTitle, getSectionCreatedToastText, plus the internal _closeStaleSectionPanel() helper. ALL selectors were captured/confirmed by actually driving the live admin panel (Playwright MCP browser) against card-panel-testing on 2026-07-16 — not guessed from Figma. This modal had NO existing page-object method before this story.",
+    "Added skipSection option to the existing fillGeneralCashbackMandatory() (B10-56729 method) so AC-02's 'Section left empty' validation test can reuse the same mandatory-fill helper instead of duplicating it.",
+    "B10-56729 gap-fill (bonus, needed to exercise the Section field across perk types): implemented the previously-stubbed fillCategoryPerk() and added selectMerchantForPerk()/selectCategoryForPerk() — see B10-56729/automation for the dedicated TC22-24 coverage that also depends on these."
+  ],
+  "specs": [
+    {
+      "name": "add_section_dropdown.spec.js",
+      "framework": "playwright",
+      "description": "AC-01, AC-02, AC-03, AC-04: Section field present for all 4 perk types; required + blocks Preview & Save when empty; dropdown lists all existing Sections by name; '+ Add section' always pinned at the bottom (including the disabled-mat-option-wraps-enabled-button quirk)."
+    },
+    {
+      "name": "add_section_modal.spec.js",
+      "framework": "playwright",
+      "description": "AC-05 through AC-10 + TC19: Add Section modal open/fields/CTAs, loading spinner, success + auto-select, duplicate-name error, case/whitespace exploratory finding, Cancel/X dismissal, and a TRUE concurrent-create race test using two parallel raw API calls against the live-captured POST /card/perks/section/create endpoint."
+    },
+    {
+      "name": "add_section_cross_story.spec.js",
+      "framework": "playwright",
+      "description": "AC-11 (B10-56757 cross-story), AC-12 (no-refresh availability), AC-13 (ordering, web-scoped), AC-14 (documented as a data-migration NON-UI check, test.skip with reason), AR/RTL localization (best-effort, no locale switcher located), AC-17 regression (no duplication across perk types), consistency/casing, and the TC20 E2E happy path."
+    }
+  ],
+  "notes": "Scope is web-only (Playwright, card-panel-testing) per the sibling stories' pattern. Reuse-before-build enforced: the Section dropdown ITSELF is the same live control B10-56729 already selectored (mat-select[formcontrolname=\"section_id\"]) — this story only adds the '+ Add section' MODAL, which is genuinely new page-object surface. All new selectors were captured by actually driving the browser (Playwright MCP) against card-panel-testing 2026-07-16, not inferred from Figma — see ac-coverage-matrix.md 'Live findings' for every confirmed deviation from the AC/CSV wording and Figma assumptions (modal title/label casing, no distinct X icon, shared non-field-highlighted duplicate error, AR-required resolution, live seeded-section data of only Breadfast + General Purchases, no character cap on the Section name). AC-14 is explicitly NOT automated as a fake UI test — it is a data-migration check requiring DB/API access not available in this Playwright-only run. Execution surfaced one real, reproducible environment nuance (not a test bug): a newly-created Section's visibility when switching to a DIFFERENT perk type within the SAME SPA session is intermittent (network capture showed some perk-type switches don't reissue a section/list fetch) — see the dated finding in add_section_cross_story.spec.js and ac-coverage-matrix.md; this affects AC-12's cross-type generality and AC-17's regression check and is reported honestly rather than hidden."
+}

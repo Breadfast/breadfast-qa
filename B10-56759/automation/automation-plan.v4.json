@@ -1,0 +1,54 @@
+{
+  "reusableAssets": [
+    "automation/pages/PerkDetailsPage.js — story's existing detail POM: header Delete/Edit presence (isDeleteButtonPresent/isEditButtonPresent, expectBothHeaderButtons), state gating (isDeleteButtonEnabled/isEditButtonEnabled, _isButtonInteractive), magenta detection (getDeleteButtonStyle), delete flow (clickDelete/attemptDeleteExpectNoPrompt), edit-mode entry+detection (clickEdit/attemptEditExpectNoEditMode/isInEditMode), perk-type lock (isPerkTypeLocked), AC-14 reads (getDisplayedStatus/getStartDateValue), and status/type-driven navigation (openPerkByStatus/_findRowIndex)",
+    "automation/pages/PerksPage.js — reused via composition by PerkDetailsPage: table nav (goToPerksTable:1427, getColumnValues:1557, clickViewAction:1687), delete modal (isDeleteDialogVisible:1731, getDeleteDialogText:1736, confirmDeleteAndCapture:1746, cancelDeleteDialog:1768), edit-mode field-state (isFieldEditable:1878, isFieldLocked:1883, isFieldEditableByLabel:1889, getEditableFieldMatrix:1900), _fieldByLabel; also the create-form controlname/formcontrolname selectors (single source of truth for locked/editable field assertions)",
+    "automation/pages/LoginPage.js — fillLoginFormAndSubmit for admin-portal auth (login OTP-less admin session)",
+    "automation/pages/BasePage.js — goToUrl + shared Playwright wrappers",
+    "automation/helpers/ApiHelper.js — loginAndGetToken, createGeneralCashbackPerk, listPerks, buildMerchantIds; the fixture-creation path that lets specs CREATE required perks instead of skipping when none exist (per tester feedback)",
+    "automation/helpers/ConfigReader.js — getCardServicesAdminPanelBaseURL / getAdminUserName / getAdminPassword (reads D:\\projects config source of truth)",
+    "automation/helpers/VisualComparisonHelper.js + automation/helpers/FigmaExporter.js + automation/config/figma.js — export the scope-relevant Perk Details frames (View - Planned/Active/Expired perk, Deleting a planned perk, Editing perk, Header via fileKeyFromUrl) and diff live UI vs Figma for magenta/dimmed buttons + greyed locked fields (AC-02/03/04/13, HLS 18/19)",
+    "automation/config/credentials.js — Jira/BrowserStack/admin credential loader (do not prompt user)",
+    "B10-56729/automation/tests/create_perk_*.spec.js — reference spec structure/generators for the creation form, reused to assert Planned full-edit parity + creation-form validations (AC-05/AC-17)"
+  ],
+  "newPageObjects": [
+    "No new Playwright page object is required — PerkDetailsPage.js (header + edit-mode) and PerksPage.js field-state/delete-modal extensions already cover the story. One reusable HELPER extension is needed (not a POM): extend automation/helpers/ApiHelper.js with a status/type-aware fixture factory createPerk({type,status,...}) so specs create their own fixtures rather than test.skip when a status/type is absent (addresses tester feedback). It must (a) support all four types — discount-coupon, merchant-cashback, category-cashback, general-cashback (generalizing the current general-cashback-only builder) — and (b) drive lifecycle status by date: Planned = start_date in the future, Active = start_date past + end_date future, Expired = end_date past; return the created perk id/title for table lookup. If getEditableFieldMatrix's control list does not yet cover coupon code/type, cashback limit, exclusions, and category name&MCC controls, add those controlname mappings on PerksPage (extension of the existing selector map, not a new POM)."
+  ],
+  "specs": [
+    {
+      "name": "B10-56759/automation/tests/perk_details_header_buttons.spec.js",
+      "framework": "playwright",
+      "description": "AC-01/02/03/04 · HLS 1,2,4,5. Across Planned, Active, Expired perks (create each fixture via ApiHelper.createPerk if absent — never skip): assert header shows BOTH Delete and Edit (expectBothHeaderButtons). Planned → Delete active + magenta (isDeleteButtonEnabled + getDeleteButtonStyle.isMagenta) and clicking opens the confirmation prompt. Active & Expired → Delete dimmed/non-interactive (attemptDeleteExpectNoPrompt.promptShown===false). Expired → Edit also dimmed/non-interactive (attemptEditExpectNoEditMode.enteredEditMode===false)."
+    },
+    {
+      "name": "B10-56759/automation/tests/delete_planned_perk_confirmation.spec.js",
+      "framework": "playwright",
+      "description": "AC-02 · HLS 3. Create a Planned perk fixture via ApiHelper. Confirm path: clickDelete → confirmDeleteAndCapture → perk removed from list/details. Cancel path: clickDelete → cancelDeleteDialog → perk unchanged and still listed. Assert confirmation copy via getDeleteDialogText."
+    },
+    {
+      "name": "B10-56759/automation/tests/edit_planned_full_edit_mode.spec.js",
+      "framework": "playwright",
+      "description": "AC-05/17 · HLS 6,17. Planned perk fixture → clickEdit → isInEditMode; assert full edit (all fields editable) EXCEPT perk type (isPerkTypeLocked). Verify creation-parity validations (mandatory fields, char limits, image specs, EN/AR) reusing B10-56729 create_perk generators/expectations."
+    },
+    {
+      "name": "B10-56759/automation/tests/edit_active_common_fields.spec.js",
+      "framework": "playwright",
+      "description": "AC-06/07/13 · HLS 7,8,14. Active perk fixture → clickEdit → getEditableFieldMatrix asserts the common editable set is editable (title EN/AR, short description EN/AR, subheader EN/AR where applicable, cover photo EN/AR, logo EN/AR, Section, short usage description EN/AR, valid branches EN/AR, short cashback processing description EN/AR, end date & time, short duration description EN/AR) and that all other fields are locked/read-only and visually greyed (isFieldLocked + computed-style check)."
+    },
+    {
+      "name": "B10-56759/automation/tests/edit_active_type_specific_fields.spec.js",
+      "framework": "playwright",
+      "description": "AC-08/09/10/11/12 · HLS 10,11,12,13. Data-driven over the four Active types (fixtures via ApiHelper.createPerk per type). Discount/Coupon → Coupon code + Coupon type (Online/Physical) additionally editable. Merchant Cashback & Category Cashback → Cashback limit editable. General Cashback → Cashback limit + Exclusions (Excluded Categories/Merchants) editable. Category Cashback → Category name & MCC LOCKED while Section remains editable (comment-clarified AC-12)."
+    },
+    {
+      "name": "B10-56759/automation/tests/edit_active_save_integrity_and_regression.spec.js",
+      "framework": "playwright",
+      "description": "AC-14 · HLS 15,16,20. Active perk fixture: capture getDisplayedStatus + getStartDateValue, edit a permitted field, save, re-open → status unchanged and start date not reset. Negative no-op: interacting with a locked field / dimmed button triggers no change. Regression: opening details from the list renders correct per-status buttons; leaving/cancelling edit mode persists nothing; existing listing unaffected."
+    },
+    {
+      "name": "B10-56759/automation/tests/perk_details_localization_and_figma_visual.spec.js",
+      "framework": "playwright",
+      "description": "AC-13 · HLS 9,18,19. Bilingual edit of an Active perk: edit and verify EN (en-US) and AR (ar-EG) variants of all bilingual fields; verify RTL layout + Arabic button labels. Visual comparison via VisualComparisonHelper against the SCOPE-ONLY exported Perk Details Figma frames (active-magenta Delete, dimmed Delete/Edit, greyed locked fields) — only scope frames exported through FigmaExporter, not the whole dashboard."
+    }
+  ],
+  "notes": "Reuse-before-build confirmed against docs/ai/automation (coding-standards + reusable-components): the story POM PerkDetailsPage.js and PerksPage.js field-state/delete-modal extensions already exist and cover AC-01–14; no new page object is introduced. Tester feedback is addressed by making fixture creation mandatory — extend ApiHelper into a status/type-aware createPerk factory and have every spec CREATE the required Planned/Active/Expired × (discount-coupon/merchant-cashback/category-cashback/general-cashback) fixture when absent; remove/replace the openPerkByStatus test.skip escape path. Figma is scope-only: export just the Perk Details frames from the story URL (node-id 5893-378873) via FigmaExporter.fileKeyFromUrl and diff against those, per execution instructions. Test-case phrasing follows the tester's required 'Verify that …' conditional-statement format keyed to status/type. Selector caveat: PerkDetailsPage header + locked-field markers were authored during a backend outage (POST /card/perks/list 502) and are Figma+convention grounded — re-confirm and tighten against the live detail DOM before first green run. Config is read from D:\\projects (source of truth) via ConfigReader; specs live in B10-56759/automation/tests/, shared POMs/helpers stay in D:\\breadfast-qa\\automation and must be mirrored to the runnable copy at D:\\Playwright\\b55168_pom so specs execute. Mobile: N/A — platforms=[web]; no Java/Appium test class planned for this story."
+}

@@ -13,9 +13,9 @@
  */
 
 const { test, expect } = require('@playwright/test');
-const config    = require('../helpers/ConfigReader');
-const LoginPage = require('../pages/LoginPage');
-const PerksPage = require('../pages/PerksPage');
+const config    = require('../../../automation/helpers/ConfigReader');
+const LoginPage = require('../../../automation/pages/LoginPage');
+const PerksPage = require('../../../automation/pages/PerksPage');
 
 const P = {
   titleEn: 'Preview EN 56729',   // ≤ 20 chars (AC3)
@@ -34,16 +34,23 @@ test.beforeEach(async ({ page }) => {
 });
 
 test.describe('B10-56729 — Preview screen', () => {
-  test('AC18: preview reflects the filled title, subheader, usage & cashback processing', async ({ page }) => {
+  // BrowserStack TC21.
+  test('Verify the Preview screen displays all new sections and fields', async ({ page }) => {
     const perks = new PerksPage(page);
     await perks.goToPerksPage();
     await perks.clickAddPerk();
     await perks.selectPerkTypeByName('General spend cashback');
 
-    await test.step('fill the new Basic details + content fields', async () => {
-      await perks.fillTitles(P.titleEn, P.titleAr);
-      await perks.fillSubheaders(P.subEn, P.subAr);
-      await perks.fillUsage(P.usageEn, P.usageAr);
+    await test.step('fill ALL mandatory fields + the new content fields', async () => {
+      // The Preview button is a no-op while the form is invalid, so we must fill
+      // the full required set (Section, cover photos, logos, cashback Type+value,
+      // short description) — not just the new B10-56729 content fields. The
+      // preview-asserted values (title, subheader, usage) are passed through.
+      await perks.fillGeneralCashbackMandatory({
+        titleEn: P.titleEn, titleAr: P.titleAr,
+        subEn:   P.subEn,   subAr:   P.subAr,
+        usageEn: P.usageEn, usageAr: P.usageAr,
+      });
       await perks.fillCashbackProcessing(P.cbEn, P.cbAr);
     });
 

@@ -11,9 +11,9 @@
  */
 
 const { test, expect } = require('@playwright/test');
-const config    = require('../helpers/ConfigReader');
-const LoginPage = require('../pages/LoginPage');
-const PerksPage = require('../pages/PerksPage');
+const config    = require('../../../automation/helpers/ConfigReader');
+const LoginPage = require('../../../automation/pages/LoginPage');
+const PerksPage = require('../../../automation/pages/PerksPage');
 
 const EXPECTED_PAGE_TITLE = 'Create perk';
 const EXPECTED_SECTIONS_GENERAL = [
@@ -36,7 +36,10 @@ async function openGeneralCashbackForm(page) {
 }
 
 test.describe('B10-56729 — Create Perk labels & title', () => {
-  test('AC1: page title is "Create perk" (sentence case)', async ({ page }) => {
+  // BrowserStack TC1. NOTE: only General spend cashback is exercised here — TC1 steps 4-6
+  // also require re-checking the title after switching to Merchant cashback / Discount-coupon,
+  // which this test does not do. Flagged as a coverage gap, not silently claimed as full.
+  test('Verify the Create Perk page title reads "Create perk" (sentence case) for all perk types', async ({ page }) => {
     const perks = await openGeneralCashbackForm(page);
     await expect(page.locator('h1, h4', { hasText: EXPECTED_PAGE_TITLE }).first()).toBeVisible();
     // guard against the old title-case "Create Perks"
@@ -44,7 +47,8 @@ test.describe('B10-56729 — Create Perk labels & title', () => {
     expect(perks).toBeTruthy();
   });
 
-  test('AC2: section headings render in sentence case', async ({ page }) => {
+  // BrowserStack TC2.
+  test('Verify all section headings and field labels use sentence case', async ({ page }) => {
     const perks = await openGeneralCashbackForm(page);
     for (const heading of EXPECTED_SECTIONS_GENERAL) {
       await test.step(`section "${heading}" present`, async () => {
@@ -53,7 +57,8 @@ test.describe('B10-56729 — Create Perk labels & title', () => {
     }
   });
 
-  test('AC8: image upload labels are "Cover photo EN/AR" and "Logo EN/AR"', async ({ page }) => {
+  // BrowserStack TC11.
+  test('Verify logo field labels are renamed to "Logo EN" / "Logo AR"', async ({ page }) => {
     await openGeneralCashbackForm(page);
     for (const label of EXPECTED_IMAGE_LABELS) {
       await expect(page.locator('label, span', { hasText: new RegExp(`^\\s*${label}\\s*\\*?\\s*$`) }).first(),
@@ -63,15 +68,21 @@ test.describe('B10-56729 — Create Perk labels & title', () => {
     await expect(page.locator('text=/Logo\\/Image/i')).toHaveCount(0);
   });
 
-  test('AC3: Perk title EN is capped at 20 characters', async ({ page }) => {
+  // BrowserStack TC3. The limit is enforced via an inline validation error ("Maximum length
+  // should be 20 characters.") + invalid state that blocks save, NOT by truncating input (the
+  // field accepts the extra chars but is marked invalid). Verified live 2026-07-14.
+  test('Verify the perk title EN field enforces a 20-character limit', async ({ page }) => {
     const perks = await openGeneralCashbackForm(page);
-    const accepted = await perks.typeAndReadAccepted('title_en', 'A'.repeat(30));
-    expect(accepted.length, `title_en accepted ${accepted.length} chars, expected cap ${TITLE_MAX}`).toBeLessThanOrEqual(TITLE_MAX);
+    const r = await perks.checkMaxLengthValidation('input', 'title_en', TITLE_MAX);
+    expect(r.errorShown, `expected a "Maximum length should be ${TITLE_MAX} characters." error on title_en`).toBeTruthy();
+    expect(r.errorText).toMatch(new RegExp(`maximum length should be\\s*${TITLE_MAX}\\s*characters`, 'i'));
   });
 
-  test('AC3: Perk title AR is capped at 20 characters', async ({ page }) => {
+  // BrowserStack TC4.
+  test('Verify the perk title AR field enforces a 20-character limit', async ({ page }) => {
     const perks = await openGeneralCashbackForm(page);
-    const accepted = await perks.typeAndReadAccepted('title_ar', 'ن'.repeat(30));
-    expect(accepted.length, `title_ar accepted ${accepted.length} chars, expected cap ${TITLE_MAX}`).toBeLessThanOrEqual(TITLE_MAX);
+    const r = await perks.checkMaxLengthValidation('input', 'title_ar', TITLE_MAX);
+    expect(r.errorShown, `expected a "Maximum length should be ${TITLE_MAX} characters." error on title_ar`).toBeTruthy();
+    expect(r.errorText).toMatch(new RegExp(`maximum length should be\\s*${TITLE_MAX}\\s*characters`, 'i'));
   });
 });

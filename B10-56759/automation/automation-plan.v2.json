@@ -1,0 +1,49 @@
+{
+  "reusableAssets": [
+    "LoginPage.fillLoginFormAndSubmit(user, pass) — Admin Portal UI login (D:\\breadfast-qa\\automation\\pages\\LoginPage.js), reused in every spec's beforeEach",
+    "ApiHelper.loginAndGetToken(request) / createGeneralCashbackPerk(...) / listPerks(request, token) — seed perks and resolve their IDs via API so each status (Planned/Active/Expired) and each type (Discount-Coupon, Merchant/Category/General cashback) has a deterministic fixture to open on the detail page (b55168_pom/helpers/ApiHelper.js)",
+    "DbHelper — used only if the perk lifecycle status (Planned→Active→Expired) cannot be forced via API; adjust start/end dates to age a perk into Active/Expired for AC-03/04/14 (b55168_pom/helpers/DbHelper.js)",
+    "PerksPage delete-confirmation modal + capture methods: deleteConfirmDialog, isDeleteDialogVisible, getDeleteDialogText, confirmDeleteAndCapture, cancelDeleteDialog — reused for AC-02 delete-confirmation flow (D:\\breadfast-qa\\automation\\pages\\PerksPage.js)",
+    "PerksPage table + navigation: goToPerksTable, waitForTableSettled, openRowActions, clickViewAction — to reach a specific perk's Details page (PerksPage.js)",
+    "PerksPage creation-form field fillers reused in edit mode (AC-05 Planned = same as creation; AC-07/08 Active permitted fields use identical controls): fillTitles, fillSubheaders, fillUsage, fillBranches, fillCashbackProcessing, descEnTextarea/descArTextarea, uploadImage, fillCouponCode/selectCouponType, selectCategoryForPerk, selectMerchantForPerk, selectSection/selectFirstSection, checkMaxLengthValidation (PerksPage.js)",
+    "PerksPage field selectors (app-bf-input[controlname=...] / textarea[formcontrolname=...] / mat-select[formcontrolname=...]) — reused as the single source of truth for the editable/locked field matrix rather than re-declaring selectors",
+    "BasePage helpers (goToUrl, waitForVisible) and ConfigReader.getCardServicesAdminPanelBaseURL() for base URL resolution (b55168_pom)"
+  ],
+  "newPageObjects": [
+    "D:\\breadfast-qa\\automation\\pages\\PerkDetailsPage.js — NEW page object for the Perk Details view (no detail-page POM exists today). Responsibilities: navigate to a perk's detail page by id/status; header Delete + Edit button locators; readers for button state (present, enabled vs dimmed/non-interactive — disabled/aria-disabled/pointer-events/opacity, and the magenta styling check for the active Delete on Planned per AC-02); enter edit mode via Edit; entry point for the delete-confirmation flow (delegating to PerksPage's existing delete modal methods to avoid duplicating that selector).",
+    "Edit-mode field-state readers added AS AN EXTENSION to the existing PerksPage.js (not a parallel POM): isFieldEditable(control)/isFieldLocked(control) that read enabled/readonly/greyed state against the already-declared controlname/formcontrolname selectors, plus getEditableFieldMatrix() to assert AC-06/07/13 and the type-specific AC-08–AC-12 rules (incl. Category name & MCC locked, Section editable). These reuse existing selectors and only add state-reading logic."
+  ],
+  "specs": [
+    {
+      "name": "perk_details_header_buttons.spec.js",
+      "framework": "playwright",
+      "description": "AC-01/03/04 — Verify the Perk Details page header displays both a Delete and an Edit button for all statuses; verify Delete is dimmed/non-interactive for Active and Expired perks; verify Edit is dimmed/non-interactive for Expired perks. Verification-statement titles per status (Planned/Active/Expired)."
+    },
+    {
+      "name": "perk_details_delete_flow.spec.js",
+      "framework": "playwright",
+      "description": "AC-02/03 — Verify that for Planned perks the Delete button is active and styled in magenta, clicking it triggers a confirmation prompt, and confirming permanently deletes the perk (capture DELETE API); verify that for Active and Expired perks no deletion action can be triggered. Reuses PerksPage delete-modal methods."
+    },
+    {
+      "name": "perk_edit_planned_full.spec.js",
+      "framework": "playwright",
+      "description": "AC-05 — Verify that for Planned perks, Edit opens full edit mode where all fields are editable except perk type (same behaviour as creation). Asserts type is locked and every other field is editable by reusing the creation-form fillers."
+    },
+    {
+      "name": "perk_edit_active_common_fields.spec.js",
+      "framework": "playwright",
+      "description": "AC-06/07/13/14 — Verify that for Active perks, Edit opens edit mode with only the permitted common fields editable (title EN&AR, short description EN&AR, subheader, cover/logo EN&AR, Section, usage, valid branches, cashback processing description, end date & time, duration description) while all other fields are locked/greyed and read-only; and that saving does not change status or reset the start date."
+    },
+    {
+      "name": "perk_edit_active_type_specific.spec.js",
+      "framework": "playwright",
+      "description": "AC-08/09/10/11/12 — Verify the type-specific editable-field matrix for Active perks: Discount/Coupon → Coupon code + Coupon type editable; Merchant Cashback → Cashback limit editable; Category Cashback → Cashback limit editable and Category name & MCC locked (Section still editable per story comment); General Cashback → Cashback limit + Exclusions editable."
+    },
+    {
+      "name": "perk_edit_expired_readonly.spec.js",
+      "framework": "playwright",
+      "description": "AC-04 — Verify that Expired perks cannot be edited: the Edit button is dimmed/non-interactive and no edit mode can be entered. (May be merged into perk_details_header_buttons.spec.js if the team prefers fewer files.)"
+    }
+  ],
+  "notes": "Story B10-56759 is WEB-ONLY per execution directives (platforms=[\"web\"]) — no Java/Appium mobile test class is planned; the mobile Perk Details editing screen is not in this story's scope, so no cardsAdminPanel Appium class is created. Specs go to D:\\breadfast-qa\\B10-56759\\automation\\tests\\; the NEW PerkDetailsPage.js goes to the shared D:\\breadfast-qa\\automation\\pages and is mirrored to the runnable copy at D:\\Playwright\\b55168_pom\\pages so specs execute. Reuse-before-build strictly enforced: this story is fundamentally about the Details page + status/type-aware EDIT mode, which the existing PerksPage covers only for creation and for the table delete modal — so the only genuinely new asset is PerkDetailsPage.js plus field-state reader extensions on PerksPage that reuse existing selectors (no selector or flow duplication). Test titles follow the requested verification-statement structure with explicit status/type conditions (e.g. 'Verify that the Delete button is active and styled in magenta for Planned perks'). Fixtures: seed one perk per (status × type) via ApiHelper; if API cannot set Active/Expired status, age dates via DbHelper. Maintain the BrowserStack case-id → spec mapping table in the story automation README per coding-standards §Test-case→script traceability. Open dependency to confirm live before implementation: the detail-page header button selectors, edit-mode locked-field visual markers (greyed/readonly attribute), and the End date & time / Cashback limit / Exclusions edit controls must be captured against the live Admin Portal (card-panel-testing) via Playwright MCP, as PerksPage.setLimits is still a throwing stub (reusable-components.md Known gap #1)."
+}

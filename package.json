@@ -1,0 +1,15 @@
+{
+  "name": "breadfast-qa-automation",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Breadfast QA — repo-root dependencies shared by every per-story Playwright project (each story owns its playwright.config.js + tests; page objects/helpers/config live once under automation/).",
+  "scripts": {
+    "report": "npx playwright show-report"
+  },
+  "dependencies": {
+    "@playwright/test": "^1.60.0",
+    "mysql2": "^3.22.5",
+    "pdf-parse": "^2.4.5",
+    "ssh2": "^1.17.0"
+  }
+}
