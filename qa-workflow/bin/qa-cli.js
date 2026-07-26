@@ -15,6 +15,11 @@
  *   node qa-workflow/bin/qa-cli.js reconcile <storyDir> [--figma-file K --figma-nodes 1:1 --figma-version v]
  *          [--immaterial] [--apply-modified] [--expected requirements,figma-analysis,...]   # live jira issue JSON on stdin (optional)
  *   node qa-workflow/bin/qa-cli.js show <storyDir>
+ *   node qa-workflow/bin/qa-cli.js visual-compare [--in <file>]
+ *          # input JSON on stdin/--in: { expected:Screen[], actual:Screen[], ctx? }
+ *          #   OR { figmaFrames:[], dumps:[] (parsed) | rawDumps:[{screenId,raw}] (a11y/Appium-XML), ctx? }
+ *          # runs the DETERMINISTIC Conformance pipeline (L1 pair → L2/L5 …) and prints findings+health.
+ *          # This is the operator-skill bridge (ADR-003 §3.4): deterministic-first; the caller runs the LLM only on the residual/gaps.
  *
  * Jira issue JSON (stdin for fingerprint-jira / reconcile):
  *   { "updated": "<iso>", "summary": "...", "description": "...", "ac": "...", "comments": [ {"id":1,"body":"..."} ] }
@@ -161,6 +166,33 @@ function main() {
       const state = qs.load(dir);
       if (!state) die('no qa-state.json in ' + dir);
       process.stdout.write(JSON.stringify(state, null, 2) + '\n');
+      break;
+    }
+    case 'visual-compare': {
+      // Operator-skill bridge (ADR-003 §3.4): run the deterministic Conformance
+      // pipeline for the visual capability. No LLM here — the caller invokes the
+      // residual on coverage-gaps / unresolved screens after reading this output.
+      const { runScreens } = require('../lib/conformance');
+      const visual = require('../capabilities/visual/capability');
+      const { figmaExpectedProvider } = require('../capabilities/visual/expected/figma');
+      const { dumpActualProvider } = require('../capabilities/visual/actual/dump');
+
+      const raw = flags.in ? fs.readFileSync(flags.in, 'utf8') : readStdin();
+      if (!raw || !raw.trim()) die('visual-compare: provide input JSON via --in <file> or stdin');
+      let input;
+      try { input = JSON.parse(raw); } catch (e) { die('visual-compare: invalid JSON (' + e.message + ')'); }
+
+      let expected = Array.isArray(input.expected) ? input.expected : null;
+      let actual = Array.isArray(input.actual) ? input.actual : null;
+      if (!expected && Array.isArray(input.figmaFrames)) expected = figmaExpectedProvider.load(input.figmaFrames);
+      if (!actual && Array.isArray(input.dumps)) actual = dumpActualProvider.capture(input.dumps);
+      if (!actual && Array.isArray(input.rawDumps)) actual = dumpActualProvider.captureRaw(input.rawDumps);
+      if (!Array.isArray(expected) || !Array.isArray(actual)) {
+        die('visual-compare: need {expected:[],actual:[]} or {figmaFrames:[],dumps:[]|rawDumps:[]}');
+      }
+
+      const result = runScreens(visual, { expected, actual, ctx: input.ctx || {} });
+      process.stdout.write(JSON.stringify(result, null, 2) + '\n');
       break;
     }
     default:

@@ -1,0 +1,31 @@
+{
+  "_status": "First real Screen Registry entry (ADR-003 Phase 1/2). Per ADR-003 Decision 2 the registry is a STABLE description; figmaFileKey/figmaNodeId are intentional PLACEHOLDERS resolved at EXECUTION time from the story's Figma URL by the exporter (capabilities/visual/expected/figma-resolve.js → enrichRegistryWithFigma, matched by figmaFrameName), never hardcoded. The expectedComponents are authored from the perks design and drive deterministic L2–L6.",
+  "profiles": [
+    {
+      "id": "perks-mobile",
+      "mode": "design-conformance",
+      "enabledLayers": ["identity", "component-tree", "visibility", "layout", "text", "styles", "pixel"],
+      "tolerances": { "px": 3, "colorDeltaE": 2.5, "fontPx": 1, "spacingPx": 3 }
+    }
+  ],
+  "screens": [
+    {
+      "id": "perk-details",
+      "displayName": "Perk Details",
+      "domain": "perks",
+      "owner": "BCard Squad",
+      "profileId": "perks-mobile",
+      "expectedComponents": [
+        { "componentId": "perk-title", "role": "heading", "accessibleName": "Card Perks", "required": true, "order": 0 },
+        { "componentId": "perk-redeem-button", "role": "button", "accessibleName": "Redeem", "required": true, "order": 1,
+          "styles": { "color": "#ffffff", "font-size": "16px" } },
+        { "componentId": "perk-terms-link", "role": "link", "accessibleName": "Terms & Conditions", "required": true, "order": 2 },
+        { "componentId": "perk-empty-state", "role": "text", "accessibleName": "No perks available", "required": false }
+      ],
+      "variants": [
+        { "platform": "ios", "locale": "en-US", "figmaFileKey": "PLACEHOLDER", "figmaNodeId": "PLACEHOLDER", "figmaFrameName": "Perks / Details / EN" },
+        { "platform": "android", "locale": "en-US", "figmaFileKey": "PLACEHOLDER", "figmaNodeId": "PLACEHOLDER", "figmaFrameName": "Perks / Details / EN" }
+      ]
+    }
+  ]
+}
