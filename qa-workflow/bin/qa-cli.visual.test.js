@@ -39,6 +39,27 @@ test('visual-compare reports a coverage gap for an unpaired expected screen', ()
   assert.equal(r.screens[0].verdict, 'coverage-gap');
 });
 
+test('visual-evaluate (deterministic default, no judge) → evaluateStory result with residual', () => {
+  const out = execFileSync(process.execPath, [CLI, 'visual-evaluate'], {
+    input: JSON.stringify({
+      expected: [
+        { screenId: 'ok', components: [{ componentId: 'x', required: true, accessibleName: 'Hi' }] },
+        { screenId: 'canvas', components: [] },
+      ],
+      actual: [
+        { screenId: 'ok', elements: [{ testId: 'x', text: 'hi' }] }, // casing → minor
+        { screenId: 'canvas', unstructured: true },
+      ],
+    }),
+    encoding: 'utf8',
+  });
+  const r = JSON.parse(out);
+  assert.equal(r.aiInvoked, false); // no --judge ⇒ deterministic-only
+  assert.equal(r.findings.length, 1); // L5 casing on 'ok'
+  assert.equal(r.residual.length, 1); // 'canvas' flagged for AI (none run)
+  assert.equal(r.residual[0].screen, 'canvas');
+});
+
 test('visual-compare {rawDumps} parses live Appium XML → L2/L5 findings', () => {
   const r = run({
     figmaFrames: [{ screenId: 'perk', components: [{ componentId: 'cta', required: true }], textNodes: [{ name: 'title', characters: 'Card Perks' }] }],

@@ -44,19 +44,24 @@ exclusions, tolerances). A missing expected state or wrong Figma copy is a **bas
 comparison rules (dynamic-content exclusion taxonomy + tolerances, per the operator playbook §6).
 
 ## Steps (deterministic-first — ADR-003 §3.4)
-1. **Build inputs & run the deterministic pipeline.** For the story's screens, shape Expected (Figma
-   frames → screens: `texts` + `components`) and Actual (screenshots + structured dumps → screens:
-   `texts` + `elements`), then run:
+1. **Run the full evaluation (single entry point).** Assemble the story input — either `useRegistry` (the
+   Screen Registry supplies curated `components` + per-screen `ValidationProfile`; live Figma ids are
+   resolved from the ticket URL via `--figma-url`, Decision 2) or explicit `expected` screens — plus the
+   Actual side (`rawDumps` = raw a11y/Appium-XML, or `dumps`/`actual`). Then run:
    ```
-   node qa-workflow/bin/qa-cli.js visual-compare --in <compare-input.json>
+   node qa-workflow/bin/qa-cli.js visual-evaluate --in <input.json> --judge claude --figma-url <ticket-figma-url>
    ```
-   It returns reproducible findings (L1 pairing → L2/L3/L4/L5/L6), a per-screen `verdict`, `coverageGaps`
-   for unpaired designs, and `health`. **These are deterministic — never re-derive them by eye.**
-2. **Residual AI only.** The deterministic pass returns a `residual` worklist
-   (`unstructured-surface` / `no-expected-model`) + `coverageGaps` — that **is** the exact set to judge.
-   Run it via `evaluateStory` ([`qa-workflow/lib/conformance/residual.js`](../../lib/conformance/residual.js)),
-   injecting the vision **judge** (the transport stays out of the core). The AI **classifies / confirms /
-   explains** only these items — it never re-detects what L2–L6 already found.
+   This runs the deterministic pipeline (L1 pairing → L2/L3/L4/L5/L6/L7) **then** the L8 residual runner.
+   It returns reproducible findings, per-screen `verdict`, `coverageGaps`, a `residual` worklist, and
+   `health`. **The deterministic findings are reproducible — never re-derive them by eye.**
+   (Omit `--judge claude` for a deterministic-only pass — the default; or use `visual-compare` for the
+   deterministic bridge without the story-assembly conveniences.)
+2. **Residual AI only (already wired).** `--judge claude` injects **`ClaudeJudge`**
+   ([`qa-workflow/capabilities/visual/claude-judge.js`](../../capabilities/visual/claude-judge.js)) into
+   `evaluateStory` — it runs the Claude Code CLI `Read` workflow over the paired frame + screenshot for
+   **only** the `residual` screens (`unstructured-surface` / `no-expected-model`), and **classifies /
+   confirms / explains** — never re-detecting what L2–L6 already found. The deterministic engine imports no
+   AI transport; the judge is injected (a Messages-API transport can replace it with zero engine change).
 3. On the residual, **classify each observed difference as DEFECT vs DYNAMIC DATA / STATE** (exclude the
    latter) per the operator playbook §6.
 4. **Merge** deterministic + residual findings; record (Component · Category · Severity · Expected ·

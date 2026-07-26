@@ -20,6 +20,11 @@
  *          #   OR { figmaFrames:[], dumps:[] (parsed) | rawDumps:[{screenId,raw}] (a11y/Appium-XML), ctx? }
  *          # runs the DETERMINISTIC Conformance pipeline (L1 pair → L2/L5 …) and prints findings+health.
  *          # This is the operator-skill bridge (ADR-003 §3.4): deterministic-first; the caller runs the LLM only on the residual/gaps.
+ *   node qa-workflow/bin/qa-cli.js visual-evaluate [--in <file>] [--judge claude] [--figma-url <url>] [--model <m>]
+ *          # FULL flow → evaluateStory: (optional `useRegistry` → figma-resolve(--figma-url) → build expected) + actual, then
+ *          #   deterministic L1–L7, then the L8 residual runner. `--judge claude` runs ClaudeJudge on the residual ONLY
+ *          #   (default: deterministic-only, no AI). Input adds `useRegistry`, `figmaUrl`, `nodeIdByFrameName`, `figmaByNode`,
+ *          #   `platforms`, `locales` to the visual-compare shapes.
  *
  * Jira issue JSON (stdin for fingerprint-jira / reconcile):
  *   { "updated": "<iso>", "summary": "...", "description": "...", "ac": "...", "comments": [ {"id":1,"body":"..."} ] }
@@ -45,7 +50,7 @@ function die(msg) { process.stderr.write('qa-cli: ' + msg + '\n'); process.exit(
 function readStdin() { try { return fs.readFileSync(0, 'utf8'); } catch { return ''; } }
 function loadOrInit(dir, ticket) { return qs.load(dir) || qs.newState(ticket || 'B10-0'); }
 
-function main() {
+async function main() {
   const [cmd, ...rest] = process.argv.slice(2);
   const { flags, positional } = parseFlags(rest);
 
@@ -195,9 +200,52 @@ function main() {
       process.stdout.write(JSON.stringify(result, null, 2) + '\n');
       break;
     }
+    case 'visual-evaluate': {
+      // FULL story evaluation (ADR-003 Phase 3): deterministic-first, then the L8
+      // residual runner. AI is opt-in via --judge claude (ClaudeJudge on the residual
+      // only); the deterministic engine stays transport-agnostic either way.
+      const { evaluateStory } = require('../lib/conformance');
+      const visual = require('../capabilities/visual/capability');
+      const { makeClaudeJudge } = require('../capabilities/visual/claude-judge');
+      const { figmaExpectedProvider } = require('../capabilities/visual/expected/figma');
+      const { dumpActualProvider } = require('../capabilities/visual/actual/dump');
+      const { loadScreenRegistry } = require('../capabilities/visual/registry');
+      const { expectedScreensFromRegistry } = require('../capabilities/visual/expected/build');
+      const { enrichRegistryWithFigma } = require('../capabilities/visual/expected/figma-resolve');
+
+      const raw = flags.in ? fs.readFileSync(flags.in, 'utf8') : readStdin();
+      if (!raw || !raw.trim()) die('visual-evaluate: provide input JSON via --in <file> or stdin');
+      let input;
+      try { input = JSON.parse(raw); } catch (e) { die('visual-evaluate: invalid JSON (' + e.message + ')'); }
+
+      let expected = Array.isArray(input.expected) ? input.expected : null;
+      let actual = Array.isArray(input.actual) ? input.actual : null;
+
+      if (!expected && input.useRegistry) {
+        // Decision 2: registry stays stable; enrich live figma ids from the story URL.
+        let reg = loadScreenRegistry();
+        const figmaUrl = flags['figma-url'] || input.figmaUrl;
+        if (figmaUrl || input.figmaFileKey || input.nodeIdByFrameName) {
+          reg = enrichRegistryWithFigma(reg, { figmaUrl, fileKey: input.figmaFileKey, nodeIdByFrameName: input.nodeIdByFrameName });
+        }
+        expected = expectedScreensFromRegistry(reg, { figmaByNode: input.figmaByNode || {}, platforms: input.platforms, locales: input.locales });
+      }
+      if (!expected && Array.isArray(input.figmaFrames)) expected = figmaExpectedProvider.load(input.figmaFrames);
+      if (!actual && Array.isArray(input.dumps)) actual = dumpActualProvider.capture(input.dumps);
+      if (!actual && Array.isArray(input.rawDumps)) actual = dumpActualProvider.captureRaw(input.rawDumps);
+      if (!Array.isArray(expected) || !Array.isArray(actual)) {
+        die('visual-evaluate: need {expected,actual} or ({useRegistry}|{figmaFrames}) + {dumps|rawDumps}');
+      }
+
+      // Decision 1: AI transport is INJECTED. Default = no judge (deterministic-only).
+      const judge = flags.judge === 'claude' ? makeClaudeJudge({ model: flags.model }) : undefined;
+      const result = await evaluateStory(visual, { expected, actual }, { judge });
+      process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+      break;
+    }
     default:
       die('unknown command "' + (cmd || '') + '". See header for usage.');
   }
 }
 
-main();
+main().catch((e) => { process.stderr.write('qa-cli: ' + (e && e.message ? e.message : e) + '\n'); process.exit(1); });
