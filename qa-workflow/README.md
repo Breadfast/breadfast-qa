@@ -12,7 +12,7 @@ This tree is the independent QA workflow, built today and shaped to migrate into
 
 | Dir | Purpose | Migrates to |
 |---|---|---|
-| `workflows/` | the two QA workflows (shift-left, implementation-validation) | plugin `workflows/` |
+| `workflows/` | the two QA workflows (shift-left, implementation-validation) + `qa-full` (composes both) | plugin `workflows/` |
 | `skills/` | phase procedures = **task skills** (thin, ref `docs/ai/**`) | plugin task skills |
 | `domains/` | business-domain **knowledge skills** (wrap `docs/ai/business/**`); *consumed* by QA | plugin `domains/` |
 | `templates/` | task/knowledge skill templates (mirror plugin) | realign to plugin `templates/` |

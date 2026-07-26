@@ -29,9 +29,15 @@ workflows:
     file: workflows/qa-shift-left.md
   - id: qa-implementation-validation
     file: workflows/qa-implementation-validation.md
+  # qa-full is a COMPOSITION of the two above (no phases of its own); it replaces W2's
+  # Reconcile with a continuity assertion. Phase skills are unchanged — hence `composes`.
+  - id: qa-full
+    file: workflows/qa-full.md
+    composes: [qa-shift-left, qa-implementation-validation]
 
 skills:
   # phase task skills (thin wrappers over docs/ai/**)
+  # `workflow:` lists the DEFINING workflow(s); qa-full inherits every skill via `composes` above.
   - { id: story-analysis,      runsAs: subagent, workflow: qa-shift-left }
   - { id: figma-analysis,      runsAs: subagent, workflow: qa-shift-left }
   - { id: impact-analysis,     runsAs: subagent, workflow: qa-shift-left }

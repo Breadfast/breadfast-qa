@@ -40,12 +40,15 @@ Governing principle: **structural isomorphism + dependency inversion.**
 - *Isomorphism:* mirror the plugin's names, shapes, and contracts, so migration is mostly `git mv` + one schema re-validation + one adapter swap.
 - *Dependency inversion:* depend on nothing the plugin hasn't shipped; keep methodology in `docs/ai/**` (stable) and let only **thin wrappers** conform to plugin-shaped templates, so a future template change is a localized edit, never a methodology rewrite.
 
-### 3.1 Two workflows (the split)
+### 3.1 Two workflows (the split) — and one composed full run
 
 - **Workflow 1 — Pre-Development (shift-left):** Requirements Analysis → Figma Analysis → Clarification → Impact Analysis → HLS → publish HLS checklist to Jira. Outputs are **reusable story artifacts**.
 - **Workflow 2 — Post-Development (implementation-validation):** **Reconcile** (reuse Pre-Dev artifacts unless invalid) → Exploratory → Test Case Generation → BrowserStack Import → Automation → Execution → Functional + Design Bug Reporting → QA Summary.
+- **Workflow 3 — Full lifecycle (`qa-full`, amendment 2026-07-26):** W1 → continuity check → W2, in one run. It is a **composition, not a third methodology**: it owns no phase logic, and its only structural difference is replacing W2's *Reconcile* with a **continuity assertion** (the baseline was produced minutes earlier, so the reconcile plan must come back all-`reuse`; stale ⇒ mid-run drift, conflict ⇒ stop). Artifacts stay stamped with their **producing skill's** generator, so a W3 run is contract-indistinguishable from a W1+W2 pair and a later `qa-validate` reconciles it identically. Rationale: the split optimizes for the shift-left case, but a story delivered with **no baseline** (or one predating the split) still needs the original end-to-end pass — previously the operator had to chain two entrypoints and manually suppress the redundant Reconcile.
 
-Reuse/regeneration is governed by the **artifact contract** ([`qa-artifact-contract.md`](qa-artifact-contract.md)) and its machine schema ([`qa-state.schema.json`](qa-state.schema.json)).
+**The split remains the primary model.** W3 exists so the two-workflow decision costs nothing in the no-baseline case; it must never accumulate phase logic of its own — if a phase needs changing, it changes in W1/W2 or the phase skill, and W3 inherits it.
+
+Reuse/regeneration is governed by the **artifact contract** ([`qa-artifact-contract.md`](qa-artifact-contract.md)) and its machine schema ([`qa-state.schema.json`](qa-state.schema.json)) — unchanged by W3.
 
 ### 3.2 Build-today layout (self-contained, migratable)
 
@@ -53,7 +56,8 @@ Methodology stays in `docs/ai/**` (source of truth); runtime helpers stay in `au
 
 ```
 qa-workflow/                              # today: independent · tomorrow: → breadfast-workflow/
-├── workflows/  qa-shift-left.md · qa-implementation-validation.md      → plugin workflows/
+├── workflows/  qa-shift-left.md · qa-implementation-validation.md
+│              · qa-full.md (composes the two)                        → plugin workflows/
 ├── skills/     <phase>/SKILL.md  (task skills; thin, ref docs/ai/**)   → plugin task skills
 ├── domains/    card|payment|marketing/SKILL.md (wrap docs/ai/business) → plugin domains/
 ├── templates/  task-skill · knowledge-skill (mirror plugin)            → realign to plugin templates
