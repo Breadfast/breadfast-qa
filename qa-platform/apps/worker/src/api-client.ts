@@ -51,6 +51,8 @@ export interface RunDetail {
   status: string;
   story: StoryFacts;
   steps: StepDetail[];
+  /** Session Continuity: the shared `claude --resume` session id for this run, if any. */
+  engineSession?: string | null;
 }
 
 /** Minimal shape returned by /runs/claim. */

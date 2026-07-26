@@ -16,7 +16,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import type { z } from 'zod';
-import { runAiTask, runClaude, PLAYWRIGHT_TOOLS, FIGMA_EXPORT_TOOLS, type AiTaskOptions } from '@qa/engine';
+import { runAiTask, runClaude, SessionNotFoundError, PLAYWRIGHT_TOOLS, FIGMA_EXPORT_TOOLS, type AiTaskOptions } from '@qa/engine';
 import {
   RequirementsAnalysis,
   AcceptanceCriteria,
@@ -46,6 +46,24 @@ import {
   type KnowledgeCorpusEntry,
   computeVisualHealth,
   detectVisualPatterns,
+  resolveVisualEngine,
+  resolveVisualAbstain,
+  resolvePair,
+  type ShotRef,
+  EvidenceManifest,
+  synthesizeManifest,
+  buildManifestFromExecution,
+  toScreenPlatform,
+  EVIDENCE_MANIFEST_FILENAME,
+  runPyramid,
+  ValidationProfile,
+  StructuredDump,
+  structuredDumpToExpectedComponents,
+  parseRawDump,
+  validateScreenRegistry,
+  shouldInvokeAi,
+  isAuditSampled,
+  computeVisualDivergence,
   VisualScreenComparison,
   NODE_STATE_KEY,
   redactSecrets,
@@ -58,9 +76,11 @@ import {
   type CredentialSpec,
 } from '@qa/shared';
 import {
-  companionDir, companionPath, storyDir, figmaAuthPath,
+  companionDir, companionPath, storyDir, figmaAuthPath, appSessionPath,
   playwrightFrameworkDir, javaFrameworkDir,
 } from '@qa/shared/paths';
+import { loadScreenRegistry } from '@qa/shared/screen-registry-loader';
+import { pngPixelComparator } from './pixel.js';
 import {
   ingest,
   getSettings,
@@ -73,7 +93,7 @@ import {
   type StepDetail,
 } from './api-client.js';
 import { fetchJiraIssue, jiraSourceMarkdown, jiraContextBlock, extractFigmaUrls, type JiraSource } from './jira.js';
-import { exportStoryFrames, type FigmaExportResult } from './figma.js';
+import { exportStoryFrames, extractFigmaStructures, type FigmaExportResult } from './figma.js';
 import { fileDefects, resolveBugConfig, type DefectInput } from './jira-write.js';
 import { verifyKnowledgeBase, knowledgeReminder, NODE_DOCS } from './knowledge.js';
 
@@ -124,9 +144,56 @@ export interface NodeContext {
   signal: AbortSignal;
 }
 
+/**
+ * Session Continuity (Run Lifecycle Management): persist a new/changed CLI
+ * session id for this run so the next node call — this worker process or,
+ * after a pause/crash/different-worker resume, any other one — reuses it
+ * instead of starting fresh. No-op when unchanged (the common resumed case).
+ */
+async function persistSession(ctx: NodeContext, sessionId: string | null | undefined): Promise<void> {
+  if (!sessionId || sessionId === ctx.run.engineSession) return;
+  ctx.run.engineSession = sessionId;
+  await ingest(makeEvent<Extract<RunEvent, { kind: 'run.session' }>>({ kind: 'run.session', runId: ctx.run.id, sessionId }));
+}
+
+/**
+ * Session Continuity: run `fn` resuming this run's shared headless session
+ * (one session per story-run, never shared across stories/runs). On a
+ * SessionNotFoundError — wrong worker machine, an expired session, or one
+ * cleared by a Restart From Step — falls back to a fresh session exactly
+ * once: every node's prompt is already rebuilt in full from persisted state
+ * (Context Builder) regardless of whether resume succeeds, so resuming is
+ * purely an optimization, never a correctness dependency.
+ */
+async function withSession<T>(
+  ctx: NodeContext,
+  fn: (resumeSession: string | undefined) => Promise<T>,
+  getSessionId: (result: T) => string | null | undefined,
+): Promise<T> {
+  const resumeSession = ctx.run.engineSession ?? undefined;
+  try {
+    const result = await fn(resumeSession);
+    await persistSession(ctx, getSessionId(result));
+    return result;
+  } catch (err) {
+    if (resumeSession && err instanceof SessionNotFoundError) {
+      await ctx.log(`session ${resumeSession} unusable (${err.message}) — starting a fresh session for this run`);
+      ctx.run.engineSession = null;
+      const result = await fn(undefined);
+      await persistSession(ctx, getSessionId(result));
+      return result;
+    }
+    throw err;
+  }
+}
+
 /** Run an AI task, accumulate cost/tokens, and capture the LLM Request Log (#7). */
 async function ai<S extends z.ZodTypeAny>(ctx: NodeContext, opts: AiTaskOptions<S>): Promise<z.infer<S>> {
-  const { data, raw, meta } = await runAiTask({ ...opts, signal: ctx.signal });
+  const { data, raw, meta } = await withSession(
+    ctx,
+    (resumeSession) => runAiTask({ ...opts, resumeSession, signal: ctx.signal }),
+    (result) => result.raw.sessionId,
+  );
   ctx.meta.costUsd += raw.costUsd;
   ctx.meta.tokens += raw.outputTokens;
   // Fire-and-forget audit capture — the durable record behind Story Replay +
@@ -329,6 +396,70 @@ function figmaAuthRestoreStep(): string {
 }
 
 /**
+ * Reads the saved app-under-test session (cookies + localStorage) for ONE
+ * story, or null if none is saved yet / unreadable / empty. Session
+ * Continuity's app-session counterpart to readFigmaAuth() — same shape, same
+ * best-effort read, but scoped per-story (appSessionPath) rather than
+ * per-user, since different stories may use different accounts/environments.
+ */
+function readAppSession(jiraKey: string): { cookies: unknown[]; localStorage: Record<string, string> } | null {
+  try {
+    const file = appSessionPath(jiraKey);
+    if (!existsSync(file)) return null;
+    let raw = readFileSync(file, 'utf8');
+    if (raw.charCodeAt(0) === 0xfeff) raw = raw.slice(1); // strip UTF-8 BOM
+    const parsed = JSON.parse(raw) as { cookies?: unknown[]; localStorage?: Record<string, string> };
+    const cookies = parsed.cookies ?? [];
+    const localStorageDump = parsed.localStorage ?? {};
+    if (!cookies.length && !Object.keys(localStorageDump).length) return null;
+    return { cookies, localStorage: localStorageDump };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Session Continuity (app-under-test, Run Lifecycle Management): offered in
+ * place of a plain login instruction. Tries to restore this story's saved
+ * session (cookies + localStorage written by an EARLIER node in this same
+ * run — e.g. exploratory_testing before execution) so the tester's
+ * login/OTP isn't repeated at every step that drives the app under test.
+ * Falls back to `loginText` (an ordinary fresh login) when nothing is saved
+ * yet or the restored session turns out to be expired — restoring is an
+ * optimization on top of login, never a dependency, same fallback-first
+ * shape as the Claude --resume Session Continuity (withSession(), above).
+ */
+function appSessionCredsStep(jiraKey: string, appUrl: string, loginText: string): string {
+  const session = readAppSession(jiraKey);
+  if (!session) return loginText;
+  return (
+    `Try to reuse this story's saved session before logging in: browser_navigate to ${appUrl}, then IMMEDIATELY ` +
+    `use browser_run_code_unsafe to restore it before interacting with anything — ` +
+    `await page.context().addCookies(${JSON.stringify(session.cookies)}); ` +
+    `await page.evaluate((ls) => { for (const [k, v] of Object.entries(ls)) localStorage.setItem(k, v); }, ${JSON.stringify(session.localStorage)}); ` +
+    `then reload the page. If you land on a login/sign-in screen (the saved session expired), ignore the restore and log in normally instead: ${loginText}`
+  );
+}
+
+/**
+ * Session Continuity (app-under-test): appended to a web exploratory/execution
+ * prompt so the saved session is refreshed for whichever node drives this
+ * story's app next. Per-story file under browser-sessions/ (appSessionPath) —
+ * isolated per story, never shared across stories. Best-effort: a skipped or
+ * failed save just means the next node logs in fresh, same as today.
+ */
+function appSessionSaveStep(jiraKey: string): string {
+  const file = appSessionPath(jiraKey).replace(/\\/g, '\\\\');
+  return (
+    `\n\nBefore finishing, save the session for reuse by later steps on this story (best-effort — do not fail the ` +
+    `task if this errs): browser_run_code_unsafe → ` +
+    `const cookies = await page.context().cookies(); ` +
+    `const ls = await page.evaluate(() => Object.fromEntries(Object.entries(localStorage))); ` +
+    `require('fs').writeFileSync('${file}', JSON.stringify({ cookies, localStorage: ls, savedAt: new Date().toISOString() }));`
+  );
+}
+
+/**
  * PRIMARY Figma export method (testing-process.md §4.1/§4.5).
  * Drives the Playwright MCP browser to do a batch export (Ctrl+Shift+E → ZIP),
  * extracts the ZIP to outDir, and returns a FigmaExportResult.
@@ -349,7 +480,8 @@ async function tryPlaywrightBatchExport(
       ? `powershell -NoProfile -Command "Expand-Archive -Path '${zipFile}' -DestinationPath '${outDir}' -Force"`
       : `unzip -o "${zipFile}" -d "${outDir}"`;
   try {
-    const { data, raw } = await runAiTask({
+    const { data, raw } = await withSession(ctx, (resumeSession) => runAiTask({
+      resumeSession,
       instruction:
         `Export Figma design frames for ${ctx.run.story.jiraKey} using the Playwright MCP batch export ` +
         `(testing-process.md §4.1).\n\n` +
@@ -409,7 +541,7 @@ async function tryPlaywrightBatchExport(
       timeoutMs: 12 * 60 * 1000,
       onLog: (l) => void ctx.log(l),
       signal: ctx.signal,
-    });
+    }), (result) => result.raw.sessionId);
     ctx.meta.costUsd += raw.costUsd;
     ctx.meta.tokens += raw.outputTokens;
     if (!data.frames.length) {
@@ -439,7 +571,8 @@ async function tryPlaywrightScreenshotFallback(
   const outDirEsc = outDir.replace(/\\/g, '\\\\');
   const urlList = urls.map((u, i) => `${i + 1}. ${u}`).join('\n');
   try {
-    const { data, raw } = await runAiTask({
+    const { data, raw } = await withSession(ctx, (resumeSession) => runAiTask({
+      resumeSession,
       instruction:
         `Capture Figma frame screenshots for ${ctx.run.story.jiraKey} by navigating the browser directly to each frame URL.\n\n` +
         `Figma URLs:\n${urlList}\n\n` +
@@ -463,7 +596,7 @@ async function tryPlaywrightScreenshotFallback(
       timeoutMs: 5 * 60 * 1000,
       onLog: (l) => void ctx.log(l),
       signal: ctx.signal,
-    });
+    }), (result) => result.raw.sessionId);
     ctx.meta.costUsd += raw.costUsd;
     ctx.meta.tokens += raw.outputTokens;
     const captured = data.frames.filter((f) => f.file).length;
@@ -891,6 +1024,22 @@ export const NODES: Record<string, NodeFn> = {
     }));
     if (exported.fileKey) data.fileKey = exported.fileKey;
     ctx.state.figma = data;
+    // Producer #1 — Figma structured extraction (EXPECTED side for the pyramid's
+    // L4/L5/L6). Opt-in (QA_FIGMA_EXTRACT) since the REST path is rate-limited;
+    // best-effort, never blocks figma_analysis.
+    if (exported.fileKey && process.env.QA_FIGMA_EXTRACT === 'true') {
+      const nodes = (exported.frames ?? [])
+        .filter((f) => f.id && f.id !== 'batch')
+        .map((f) => ({ id: f.id, name: f.name }));
+      if (nodes.length) {
+        try {
+          const n = await extractFigmaStructures(exported.fileKey, nodes, outDir, (l) => void ctx.log(l));
+          await ctx.log(`figma structured extraction: ${n}/${nodes.length} frame(s) cached`);
+        } catch (e) {
+          await ctx.log(`figma structured extraction skipped: ${(e as Error).message}`);
+        }
+      }
+    }
     await artifact(ctx, 'figma-analysis/figma-analysis.md', renderFigmaMd(ctx.run.story.jiraKey, data, exported, exportMethod));
     return data;
   },
@@ -986,7 +1135,7 @@ export const NODES: Record<string, NodeFn> = {
     // comment — never touches the description/AC. Falls back to the local
     // hls/hls.md file if the MCP write isn't available headless.
     try {
-      const res = await runClaude({
+      const res = await withSession(ctx, (resumeSession) => runClaude({
         prompt:
           `Using your Atlassian/Jira tools, add a NEW comment to Jira issue ${ctx.run.story.jiraKey} containing EXACTLY this text ` +
           `(it is a separate HLS checklist section — do NOT modify the description or acceptance criteria):\n\n${body}\n\n` +
@@ -1002,7 +1151,8 @@ export const NODES: Record<string, NodeFn> = {
         timeoutMs: 180000,
         onLog: (l) => void ctx.log(l),
         signal: ctx.signal,
-      });
+        resumeSession,
+      }), (r) => r.sessionId);
       const ok = !res.isError && !/FAILED/i.test(res.text);
       await ctx.log(`Jira push ${ok ? 'OK' : 'result'}: ${res.text.slice(0, 200)}`);
       if (!ok) return { pushed: false, jira: res.text.slice(0, 300) };
@@ -1010,7 +1160,7 @@ export const NODES: Record<string, NodeFn> = {
       // Verify the comment actually landed by fetching the issue back.
       // Prevents a false "pushed:true" when the MCP silently fails.
       try {
-        const verify = await runClaude({
+        const verify = await withSession(ctx, (resumeSession) => runClaude({
           prompt:
             `Use getJiraIssue to fetch ${ctx.run.story.jiraKey}. ` +
             `Check whether any of the issue's comments contains the text "HLS ||". ` +
@@ -1025,7 +1175,8 @@ export const NODES: Record<string, NodeFn> = {
           timeoutMs: 60_000,
           onLog: (l) => void ctx.log(l),
           signal: ctx.signal,
-        });
+          resumeSession,
+        }), (r) => r.sessionId);
         const verified = !verify.isError && /VERIFIED/i.test(verify.text);
         await ctx.log(`Jira HLS verify: ${verify.text.slice(0, 120)}`);
         return { pushed: verified, jira: res.text.slice(0, 300), verified };
@@ -1116,7 +1267,7 @@ export const NODES: Record<string, NodeFn> = {
     await ctx.log(`BrowserStack UI import: navigating to ${tmUrl}`);
 
     try {
-      const uiResult = await runClaude({
+      const uiResult = await withSession(ctx, (resumeSession) => runClaude({
         prompt:
           `Import a BrowserStack Test Management CSV via the browser UI.\n\n` +
           `Steps:\n` +
@@ -1143,7 +1294,8 @@ export const NODES: Record<string, NodeFn> = {
         timeoutMs: 10 * 60 * 1000,
         onLog: (l) => void ctx.log(l),
         signal: ctx.signal,
-      });
+        resumeSession,
+      }), (r) => r.sessionId);
       const uiOk = !uiResult.isError && /IMPORTED/i.test(uiResult.text);
       await ctx.log(`BrowserStack UI import ${uiOk ? 'succeeded' : 'result'}: ${uiResult.text.slice(0, 200)}`);
       return { uploaded: uiOk, folder: folderId, method: 'ui' };
@@ -1183,25 +1335,28 @@ export const NODES: Record<string, NodeFn> = {
     const shotsDir = path.join(dir, 'screenshots');
     await mkdir(shotsDir, { recursive: true });
     const c = story.credentials ?? undefined;
-    const creds = c?.username
+    const loginText = c?.username
       ? `Log in at ${story.appUrl} with username "${c.username}" and password "${c.password ?? ''}".` +
         (c.otpMethod && c.otpMethod !== 'none' ? ` OTP method: ${c.otpMethod} (see CLAUDE.md §7 for how to obtain it).` : '')
       : `Open ${story.appUrl}.`;
+    const creds = c?.username ? appSessionCredsStep(story.jiraKey, story.appUrl, loginText) : loginText;
     const charterList = plan.charters.map((ch) => `- ${ch.area}: ${ch.idea}`).join('\n') || '(none planned — explore broadly around the story)';
 
     try {
+      const probeInstruction =
+        getPrompt('exploratory_testing').build({
+          jiraKey: story.jiraKey,
+          mode: 'probe',
+          title: story.title,
+          creds,
+          charterList,
+          riskAreas: plan.riskAreas.join('; ') || '(none flagged)',
+          fragileFlows: plan.fragileFlows.join('; ') || '(none flagged)',
+          shotsDir,
+        }) + (c?.username ? appSessionSaveStep(story.jiraKey) : '');
       const probed = await ai(ctx, {
         ...aiOpts(
-          getPrompt('exploratory_testing').build({
-            jiraKey: story.jiraKey,
-            mode: 'probe',
-            title: story.title,
-            creds,
-            charterList,
-            riskAreas: plan.riskAreas.join('; ') || '(none flagged)',
-            fragileFlows: plan.fragileFlows.join('; ') || '(none flagged)',
-            shotsDir,
-          }),
+          probeInstruction,
           ExploratoryNotes,
           'ExploratoryNotes',
           EXPLORATORY_PROBE_HINT,
@@ -1209,7 +1364,7 @@ export const NODES: Record<string, NodeFn> = {
         ),
         agentic: true,
         permissionMode: 'default',
-        allowedTools: PLAYWRIGHT_TOOLS,
+        allowedTools: [...PLAYWRIGHT_TOOLS, 'mcp__playwright__browser_run_code_unsafe'],
         disallowedTools: ['Task'],
         model: MODEL_EXECUTION,
         effort: EFFORT_EXECUTION,
@@ -1280,7 +1435,7 @@ export const NODES: Record<string, NodeFn> = {
       isWeb,
     });
     try {
-      const res = await runClaude({
+      const res = await withSession(ctx, (resumeSession) => runClaude({
         prompt: writePrompt,
         cwd: COMPANION_DIR,
         model: MODEL,
@@ -1289,7 +1444,8 @@ export const NODES: Record<string, NodeFn> = {
         timeoutMs: 15 * 60 * 1000,
         onLog: (l) => void ctx.log(l),
         signal: ctx.signal,
-      });
+        resumeSession,
+      }), (r) => r.sessionId);
       agentReply = (res?.text ?? '').trim();
       ctx.meta.costUsd += res?.costUsd ?? 0;
       ctx.meta.tokens += res?.outputTokens ?? 0;
@@ -1404,10 +1560,11 @@ export const NODES: Record<string, NodeFn> = {
     let instruction: string;
     if (isWeb) {
       const c = story.credentials ?? undefined;
-      const creds = c?.username
+      const loginText = c?.username
         ? `Log in at ${story.appUrl} with username "${c.username}" and password "${c.password ?? ''}".` +
           (c.otpMethod && c.otpMethod !== 'none' ? ` OTP method: ${c.otpMethod} (see CLAUDE.md §7 for how to obtain it).` : '')
         : `Open ${story.appUrl}.`;
+      const creds = c?.username ? appSessionCredsStep(story.jiraKey, story.appUrl ?? '', loginText) : loginText;
       const useUser = provisioned
         ? ` A FRESH test customer has been provisioned via API for THIS run — use ONLY this customer (do not pick any other): ` +
           `search the panel by mobile "${provisioned.searchMobile}" (national id ${provisioned.nationalId}, status ${provisioned.status}). ` +
@@ -1417,11 +1574,11 @@ export const NODES: Record<string, NodeFn> = {
             : '') +
           `If the expected action/state is still not present for this customer, mark the case blocked and say so precisely.`
         : '';
-      toolset = PLAYWRIGHT_TOOLS;
+      toolset = [...PLAYWRIGHT_TOOLS, 'mcp__playwright__browser_run_code_unsafe'];
       instruction = getPrompt('execution').build({
         jiraKey: story.jiraKey, title: story.title, environment: story.environment ?? 'testing',
         locale, shotsDir, casesFile, isWeb: true, creds, useUser,
-      });
+      }) + (c?.username ? appSessionSaveStep(story.jiraKey) : '');
     } else {
       toolset = ['Bash', 'Read', 'Write', 'Glob', 'Grep'];
       const caps =
@@ -1461,6 +1618,9 @@ export const NODES: Record<string, NodeFn> = {
         timeoutMs: 45 * 60 * 1000,
       });
       await ctx.log(`execution done: ${data.summary.passed}P/${data.summary.failed}F/${data.summary.blocked}B/${data.summary.skipped}S of ${data.summary.total}; ${data.defects.length} defect(s)`);
+      // VT2-S2/S3 (Option A) — emit the producer-agnostic Evidence Manifest
+      // deterministically from the execution results (web + mobile alike).
+      await writeEvidenceManifest(ctx, dir, data, story.platform, locale);
       return data;
     } catch (e) {
       // The agent errored or never returned valid JSON — nothing was actually
@@ -1505,8 +1665,23 @@ export const NODES: Record<string, NodeFn> = {
     // Visual Testing Intelligence (M3): run the Senior-QA vision comparison
     // (best-effort) if not already produced, so parity/review/report consume it.
     if (st.visual == null) {
+      // VT0-S1: resolve the visual-engine flags (Settings → env → default).
+      // Plumbed onto ctx.state for later VT stories; only `legacy` is implemented
+      // today, so shadow/pyramid degrade to the legacy comparator (dispatch lands
+      // in VT4-S1). Default (`legacy`) keeps current behavior byte-for-byte.
+      const visualSettings = await getSettings();
+      const engine = resolveVisualEngine(visualSettings['visual.engine'], process.env.QA_VISUAL_ENGINE);
+      const abstain = resolveVisualAbstain(visualSettings['visual.abstain'], process.env.QA_VISUAL_ABSTAIN);
+      st.visualEngine = engine;
+      st.visualAbstain = abstain;
+      if (engine !== 'legacy' || abstain) {
+        await ctx.log(`visual engine: ${engine}${abstain ? ' · abstain=on' : ''} (only legacy implemented today — degrading to legacy)`);
+      }
       try {
-        const v = await runVisualComparison(ctx);
+        // VT1-S1/VT4: `abstain` + `engine` passed EXPLICITLY (single source of
+        // truth = resolveVisualAbstain/resolveVisualEngine), never read from
+        // transient ctx.state inside the callee — per the VT4-S1 constraint.
+        const v = await runVisualComparison(ctx, abstain, engine);
         if (v) st.visual = v;
       } catch (e) {
         await ctx.log(`visual comparison skipped: ${(e as Error).message}`);
@@ -1734,6 +1909,48 @@ function collectScreenshots(execState: { cases?: Array<{ evidence?: string[] }> 
   return [];
 }
 
+/**
+ * VT2-S1: load the evidence manifest for a story — the emitted file if present,
+ * else a synthetic one from the collected screenshots (back-compat shim, so
+ * legacy stories behave exactly as before manifests existed).
+ */
+function loadEvidenceManifest(dir: string, shots: string[], platform: string, locale: string): EvidenceManifest {
+  const file = path.join(dir, EVIDENCE_MANIFEST_FILENAME);
+  if (existsSync(file)) {
+    try {
+      let raw = readFileSync(file, 'utf8');
+      if (raw.charCodeAt(0) === 0xfeff) raw = raw.slice(1); // strip BOM
+      return EvidenceManifest.parse(JSON.parse(raw));
+    } catch {
+      /* malformed manifest → fall through to synthesis (never block the report) */
+    }
+  }
+  return synthesizeManifest(shots, { platform: toScreenPlatform(platform), locale });
+}
+
+/**
+ * VT2-S2 (Option A): deterministically emit the producer-agnostic Evidence
+ * Manifest from the execution results, so the visual comparator's ingester
+ * consumes a REAL manifest. Written to the fixed path (overwrite, not the .vN
+ * artifact scheme) because it is derived state regenerable from the versioned
+ * execution results. Best-effort — never blocks execution.
+ */
+async function writeEvidenceManifest(
+  ctx: NodeContext,
+  dir: string,
+  exec: z.infer<typeof ExecutionResults>,
+  platform: string,
+  locale: string,
+): Promise<void> {
+  try {
+    const manifest = buildManifestFromExecution(exec, { defaultPlatform: toScreenPlatform(platform), defaultLocale: locale });
+    await writeFile(path.join(dir, EVIDENCE_MANIFEST_FILENAME), JSON.stringify(manifest, null, 2), 'utf8');
+    await ctx.log(`evidence manifest: ${manifest.rows.length} row(s) → ${EVIDENCE_MANIFEST_FILENAME}`);
+  } catch (e) {
+    await ctx.log(`evidence manifest not written: ${(e as Error).message}`);
+  }
+}
+
 /** Best actual-screenshot match for a Figma frame by normalized token overlap; index fallback. */
 function bestShot(frameName: string, shots: string[], index: number): string {
   const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter(Boolean);
@@ -1750,18 +1967,167 @@ function bestShot(frameName: string, shots: string[], index: number): string {
   return best;
 }
 
+/** VT1-S2/VT4 — a first-class coverage-gap screen (no forced pair, not a defect). */
+function coverageGapScreen(name: string, file: string | undefined, combo: string): z.infer<typeof VisualScreenComparison> {
+  return {
+    screen: name, combo, expectedFrame: file, actualScreenshot: undefined,
+    verdict: 'coverage-gap', categoriesChecked: [],
+    findings: [{
+      category: 'content', dimension: 'frame-pairing', severity: 'info', screen: name,
+      source: 'deterministic', layer: 'identity', coverageGap: true,
+      expected: `Figma frame "${name}"`,
+      actual: 'No screenshot met the pairing confidence floor',
+      differenceDescription: 'No actual screenshot could be confidently paired to this Figma frame — reported as a coverage gap, not a UI defect.',
+      recommendation: 'Register this screen (screenId → figmaNodeId) or ensure automation captures it.',
+      confidence: 'high', sources: [],
+    }],
+  };
+}
+
+/** Deterministic aggregation shared by the legacy comparator and the pyramid. */
+function aggregateVisual(
+  expectedFrames: number,
+  screens: z.infer<typeof VisualScreenComparison>[],
+  coverageGaps: number,
+  engine?: 'legacy' | 'shadow' | 'pyramid',
+): VisualComparison {
+  // Coverage-gap screens are not actual comparisons — excluded from compared/pass-rate.
+  const comparedScreens = screens.filter((s) => s.verdict !== 'no-frame' && s.verdict !== 'coverage-gap').length;
+  const passRate = comparedScreens ? Math.round((screens.filter((s) => s.verdict === 'pass').length / comparedScreens) * 100) : 0;
+  const categoriesCovered = [...new Set(screens.flatMap((s) => s.categoriesChecked ?? []))];
+  const notes = coverageGaps ? `${coverageGaps} frame(s) had no confident screenshot pairing (coverage gaps, not compared).` : '';
+  const vc: VisualComparison = { compared: screens.length > 0, expectedFrames, comparedScreens, passRate, categoriesCovered, screens, patterns: [], componentsAffected: [], notes, ...(engine ? { engine } : {}) };
+  vc.patterns = detectVisualPatterns(vc);
+  vc.componentsAffected = [...new Set(screens.flatMap((s) => (s.findings ?? []).map((f) => f.component).filter(Boolean) as string[]))].sort();
+  return vc;
+}
+
+/** VT4/producer-#3 — load a structured dump: StructuredDump-JSON, Playwright a11y text, or Appium XML (via parseRawDump). */
+function loadStructuredDump(p?: string | null): z.infer<typeof StructuredDump> | undefined {
+  if (!p || !existsSync(p)) return undefined;
+  try {
+    let raw = readFileSync(p, 'utf8');
+    if (raw.charCodeAt(0) === 0xfeff) raw = raw.slice(1);
+    return parseRawDump(raw) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
- * Visual Testing Intelligence (M3) — best-effort. For each exported Figma frame
- * matched to an actual screenshot, run the Senior-QA `visual_comparison` vision
- * task (reads both images + the AC) and aggregate into a VisualComparison. The
- * deterministic health/coverage/pass-rate is computed later by computeVisualHealth.
- * Never blocks the report: any failure degrades to fewer/zero compared screens.
- * One AI vision comparator today; future pixel/OCR/axe comparators append findings
- * to the same shape with no architecture change.
+ * VT4 — the deterministic Validation Pyramid engine. For each Figma frame:
+ * resolve the actual screenshot (registry-first via the manifest's screenId),
+ * look up the registry screen (expectedComponents + profile), load the actual
+ * StructuredDump, and run the enabled layers. No AI. Screens with no confident
+ * pair become coverage gaps. Dormant where producer data is absent (registry not
+ * authored / no structured dump / no expected bounds+styles) — never a false pass.
  */
-async function runVisualComparison(ctx: NodeContext): Promise<VisualComparison | undefined> {
+async function runPyramidComparison(
+  ctx: NodeContext,
+  frames: Array<{ name: string; file?: string; nodeId?: string }>,
+  manifest: z.infer<typeof EvidenceManifest>,
+  floorOpt: { floor?: number },
+  combo: string,
+  max: number,
+  opts: { acText?: string; withAiResidual?: boolean } = {},
+): Promise<VisualComparison> {
+  // Producer #1 — load the Figma-extracted EXPECTED dump for a frame (by nodeId),
+  // used when the registry has no curated components for that screen.
+  const extractDir = path.join((ctx.state.workspacePath as string) ?? storyDir(ctx.run.story.jiraKey), 'figma-analysis', 'extract');
+  const expectedFromFigma = (nodeId?: string) => {
+    if (!nodeId) return [];
+    try {
+      const p = path.join(extractDir, `${nodeId.replace(/[^a-z0-9]+/gi, '_')}.json`);
+      if (!existsSync(p)) return [];
+      return structuredDumpToExpectedComponents(StructuredDump.parse(JSON.parse(readFileSync(p, 'utf8'))));
+    } catch {
+      return [];
+    }
+  };
+  let registry: ReturnType<typeof loadScreenRegistry> = { profiles: [], screens: [] };
+  try {
+    registry = loadScreenRegistry();
+    const errors = validateScreenRegistry(registry).filter((i) => i.level === 'error');
+    if (errors.length) await ctx.log(`screen registry: ${errors.length} error(s) — ${errors.map((e) => e.message).slice(0, 3).join('; ')}`);
+  } catch (e) {
+    await ctx.log(`screen registry not loaded: ${(e as Error).message}`);
+  }
+  const profilesById = new Map(registry.profiles.map((p) => [p.id, p]));
+  const defaultProfile = ValidationProfile.parse({ id: '__default__' });
+  const shotRefs: ShotRef[] = manifest.rows.map((r) => ({ path: r.screenshotPath, screenId: r.screenId || undefined }));
+  const dumpByShot = new Map(manifest.rows.map((r) => [r.screenshotPath, r.structuredDumpPath]));
+  const auditRate = Number(process.env.QA_VISUAL_AI_AUDIT_RATE ?? 0);
+  const screens: z.infer<typeof VisualScreenComparison>[] = [];
+  let gaps = 0;
+  let aiInvoked = 0;
+  let aiSkipped = 0;
+  for (const [idx, frame] of frames.slice(0, max).entries()) {
+    if (ctx.signal.aborted) break;
+    const res = resolvePair({ name: frame.name, file: frame.file }, shotRefs, floorOpt);
+    if (res.coverageGap || !res.shot) {
+      gaps++;
+      screens.push(coverageGapScreen(frame.name, frame.file, combo));
+      continue;
+    }
+    const shot = res.shot.path;
+    const screenId = res.shot.screenId ?? '';
+    const regScreen = screenId ? registry.screens.find((s) => s.id === screenId) : undefined;
+    const profile = (regScreen?.profileId && profilesById.get(regScreen.profileId)) || defaultProfile;
+    const actual = loadStructuredDump(dumpByShot.get(shot));
+    // Curated registry components win; else fall back to Figma-extracted expected (producer #1).
+    const expectedComponents = regScreen?.expectedComponents?.length ? regScreen.expectedComponents : expectedFromFigma(frame.nodeId);
+    // Producer #4 — L7 pixel (advisory), opt-in via QA_VISUAL_PIXEL; skips on dim mismatch.
+    let pixelDiff = null;
+    if (process.env.QA_VISUAL_PIXEL === 'true' && profile.enabledLayers.includes('pixel') && frame.file && existsSync(shot)) {
+      pixelDiff = await pngPixelComparator.compare(frame.file, shot);
+    }
+    const sc = runPyramid({
+      screen: regScreen?.displayName || frame.name, combo, expectedFrame: frame.file, actualScreenshot: shot,
+      expectedComponents, actual,
+    }, profile, { pixelDiff });
+    // VT5-S1: AI runs only on the RESIDUAL (predicate-gated) — and only in the
+    // real `pyramid` engine, never in `shadow` (keeps shadow's pyramid pass cheap).
+    const gate = shouldInvokeAi({
+      identityResolved: true,
+      fullyStructured: !!actual,
+      hasExpected: (regScreen?.expectedComponents?.length ?? 0) > 0,
+      deterministicFindings: sc.findings.length,
+      auditSampled: isAuditSampled(idx, auditRate),
+    });
+    if (opts.withAiResidual && gate.invoke) {
+      aiInvoked++;
+      try {
+        const r = await ai(ctx, {
+          ...aiOptsP(getPrompt('visual_comparison'),
+            { jiraKey: ctx.run.story.jiraKey, screen: sc.screen, combo, acText: opts.acText ?? '', expectedFrame: frame.file as string, actualScreenshot: shot },
+            VisualScreenComparison, ctx),
+          agentic: true, permissionMode: 'default', allowedTools: ['Read'], timeoutMs: 4 * 60 * 1000,
+        });
+        screens.push({ ...r, screen: r.screen || sc.screen, combo, expectedFrame: frame.file, actualScreenshot: shot });
+        continue;
+      } catch (e) {
+        await ctx.log(`pyramid residual AI "${sc.screen}" failed — ${(e as Error).message} (using deterministic result)`);
+      }
+    } else if (opts.withAiResidual) {
+      aiSkipped++;
+    }
+    screens.push(sc);
+  }
+  const vc = aggregateVisual(frames.length, screens, gaps, 'pyramid');
+  const aiNote = opts.withAiResidual ? ` · AI ${aiInvoked} invoked / ${aiSkipped} skipped` : ' · deterministic-only';
+  await ctx.log(`visual pyramid: ${screens.length} screen(s) · pass rate ${vc.passRate}% · ${gaps} coverage gap(s) · ${vc.patterns.length} pattern(s)${aiNote}`);
+  return vc;
+}
+
+/**
+ * Visual Testing Intelligence (M3) — best-effort. Dispatches on the visual
+ * engine (VT4): `legacy` = AI vision comparator; `pyramid` = deterministic
+ * layers; `shadow` = legacy drives the report while the pyramid runs and its
+ * divergence is logged. Never blocks the report.
+ */
+async function runVisualComparison(ctx: NodeContext, abstain = false, engine: 'legacy' | 'shadow' | 'pyramid' = 'legacy'): Promise<VisualComparison | undefined> {
   const st = ctx.state as Record<string, any>;
-  const frames = ((st.figma?.frames ?? []) as Array<{ name: string; file?: string }>).filter((f) => f.file);
+  const frames = ((st.figma?.frames ?? []) as Array<{ name: string; file?: string; nodeId?: string }>).filter((f) => f.file);
   if (!frames.length) return undefined;
   const dir = (st.workspacePath as string) ?? storyDir(ctx.run.story.jiraKey);
   const shots = collectScreenshots(st.execution, path.join(dir, 'screenshots'));
@@ -1773,10 +2139,38 @@ async function runVisualComparison(ctx: NodeContext): Promise<VisualComparison |
     .join('\n');
   const combo = (st.execution?.matrix?.[0] as string) ?? (ctx.run.story.platform === 'web' ? 'web · en-US' : 'android · en-US');
   const MAX = Number(process.env.QA_VISUAL_MAX_SCREENS ?? 12);
+  // VT1-S1: when `abstain` is on, use the unified resolver (registry-first →
+  // heuristic-with-floor → abstain) instead of the always-returns `bestShot`, so
+  // low-confidence frames become coverage gaps rather than forced pairs. Default
+  // (abstain off) keeps the legacy bestShot path byte-for-byte.
+  const mf = Number(process.env.QA_VISUAL_MATCH_FLOOR);
+  const floorOpt = Number.isFinite(mf) ? { floor: mf } : {};
+  // VT2-S1: source the shot set from the evidence manifest (real file if emitted,
+  // else synthesized from `shots`). Carries screenId when present so the resolver's
+  // registry-first branch can activate; synthesized rows have no screenId → same
+  // heuristic behavior as VT1-S1.
+  const locale = (combo.split('·').pop() ?? 'en-US').trim() || 'en-US';
+  const manifest = loadEvidenceManifest(dir, shots, ctx.run.story.platform, locale);
+  const shotRefs: ShotRef[] = manifest.rows.map((r) => ({ path: r.screenshotPath, screenId: r.screenId || undefined }));
+  // VT4/VT5 — pyramid engine: deterministic layers + AI on the residual (predicate-gated).
+  if (engine === 'pyramid') return await runPyramidComparison(ctx, frames, manifest, floorOpt, combo, MAX, { acText, withAiResidual: true });
+  let coverageGaps = 0;
   const screens: z.infer<typeof VisualScreenComparison>[] = [];
   for (const [i, frame] of frames.slice(0, MAX).entries()) {
     if (ctx.signal.aborted) break;
-    const shot = bestShot(frame.name, shots, i);
+    let shot: string;
+    if (abstain) {
+      const res = resolvePair({ name: frame.name, file: frame.file }, shotRefs, floorOpt);
+      if (res.coverageGap || !res.shot) {
+        // VT1-S2: first-class coverage-gap screen (no forced pair, no AI call).
+        coverageGaps++;
+        screens.push(coverageGapScreen(frame.name, frame.file, combo));
+        continue;
+      }
+      shot = res.shot.path;
+    } else {
+      shot = bestShot(frame.name, shots, i);
+    }
     try {
       const r = await ai(ctx, {
         ...aiOptsP(
@@ -1794,14 +2188,21 @@ async function runVisualComparison(ctx: NodeContext): Promise<VisualComparison |
       await ctx.log(`visual_comparison: "${frame.name}" failed — ${(e as Error).message}`);
     }
   }
-  const comparedScreens = screens.filter((s) => s.verdict !== 'no-frame').length;
-  const passRate = comparedScreens ? Math.round((screens.filter((s) => s.verdict === 'pass').length / comparedScreens) * 100) : 0;
-  const categoriesCovered = [...new Set(screens.flatMap((s) => s.categoriesChecked ?? []))];
-  // M3.5 — deterministic design-system aggregation: recurring root causes + components touched.
-  const vc: VisualComparison = { compared: screens.length > 0, expectedFrames: frames.length, comparedScreens, passRate, categoriesCovered, screens, patterns: [], componentsAffected: [], notes: '' };
-  vc.patterns = detectVisualPatterns(vc);
-  vc.componentsAffected = [...new Set(screens.flatMap((s) => (s.findings ?? []).map((f) => f.component).filter(Boolean) as string[]))].sort();
-  await ctx.log(`visual_comparison: ${screens.length} screen(s) compared · pass rate ${passRate}% · ${vc.patterns.length} recurring pattern(s)`);
+  const vc = aggregateVisual(frames.length, screens, coverageGaps);
+  await ctx.log(`visual_comparison: ${screens.length} screen(s) compared · pass rate ${vc.passRate}%${abstain ? ` · ${coverageGaps} coverage gap(s)` : ''} · ${vc.patterns.length} recurring pattern(s)`);
+  // VT4/VT5 — shadow: run the pyramid DETERMINISTIC-ONLY (no AI) alongside legacy,
+  // persist divergence metrics for the cutover decision; legacy still drives the report.
+  if (engine === 'shadow') {
+    try {
+      const pv = await runPyramidComparison(ctx, frames, manifest, floorOpt, combo, MAX, { withAiResidual: false });
+      const div = computeVisualDivergence(vc, pv);
+      (ctx.state as Record<string, any>).visualDivergence = div;
+      try { await writeFile(path.join(dir, 'visual-shadow-metrics.json'), JSON.stringify(div, null, 2), 'utf8'); } catch { /* best-effort */ }
+      await ctx.log(`visual shadow: verdict agreement ${Math.round(div.verdictAgreementRate * 100)}% over ${div.screensCompared} screen(s) · legacy ${div.legacyFindings} vs pyramid ${div.pyramidFindings} finding(s) — legacy drives report; metrics persisted.`);
+    } catch (e) {
+      await ctx.log(`visual shadow (pyramid) failed: ${(e as Error).message}`);
+    }
+  }
   return vc;
 }
 
@@ -1901,6 +2302,21 @@ function renderReport(ctx: NodeContext): string {
     }
     return bestScore >= 1 ? best : null;
   };
+  // VT1-S1: when abstain is on, prefer the resolver's pair (recorded on
+  // st.visual.screens) so the report's Expected frame is IDENTICAL to what the AI
+  // judged. Join on the actual screenshot path; fall back to matchExpected when
+  // abstain is off or no resolved pair exists (legacy byte-for-byte when off).
+  const visualAbstain = (ctx.state as Record<string, any>).visualAbstain === true;
+  const resolvedExpectedByShot = new Map<string, string>();
+  if (visualAbstain) {
+    for (const sc of (((ctx.state as Record<string, any>).visual?.screens ?? []) as Array<{ actualScreenshot?: string; expectedFrame?: string }>)) {
+      if (sc.actualScreenshot && sc.expectedFrame) resolvedExpectedByShot.set(sc.actualScreenshot, sc.expectedFrame);
+    }
+  }
+  const resolvedExpected = (evidence?: string[]): string | null => {
+    for (const e of evidence ?? []) { const hit = resolvedExpectedByShot.get(e); if (hit) return hit; }
+    return null;
+  };
   const verdictOf = (r: any): { label: string; cls: string } => {
     const txt = `${r?.notes ?? ''} ${r?.actual ?? ''}`.toLowerCase();
     if (/major/.test(txt) || r?.status === 'fail') return { label: 'MAJOR', cls: 'fail' };
@@ -1912,7 +2328,7 @@ function renderReport(ctx: NodeContext): string {
   const visualResults = results.filter((r) => (r.evidence?.length ?? 0) > 0);
   const visualBlocks = visualResults.map((r) => {
     const actual = embedImg(r.evidence?.[0]);
-    const expPath = matchExpected(r.title, r.evidence);
+    const expPath = resolvedExpected(r.evidence) ?? matchExpected(r.title, r.evidence);
     const expected = embedImg(expPath ?? undefined);
     const v = verdictOf(r);
     const pane = (label: string, uri: string | null, sub: string) =>
@@ -2010,6 +2426,7 @@ function renderReport(ctx: NodeContext): string {
        <table><tr><th>Dimension</th><th>Score</th><th>Detail</th></tr>${health.dimensions.map((d) =>
          `<tr><td>${esc(d.label)}</td><td>${d.applicable ? `<span class="badge ${dimCls(d.level)}">${d.score}</span>` : '<span class="muted">n/a</span>'}</td><td>${esc(d.detail)}</td></tr>`).join('')}</table>`
     : '';
+  const sevCls = (sev: string) => (sev === 'critical' || sev === 'major' ? 'fail' : sev === 'minor' ? 'note' : 'no');
   // Recommendations block (M5) — deterministic + rule-based, prioritized.
   const recs = (st.recommendations ?? []) as Array<{
     id: string; title: string; category: string; severity: string; impact: string; effort: string;
@@ -2035,7 +2452,6 @@ function renderReport(ctx: NodeContext): string {
   // Visual Testing Intelligence section (M3) — from the structured VisualComparison.
   const vc = st.visual as VisualComparison | undefined;
   const vh = vc && vc.compared ? computeVisualHealth(vc) : undefined;
-  const sevCls = (sev: string) => (sev === 'critical' || sev === 'major' ? 'fail' : sev === 'minor' ? 'note' : 'no');
   const vhCls = vh ? (vh.level === 'high' ? 'pass' : vh.level === 'medium' ? 'note' : 'fail') : 'no';
   const sevRow = vh ? Object.entries(vh.findingsBySeverity).filter(([, n]) => n > 0).map(([k, n]) => `${k}: ${n}`).join(' · ') : '';
   const catRow = vh ? Object.entries(vh.findingsByCategory).map(([k, n]) => `${k}: ${n}`).join(' · ') : '';
@@ -2047,7 +2463,7 @@ function renderReport(ctx: NodeContext): string {
     return parts.length ? `<div class="cites">${parts.join('')}</div>` : '';
   };
   const findingCards = vc
-    ? vc.screens.flatMap((scr) => (scr.findings ?? []).map((f) =>
+    ? vc.screens.flatMap((scr) => (scr.findings ?? []).filter((f) => !f.coverageGap).map((f) =>
         `<div class="vfind"><div><span class="badge ${sevCls(f.severity)}">${esc(f.severity)}</span> ` +
         `<b>${esc(f.category)}/${esc(f.dimension)}</b> — ${esc(f.screen || scr.screen)} ` +
         `<span class="muted">(${esc(f.confidence)} confidence)</span></div>` +
@@ -2073,6 +2489,14 @@ function renderReport(ctx: NodeContext): string {
   const compAffected = vh?.componentsAffected?.length
     ? `<p class="muted"><b>Components affected:</b> ${vh.componentsAffected.map((c) => `<span class="dschip comp">${esc(c)}</span>`).join(' ')}</p>`
     : '';
+  // VT1-S2 — coverage gaps: Figma frames with no confidently-paired screenshot.
+  const gapScreens = (vc?.screens ?? []).filter((s) => s.verdict === 'coverage-gap');
+  const gapTile = (vh?.screensCoverageGap ?? 0) > 0 ? `<div class="card"><div class="n">${vh!.screensCoverageGap}</div>Coverage gaps</div>` : '';
+  const coverageGapBlock = gapScreens.length
+    ? `<h3 class="vsub">Coverage gaps (${gapScreens.length})</h3>` +
+      `<p class="muted">Figma frames with no confidently-paired screenshot — reported as gaps, not defects. They reduce coverage but do not affect Visual Health.</p>` +
+      `<ul>${gapScreens.map((s) => `<li>${esc(s.screen)}${s.expectedFrame ? ` <span class="muted">(${esc(path.basename(s.expectedFrame))})</span>` : ''}</li>`).join('')}</ul>`
+    : '';
   const visualIntel = vh
     ? `<h2>Visual Testing Intelligence</h2>
        <div class="grid">
@@ -2082,13 +2506,15 @@ function renderReport(ctx: NodeContext): string {
         <div class="card"><div class="n bad">${vh.screensFailed}</div>Failed</div>
         <div class="card"><div class="n">${vh.passRate}%</div>Visual pass rate</div>
         <div class="card"><div class="n">${vh.coverage}%</div>Category coverage</div>
+        ${gapTile}
        </div>
        <p><span class="badge ${vhCls}">VISUAL HEALTH ${vh.visualHealth} · ${esc(vh.level.toUpperCase())}</span>${sevRow ? ` &nbsp; Findings — ${esc(sevRow)}` : ''}</p>
        ${catRow ? `<p class="muted">By category — ${esc(catRow)}</p>` : ''}
        ${compAffected}
        ${patternCards}
        ${patterns.length ? '<h3 class="vsub">All findings</h3>' : ''}
-       ${findingCards || '<p class="muted">No visual findings — screens matched the design.</p>'}`
+       ${findingCards || '<p class="muted">No visual findings — screens matched the design.</p>'}
+       ${coverageGapBlock}`
     : vc && !vc.compared
       ? `<h2>Visual Testing Intelligence</h2><p class="muted">${esc(vc.notes || 'Visual comparison not performed.')}</p>`
       : '';

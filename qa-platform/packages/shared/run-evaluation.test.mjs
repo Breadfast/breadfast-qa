@@ -136,3 +136,16 @@ test('workflow definition + run versions are consistent', () => {
   assert.equal(v.promptVersion, def.promptVersion);
   assert.equal(v.knowledgeVersion, null); // placeholder
 });
+
+// ── VT1-S2 — a coverage-gap screen must not count as covering its combo ───────
+test('VT1-S2: a combo covered only by a coverage-gap screen still counts as missing visual coverage', () => {
+  const combos = requiredCombos('web', ['en-US']);
+  const p = computeParityCertification({
+    platform: 'web',
+    locales: ['en-US'],
+    completedNodes: ['requirements_analysis'],
+    figmaFrameCount: 2,
+    visual: { comparedScreens: 0, screens: [{ combo: combos[0], verdict: 'coverage-gap' }] },
+  });
+  assert.ok(p.missingVisualCoverage.includes(combos[0]), 'coverage-gap does not cover the combo');
+});

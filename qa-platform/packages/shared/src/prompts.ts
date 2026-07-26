@@ -408,10 +408,11 @@ const execution: PromptDef<{
 }> = {
   key: 'execution',
   name: 'Execution (STEP: Phase 2 real run)',
-  version: '1.1.0',
+  version: '1.2.0',
   purpose: 'Drive the live app (web Playwright / mobile BrowserStack) and return ExecutionResults, with the defect-grounding + blocker-handling gates.',
   owner: OWNER,
   changelog: [
+    { version: '1.2.0', date: '2026-07-21', note: 'VT3 — optional best-effort structured UI dump (a11y/DOM/page-source) per screen, recorded in each case\'s structuredDump for the validation pyramid.' },
     { version: '1.1.0', date: '2026-07-15', note: 'Emit Defect citation sources (kind ac|figma|rule) for traceability (Phase 2).' },
     V1,
   ],
@@ -429,7 +430,10 @@ const execution: PromptDef<{
       `Capture at least one screenshot per case into "${v.shotsDir.replace(/\\/g, '\\\\')}" (name it <index>_<short-slug>.png) and put the ` +
       `saved file path(s) in that case's "evidence". For a "fail" whose defect is a multi-step or state/DB-transition issue that a single ` +
       `screenshot cannot convey, ALSO capture a short screen recording (.mp4 or .webm) into that folder and add its path to "evidence" — ` +
-      `recordings are attached to the Bug and preview inline in Jira, making the defect self-explanatory to the developer. For every "fail", ` +
+      `recordings are attached to the Bug and preview inline in Jira, making the defect self-explanatory to the developer. ` +
+      `OPTIONAL (best-effort) structured evidence: for each screen also capture a structured UI dump — the accessibility/DOM ` +
+      `structure (web) or page source (mobile) — save it beside the screenshot as "<index>_<short-slug>.dump.json" (or .txt) and put ` +
+      `its path in that case's "structuredDump". This is optional; skip if unavailable and NEVER block or fail a case over it. For every "fail", ` +
       `add a Defect (title, severity, priority, caseTitle, combo, ` +
       `stepsToReproduce, expected, actual, evidence, sources) per docs/ai/bug-reporting.md. Populate each Defect's ` +
       `"sources" with what it violates — {kind, ref}, kind ∈ (ac|figma|rule), ref = the AC id, Figma frame name, or docs/ai rule path.\n\n` +
@@ -464,13 +468,13 @@ const execution: PromptDef<{
     if (v.isWeb) {
       return (
         `Use the Playwright browser tools to drive the live web app. ${v.creds}${v.useUser} Use browser_take_screenshot with a filename under the ` +
-        `screenshots dir for evidence. ${common}`
+        `screenshots dir for evidence; optionally use browser_snapshot to capture the accessibility tree and Write it as the "<index>_<short-slug>.dump.json" structured dump. ${common}`
       );
     }
     return (
       `Drive BrowserStack App Automate via the helper at ${v.bsHelperPath} (functions: bsReq, screenshot, getSource, ` +
       `findElement(s), clickEl, typeText, tap(x,y), getAttr, sleep). Write a Node driver script under "${(v.dir ?? '').replace(/\\/g, '\\\\')}\\automation" ` +
-      `that: creates a session with the caps below, executes the cases, saves a screenshot per case into the screenshots dir, then run it with Bash ` +
+      `that: creates a session with the caps below, executes the cases, saves a screenshot per case into the screenshots dir (optionally also getSource() saved as the "<index>_<short-slug>.dump.json" structured dump), then run it with Bash ` +
       `("node <script>"). Run Android first, then iOS, for locale ${v.locale} only (Arabic is a later pass). Handle OTP/passcode/coordinate-tap ` +
       `quirks per CLAUDE.md §7. ${v.caps} ${common}`
     );

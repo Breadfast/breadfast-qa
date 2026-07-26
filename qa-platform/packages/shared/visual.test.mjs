@@ -127,3 +127,34 @@ test('explainVisualFinding leads with the design-system framing when a component
   assert.ok(e.reason.startsWith('Primary Button uses the wrong typography token:'), e.reason);
   assert.ok(e.artifactLabel.includes('Primary Button'), 'component in label');
 });
+
+// ── VT1-S2 — coverage-gap as a first-class, non-penalizing result ────────────
+test('VT1-S2: coverage-gap screens do not tank Visual Health and are counted separately', () => {
+  const vc = {
+    compared: true, expectedFrames: 2, comparedScreens: 1, passRate: 100,
+    categoriesCovered: ['content'], patterns: [], componentsAffected: [], notes: '',
+    screens: [
+      { screen: 'Home', combo: 'web · en-US', verdict: 'pass', categoriesChecked: ['content'], findings: [] },
+      { screen: 'Unmapped', combo: 'web · en-US', verdict: 'coverage-gap', categoriesChecked: [],
+        findings: [{ category: 'content', dimension: 'frame-pairing', severity: 'info', screen: 'Unmapped',
+          source: 'deterministic', layer: 'identity', coverageGap: true,
+          expected: 'x', actual: 'y', differenceDescription: 'z', recommendation: 'w', confidence: 'high', sources: [] }] },
+    ],
+  };
+  const h = computeVisualHealth(vc);
+  assert.equal(h.screensValidated, 1, 'coverage-gap excluded from validated');
+  assert.equal(h.screensPassed, 1);
+  assert.equal(h.screensCoverageGap, 1, 'coverage gap counted separately');
+  assert.equal(h.passRate, 100, 'gap not in pass-rate denominator');
+  assert.equal(h.visualHealth, 100, 'coverage gap does not penalize health');
+  assert.equal(h.totalFindings, 0, 'coverage-gap notice is not a real finding');
+  assert.equal(h.findingsBySeverity.info, 0, 'gap finding excluded from severity tally');
+});
+
+test('VT1-S2: detectVisualPatterns ignores coverage-gap findings', () => {
+  const vc = { screens: [
+    { screen: 'A', verdict: 'coverage-gap', findings: [{ category: 'content', dimension: 'frame-pairing', severity: 'info', screen: 'A', coverageGap: true, sources: [] }] },
+    { screen: 'B', verdict: 'coverage-gap', findings: [{ category: 'content', dimension: 'frame-pairing', severity: 'info', screen: 'B', coverageGap: true, sources: [] }] },
+  ] };
+  assert.deepEqual(detectVisualPatterns(vc), [], 'two gap notices must NOT form a "frame-pairing" pattern');
+});

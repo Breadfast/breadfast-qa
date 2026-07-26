@@ -122,7 +122,9 @@ export function computeParityCertification(input: RunEvaluationInput): ParityCer
 
   // Visual coverage: only meaningful when Figma frames were exported.
   const hasFrames = (input.figmaFrameCount ?? 0) > 0;
-  const visualCombos = new Set((input.visual?.screens ?? []).map((s) => s.combo));
+  // VT1-S2: a coverage-gap screen did NOT actually compare a frame, so it must
+  // not count as covering its combo.
+  const visualCombos = new Set((input.visual?.screens ?? []).filter((s) => s.verdict !== 'coverage-gap').map((s) => s.combo));
   const missingVisualCoverage = hasFrames ? required.filter((c) => !visualCombos.has(c)) : [];
 
   // Automation coverage: test cases not marked Automated.
@@ -275,7 +277,7 @@ const levelOf = (n: number): HealthLevel => (n >= 80 ? 'high' : n >= 50 ? 'mediu
 
 export interface StoryHealthExtras {
   /** From computeVisualHealth() — passed in so we never recompute (frugality). */
-  visualHealth?: { visualHealth: number; screensValidated: number } | null;
+  visualHealth?: { visualHealth: number; screensValidated: number; screensCoverageGap?: number } | null;
   /** Defects surfaced during execution (severity drives the Defects dimension). */
   defects?: Array<{ severity?: string }> | null;
 }
@@ -339,7 +341,9 @@ export function computeStoryHealth(
     { key: 'execution', label: 'Execution', applicable: execApplicable, score: execScore, level: levelOf(execScore),
       detail: execApplicable ? `${sum.passed ?? 0}/${execTotal} passed.` : 'Execution not run.' },
     { key: 'visual', label: 'Visual', applicable: visApplicable, score: visScore, level: levelOf(visScore),
-      detail: visApplicable ? `Visual health ${visScore} across ${extras.visualHealth?.screensValidated} screen(s).` : 'No visual comparison performed.' },
+      detail: visApplicable
+        ? `Visual health ${visScore} across ${extras.visualHealth?.screensValidated} screen(s).${(extras.visualHealth?.screensCoverageGap ?? 0) > 0 ? ` ${extras.visualHealth?.screensCoverageGap} coverage gap(s).` : ''}`
+        : 'No visual comparison performed.' },
     { key: 'defects', label: 'Defects', applicable: defApplicable, score: defScore, level: levelOf(defScore),
       detail: defApplicable ? `${defects.length} defect(s); severity-weighted burden ${defPenalty}.` : 'No execution ⇒ no defect signal.' },
     { key: 'traceability', label: 'Traceability', applicable: traceApplicable, score: traceScore, level: levelOf(traceScore),

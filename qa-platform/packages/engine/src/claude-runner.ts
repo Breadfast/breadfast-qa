@@ -92,6 +92,36 @@ function looksLikeUsageLimit(text: string): boolean {
   return Boolean(text) && usageLimitPatterns().some((re) => re.test(text));
 }
 
+/**
+ * Session Continuity (Run Lifecycle Management) — heuristic, env-configurable
+ * detection of a "--resume target doesn't exist/expired" signature, same
+ * best-effort approach as the usage-limit patterns above: there's no API to
+ * check a session id's validity ahead of time, only the CLI's own failure text
+ * to recognize when a resume attempt didn't work. `QA_SESSION_NOT_FOUND_PATTERNS`
+ * (comma-separated regex fragments, case-insensitive) lets this be tuned once
+ * real production wording is observed.
+ */
+const DEFAULT_SESSION_NOT_FOUND_PATTERNS = [
+  'no conversation found',
+  'session .{0,40}not found',
+  'no session found',
+  'invalid session',
+  'session .{0,40}expired',
+  'could not resume',
+];
+
+function sessionNotFoundPatterns(): RegExp[] {
+  const extra = (process.env.QA_SESSION_NOT_FOUND_PATTERNS ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return [...DEFAULT_SESSION_NOT_FOUND_PATTERNS, ...extra].map((p) => new RegExp(p, 'i'));
+}
+
+function looksLikeSessionNotFound(text: string): boolean {
+  return Boolean(text) && sessionNotFoundPatterns().some((re) => re.test(text));
+}
+
 /** Best-effort "resets at/in ..." fragment straight out of the CLI's message. */
 function extractResetHint(text: string): string | undefined {
   return text.match(/resets?\s+(?:at|in)\s+[^.\n]{1,60}/i)?.[0];
@@ -117,6 +147,21 @@ interface ClaudeJsonEnvelope {
   total_cost_usd?: number;
   duration_ms?: number;
   usage?: { input_tokens?: number; output_tokens?: number };
+}
+
+/**
+ * Session Continuity (Run Lifecycle Management) — the `--resume <id>` target
+ * wasn't found or is no longer usable (wrong machine, expired, or a run whose
+ * session was cleared by a Restart From Step). Callers are expected to catch
+ * this and retry once with `resumeSession` omitted — the standard DB-rebuilt
+ * prompt already contains everything needed, resuming was only ever an
+ * optimization on top, never a dependency.
+ */
+export class SessionNotFoundError extends Error {
+  constructor(readonly sessionId?: string) {
+    super(`claude session not found or unusable${sessionId ? `: ${sessionId}` : ''}`);
+    this.name = 'SessionNotFoundError';
+  }
 }
 
 export class ClaudeRunError extends Error {
@@ -192,12 +237,18 @@ export async function runClaude(opts: ClaudeRunOptions): Promise<ClaudeRunResult
       if (!env) {
         const combined = stderr || stdout;
         if (looksLikeUsageLimit(combined)) return reject(new UsageLimitError(extractResetHint(combined)));
+        if (opts.resumeSession && looksLikeSessionNotFound(combined)) {
+          return reject(new SessionNotFoundError(opts.resumeSession));
+        }
         return reject(
           new ClaudeRunError(`could not parse claude JSON output (exit ${code})`, stderr || stdout, code),
         );
       }
       if (env.is_error && looksLikeUsageLimit(env.result ?? '')) {
         return reject(new UsageLimitError(extractResetHint(env.result ?? '')));
+      }
+      if (env.is_error && opts.resumeSession && looksLikeSessionNotFound(env.result ?? '')) {
+        return reject(new SessionNotFoundError(opts.resumeSession));
       }
       resolve({
         text: env.result ?? '',

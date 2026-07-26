@@ -23,8 +23,10 @@ export async function executeRun(claim: ClaimedRun): Promise<void> {
   const run = await getRunDetail(claim.id);
   // Context Builder (@qa/shared): rebuilds `state` purely from persisted,
   // succeeded steps' outputJson — identical whether this is a brand-new run
-  // or a resume, on this machine or a different one. See its module comment
-  // for the cross-session guarantee this gives Run Lifecycle Management.
+  // or a resume, on this machine or a different one. `run.engineSession`
+  // (Session Continuity) is layered on top via nodes.ts's withSession() — it
+  // never changes what `state` a node's prompt is built from, only whether
+  // that prompt is also sent into a resumed Claude conversation.
   const state = buildRunContext(run);
 
   await ingest(status(run.id, 'running'));

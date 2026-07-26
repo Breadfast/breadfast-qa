@@ -111,6 +111,17 @@ export function figmaAuthPath(): string {
 }
 
 /**
+ * Saved app-under-test browser session (cookies + localStorage) for ONE story
+ * — Session Continuity's app-session counterpart to `figmaAuthPath()`.
+ * Namespaced under `browserSessionsDir()` by `jiraKey` so it's isolated per
+ * story and never shared across stories (unlike the Figma session, which is
+ * one person's login and IS shared across every story on this machine).
+ */
+export function appSessionPath(jiraKey: string): string {
+  return path.join(ensureDir(path.join(browserSessionsDir(), jiraKey)), 'app-session.json');
+}
+
+/**
  * Default Prisma SQLite connection string, pointing at <workspace>/qa.db.
  * Uses forward slashes (valid + portable in a file: URL on all platforms).
  * Respects an explicit DATABASE_URL override elsewhere.

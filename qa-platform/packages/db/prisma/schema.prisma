@@ -108,9 +108,18 @@ model Run {
   // (Run Lifecycle Management — see ARCHITECTURE.md once documented).
   pauseReason   String?
   workerId      String?
-  engineSession String? // claude --resume session id — intentionally never wired up;
-                         // see ARCHITECTURE.md Context Builder guarantee (no cross-call
-                         // Claude memory dependence).
+  engineSession String? // claude --resume session id — Session Continuity (Run Lifecycle
+                         // Management): one shared headless conversation per run, so
+                         // consecutive nodes build on the same Claude session instead of
+                         // each starting fresh. Written after every successful node call
+                         // (packages/engine's runWithSession) and cleared by
+                         // resetStepsFrom() on a Restart From Step, since that discards
+                         // downstream turns the session would otherwise still remember.
+                         // The Context Builder guarantee (ARCHITECTURE.md) still holds:
+                         // every prompt is rebuilt in full from persisted state regardless
+                         // of whether resume succeeds — a missing/invalid session (wrong
+                         // machine, expired, restarted run) falls back to a fresh one
+                         // transparently rather than failing the step.
   triggeredById String
   triggeredBy   User      @relation(fields: [triggeredById], references: [id])
   totalTokens   Int       @default(0)

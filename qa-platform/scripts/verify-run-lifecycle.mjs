@@ -43,7 +43,7 @@ async function teardown({ uid, pid, jiraKey, run }) {
   await prisma.user.deleteMany({ where: { id: uid } }).catch(() => {});
 }
 
-// ── 1. Cross-session resume guarantee ────────────────────────────────────────
+// ── 1. Context Builder fallback guarantee ───────────────────────────────────
 test('1. Context Builder — reconstructs state purely from a FRESH DB read, no in-process memory', async () => {
   const svc = new RunsService(new EventsBus());
   const seed = await seedStory(svc, 'ctx');
@@ -138,6 +138,11 @@ test('3. Retry Failed Step — resets ONLY the failed step, increments attempt, 
   try {
     const { run } = seed;
     const reqStep = run.steps.find((s) => s.name === 'requirements_analysis');
+
+    // Session Continuity: a node call persists its session id via ingest().
+    await svc.ingest({ kind: 'run.session', runId: run.id, sessionId: 'sess-abc', at: new Date().toISOString() });
+    assert.equal((await prisma.run.findUnique({ where: { id: run.id } })).engineSession, 'sess-abc');
+
     await svc.ingest({
       kind: 'step.finished', runId: run.id, stepId: reqStep.id, status: 'failed',
       error: { message: 'claude run timed out after 600000ms', isTimeout: true, durationMs: 600000 },
@@ -159,6 +164,7 @@ test('3. Retry Failed Step — resets ONLY the failed step, increments attempt, 
     assert.equal(retried.attempt, 2, 'attempt incremented on Retry (not on a plain Restart)');
     const afterRetry = await prisma.run.findUnique({ where: { id: run.id } });
     assert.equal(afterRetry.status, 'queued');
+    assert.equal(afterRetry.engineSession, 'sess-abc', 'Retry Failed Step touches only the one step — nothing downstream ran, so the shared session is left intact');
 
     // Retrying a step that isn't failed/interrupted is rejected.
     await assert.rejects(() => svc.retryStep(run.steps.find((s) => s.name === 'fetch_jira').id, seed.uid));
@@ -213,7 +219,7 @@ test('5. Restart From Step — discards downstream output/tokens/parity, keeps u
       kind: 'step.finished', runId: run.id, stepId: acStep.id, status: 'succeeded',
       output: { criteria: [{ id: 'AC-1', text: 'y' }] }, tokens: 60, costUsd: 0.02, at: new Date().toISOString(),
     });
-    await prisma.run.update({ where: { id: run.id }, data: { parityJson: { score: 90 } } });
+    await prisma.run.update({ where: { id: run.id }, data: { parityJson: { score: 90 }, engineSession: 'sess-before-restart' } });
 
     // Restart from requirements_analysis (ordinal 3): fetch_jira (ordinal 1)
     // must stay untouched; requirements_analysis + acceptance_criteria must
@@ -240,6 +246,7 @@ test('5. Restart From Step — discards downstream output/tokens/parity, keeps u
     assert.equal(runAfter.status, 'queued');
     assert.equal(runAfter.totalTokens, 10, 'rollup recomputed from the ONE step that remains (fetch_jira)');
     assert.equal(runAfter.parityJson, null, 'stale pre-restart parity snapshot cleared (range precedes html_report)');
+    assert.equal(runAfter.engineSession, null, 'Session Continuity: a restart discards downstream turns the shared session would still remember, so it is cleared too');
 
     // Restarting while a worker owns the run is refused.
     await prisma.run.update({ where: { id: run.id }, data: { status: 'running' } });

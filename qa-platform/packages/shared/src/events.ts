@@ -98,6 +98,22 @@ export type RunEvent =
       reason: string;               // why the run needs these now
       credentials: CredentialSpec[]; // the missing credentials
       at: string;
+    }
+  | {
+      // Session Continuity (Run Lifecycle Management): the CLI's session id for
+      // this run's shared headless conversation, persisted so the NEXT node —
+      // in this worker process or, after a pause/crash/different-worker resume,
+      // any other one — can --resume it instead of starting fresh. Separate
+      // from step.finished so it can be recorded for raw (non-schema) runClaude
+      // calls too. The Context Builder guarantee is unaffected: every node's
+      // prompt is still rebuilt in full from persisted state regardless of
+      // whether a session is resumed (see @qa/engine's runWithSession) — this
+      // only ever adds conversational continuity on top, and a missing/invalid
+      // session id falls back to a fresh one transparently.
+      kind: 'run.session';
+      runId: string;
+      sessionId: string;
+      at: string;
     };
 
 export type RunEventKind = RunEvent['kind'];

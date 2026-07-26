@@ -16,7 +16,10 @@
  * never throws (returns an error string).
  */
 import { createRequire } from 'node:module';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 import { companionPath } from '@qa/shared/paths';
+import { figmaNodesToStructuredDump } from '@qa/shared';
 
 const require = createRequire(import.meta.url);
 
@@ -93,6 +96,49 @@ async function expandContainers(
   }
   const seen = new Set<string>();
   return out.filter((x) => (seen.has(x.id) ? false : (seen.add(x.id), true)));
+}
+
+/**
+ * Producer #1 — Figma structured extraction. For each frame node, fetch its node
+ * tree via REST and cache a StructuredDump (EXPECTED design side) to
+ * <outDir>/extract/<nodeId>.json for the pyramid's L4/L5/L6. Best-effort +
+ * bounded; never throws. Opt-in via QA_FIGMA_EXTRACT (the REST path is heavily
+ * rate-limited — see file header). Returns the count cached.
+ */
+export async function extractFigmaStructures(
+  fileKey: string,
+  nodes: { id: string; name: string }[],
+  outDir: string,
+  log: (l: string) => void,
+): Promise<number> {
+  let Exporter: any;
+  try {
+    Exporter = require(FIGMA_EXPORTER_PATH);
+  } catch (e) {
+    log(`figma extract: exporter not loadable: ${(e as Error).message}`);
+    return 0;
+  }
+  const fx = new Exporter();
+  const depth = Number(process.env.QA_FIGMA_EXTRACT_DEPTH || 6);
+  const dir = path.join(outDir, 'extract');
+  try { mkdirSync(dir, { recursive: true }); } catch { /* ignore */ }
+  const safe = (s: string) => s.replace(/[^a-z0-9]+/gi, '_');
+  let n = 0;
+  for (const node of nodes) {
+    try {
+      const data = await fx._getJson(
+        `https://api.figma.com/v1/files/${fileKey}/nodes?ids=${encodeURIComponent(node.id)}&depth=${depth}`,
+      );
+      const doc = data?.nodes?.[node.id]?.document;
+      if (!doc) continue;
+      const dump = figmaNodesToStructuredDump(doc);
+      writeFileSync(path.join(dir, `${safe(node.id)}.json`), JSON.stringify(dump));
+      n++;
+    } catch (e) {
+      log(`figma extract ${node.id} failed: ${(e as Error).message}`);
+    }
+  }
+  return n;
 }
 
 async function runExport(figmaUrls: string[], outDir: string, log: (l: string) => void): Promise<FigmaExportResult> {

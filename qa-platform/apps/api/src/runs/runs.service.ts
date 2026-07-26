@@ -418,6 +418,12 @@ export class RunsService {
         });
         break;
       }
+      case 'run.session':
+        // Session Continuity: persist the CLI's session id so the next node —
+        // this worker or, after a pause/crash/different-worker resume, any
+        // other one — can --resume it instead of starting a fresh session.
+        await prisma.run.update({ where: { id: event.runId }, data: { engineSession: event.sessionId } });
+        break;
     }
     this.bus.publish(event);
     return { ok: true };
@@ -857,6 +863,14 @@ export class RunsService {
       data: {
         status: 'queued', finishedAt: null, pauseReason: null,
         totalTokens, totalCostUsd,
+        // Session Continuity: a 'restart' discards downstream steps' outputs,
+        // but the shared Claude session still remembers those now-discarded
+        // turns — resuming it would leak stale future context. Clear it so the
+        // next node call starts a fresh session (the standard DB-rebuilt
+        // fallback path, not a special case). A plain 'resume' only re-runs
+        // the single step that was interrupted — nothing downstream ever ran
+        // — so the session is left intact.
+        ...(reason === 'restart' ? { engineSession: null } : {}),
         ...(clearsHtmlReport
           ? {
               parityJson: Prisma.JsonNull,

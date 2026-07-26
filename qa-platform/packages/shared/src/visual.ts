@@ -118,6 +118,7 @@ export interface VisualHealth {
   screensPassed: number;
   screensFailed: number;
   passRate: number; // % of validated screens with a pass verdict
+  screensCoverageGap: number; // VT1-S2 — screens with no resolvable frame (coverage-reducing, not defects)
   findingsBySeverity: Record<VisualSeverity, number>;
   findingsByCategory: Record<string, number>;
   categoriesCovered: VisualCategory[];
@@ -132,9 +133,12 @@ export interface VisualHealth {
 /** Pure, deterministic health/coverage/pass-rate from a VisualComparison. */
 export function computeVisualHealth(vc?: VisualComparison | null): VisualHealth {
   const screens: VisualScreenComparison[] = vc?.screens ?? [];
-  const validated = screens.filter((s) => s.verdict !== 'no-frame');
+  // VT1-S2: coverage-gap screens are NOT validated (no frame was actually
+  // compared) — they reduce coverage but never count as pass/fail.
+  const validated = screens.filter((s) => s.verdict !== 'no-frame' && s.verdict !== 'coverage-gap');
   const passed = validated.filter((s) => s.verdict === 'pass');
   const failed = validated.filter((s) => s.verdict === 'major');
+  const coverageGapScreens = screens.filter((s) => s.verdict === 'coverage-gap');
 
   const findingsBySeverity: Record<VisualSeverity, number> = { critical: 0, major: 0, minor: 0, info: 0 };
   const findingsByCategory: Record<string, number> = {};
@@ -146,6 +150,7 @@ export function computeVisualHealth(vc?: VisualComparison | null): VisualHealth 
   for (const s of screens) {
     for (const cat of s.categoriesChecked ?? []) covered.add(cat);
     for (const f of s.findings ?? []) {
+      if (f.coverageGap) continue; // VT1-S2 — coverage-gap notices are not real findings; never penalize health
       total++;
       findingsBySeverity[f.severity] = (findingsBySeverity[f.severity] ?? 0) + 1;
       findingsByCategory[f.category] = (findingsByCategory[f.category] ?? 0) + 1;
@@ -166,6 +171,7 @@ export function computeVisualHealth(vc?: VisualComparison | null): VisualHealth 
     screensPassed: passed.length,
     screensFailed: failed.length,
     passRate,
+    screensCoverageGap: coverageGapScreens.length,
     findingsBySeverity,
     findingsByCategory,
     categoriesCovered,
@@ -243,6 +249,7 @@ export function detectVisualPatterns(vc?: VisualComparison | null): VisualPatter
   const groups = new Map<string, VisualFinding[]>();
   for (const s of vc?.screens ?? []) {
     for (const f of s.findings ?? []) {
+      if (f.coverageGap) continue; // VT1-S2 — coverage-gap notices are not visual patterns
       const k = patternKey(f);
       (groups.get(k) ?? groups.set(k, []).get(k)!).push({ ...f, screen: f.screen || s.screen });
     }

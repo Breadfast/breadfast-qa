@@ -13,6 +13,10 @@
     "./paths": {
       "types": "./dist/paths.d.ts",
       "default": "./dist/paths.js"
+    },
+    "./screen-registry-loader": {
+      "types": "./dist/screen-registry-loader.d.ts",
+      "default": "./dist/screen-registry-loader.js"
     }
   },
   "scripts": {

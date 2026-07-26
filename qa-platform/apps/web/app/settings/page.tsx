@@ -328,6 +328,20 @@ const SECTIONS: Section[] = [
         runtime: ['now', 'saved'], placeholder: '20',
       },
       {
+        key: 'visual.engine', group: 'ai', label: 'Visual Testing Engine', advanced: true,
+        description: 'Selects the visual comparison engine: "legacy" (default), "shadow" (run the new pyramid alongside legacy for comparison), or "pyramid". Only "legacy" is implemented today; other values currently fall back to legacy.',
+        requirement: 'optional', whenUsed: 'Used during the HTML report / visual comparison step.',
+        obtain: { text: 'Enter legacy, shadow, or pyramid. Leave empty for the default (legacy).' },
+        runtime: ['now', 'saved'], placeholder: 'legacy',
+      },
+      {
+        key: 'visual.abstain', group: 'ai', label: 'Visual Pairing Abstain', advanced: true,
+        description: 'When "true", the frame↔screenshot resolver may abstain (report a coverage gap) instead of force-pairing a low-confidence match. No effect until the unified resolver ships (VT1-S1). Default off.',
+        requirement: 'optional', whenUsed: 'Used during the visual comparison step.',
+        obtain: { text: 'Enter "true" to enable, or leave empty for off.' },
+        runtime: ['now', 'saved'], placeholder: 'false',
+      },
+      {
         key: 'browserstack.uiUsername', group: 'browserstack', label: 'Test Management UI Username', advanced: true,
         description: 'Fallback web-login username used to import test cases when the API token path is unavailable.',
         requirement: 'optional', whenUsed: 'Used only as a fallback during BrowserStack import.',

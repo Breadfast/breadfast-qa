@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { prisma } from '@qa/db';
 import { companionDir, workspaceDir, figmaAuthPath } from '@qa/shared/paths';
+import { validateScreenRegistry } from '@qa/shared';
+import { loadScreenRegistry } from '@qa/shared/screen-registry-loader';
 import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, writeFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
@@ -57,6 +59,7 @@ export class DiagnosticsService {
       this.workspaceCheck(),
       await this.dbCheck(),
       this.parityHealthCheck(),
+      this.screenRegistryCheck(),
       ...(await this.integrationChecks()),
       ...(await this.frameworkChecks()),
       ...this.toolChecks(),
@@ -118,6 +121,31 @@ export class DiagnosticsService {
         id: 'core.db', group: 'core', label: 'Database reachable', required: true, status: 'fail', detail: (e as Error).message,
         fix: { why: 'The local SQLite DB stores stories, runs and settings.', how: 'Run `npm run db:generate && npm run db:push` to create it.' },
       };
+    }
+  }
+
+  /** VT4-S7 — validate the Screen Registry (non-required; registry is progressive). */
+  private screenRegistryCheck(): Check {
+    const base = { id: 'core.screenRegistry', group: 'core' as const, label: 'Screen Registry', required: false };
+    try {
+      const reg = loadScreenRegistry();
+      if (!reg.screens.length && !reg.profiles.length) {
+        return { ...base, status: 'skip', detail: 'No screens registered yet (optional — heuristic pairing in use).' };
+      }
+      const issues = validateScreenRegistry(reg);
+      const errors = issues.filter((i) => i.level === 'error');
+      const warns = issues.filter((i) => i.level === 'warning');
+      const status: CheckStatus = errors.length ? 'fail' : warns.length ? 'warn' : 'pass';
+      const detail =
+        `${reg.screens.length} screen(s), ${reg.profiles.length} profile(s)` +
+        (errors.length ? ` · ${errors.length} error(s): ${errors.map((e) => e.message).slice(0, 3).join('; ')}`
+          : warns.length ? ` · ${warns.length} warning(s)` : ' · valid');
+      return {
+        ...base, status, detail,
+        fix: errors.length ? { why: 'Duplicate or invalid registry entries make deterministic pairing ambiguous.', how: 'Resolve duplicate screenIds / profile ids and unknown profile references under docs/ai/screens/.' } : undefined,
+      };
+    } catch (e) {
+      return { ...base, status: 'warn', detail: (e as Error).message };
     }
   }
 

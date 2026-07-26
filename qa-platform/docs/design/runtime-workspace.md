@@ -26,7 +26,9 @@ The bootstrap config holds only the workspace path (and non-secret machine-local
 ├── cache/                     # temp files, exec input scratch, zip extraction
 ├── logs/                      # api / worker / web logs
 ├── auth/figma-auth.json       # Figma session cookies (per-user)
-└── browser-sessions/          # any persisted browser profile/state
+└── browser-sessions/<TICKET>/app-session.json  # Session Continuity: app-under-test cookies +
+                                                 # localStorage, ONE per story (never shared across
+                                                 # stories) — appSessionPath() in packages/shared/src/paths.ts
 ```
 
 ## 3. Path resolution module

@@ -263,7 +263,9 @@ export type FigmaExportManifest = z.infer<typeof FigmaExportManifest>;
 // implementation). The AI vision comparator detects findings; the deterministic
 // layer in run-eval/visual.ts scores health, pass rate, coverage. Feeds Parity
 // Certification's "missing visual coverage".
-export const VISUAL_VERDICTS = ['pass', 'minor', 'major', 'no-frame'] as const;
+// 'coverage-gap' (VT0-S2): a screen with no resolvable expected frame — reported
+// as a coverage gap, not a UI defect. Health treatment lands in VT1-S2.
+export const VISUAL_VERDICTS = ['pass', 'minor', 'major', 'no-frame', 'coverage-gap'] as const;
 export type VisualVerdict = (typeof VISUAL_VERDICTS)[number];
 
 // The 11 top-level validation CATEGORIES (each a first-class, independently
@@ -287,6 +289,19 @@ export type VisualDimension = (typeof VISUAL_DIMENSIONS)[number];
 export const VISUAL_SEVERITIES = ['critical', 'major', 'minor', 'info'] as const;
 export type VisualSeverity = (typeof VISUAL_SEVERITIES)[number];
 export const VISUAL_FINDING_CONFIDENCE = ['high', 'medium', 'low'] as const;
+
+// The 8 validation-pyramid layers (ADR-002 Rev.2 §4). Populated per finding once
+// the pyramid ships (VT4); legacy AI findings carry no layer. Additive — VT0-S2.
+export const VISUAL_LAYERS = [
+  'identity', 'component-tree', 'visibility', 'layout', 'text', 'styles', 'pixel', 'ai',
+] as const;
+export type VisualLayer = (typeof VISUAL_LAYERS)[number];
+
+// Where a finding came from: a deterministic pyramid layer, the AI comparator, or
+// OCR on an unstructured surface. Defaults to 'ai' so existing/legacy findings are
+// correctly labeled without a migration. Additive — VT0-S2.
+export const VISUAL_FINDING_SOURCES = ['deterministic', 'ai', 'ocr'] as const;
+export type VisualFindingSource = (typeof VISUAL_FINDING_SOURCES)[number];
 
 // ── Design-system awareness (M3.5) ─────────────────────────────────────────
 // A reusable-component vocabulary and a design-token taxonomy so findings can
@@ -334,6 +349,10 @@ export const VisualFinding = z.object({
   recommendation: z.string().default(''),
   confidence: z.enum(VISUAL_FINDING_CONFIDENCE).default('medium'), // AI DETECTION certainty (not Review Confidence)
   sources: Citations, // AC + Figma frame this finding references
+  // VT0-S2 (additive) — populated by the validation pyramid (VT4+); back-compatible.
+  layer: z.enum(VISUAL_LAYERS).optional(), // which pyramid layer produced this (legacy AI findings: undefined)
+  source: z.enum(VISUAL_FINDING_SOURCES).default('ai'), // deterministic | ai | ocr
+  coverageGap: z.boolean().default(false), // true = a coverage-gap notice, not a real UI defect (health handling: VT1-S2)
 });
 export type VisualFinding = z.infer<typeof VisualFinding>;
 
@@ -378,6 +397,9 @@ export const VisualComparison = z.object({
   patterns: z.array(VisualPattern).default([]), // M3.5 — recurring root causes across screens
   componentsAffected: z.array(z.string()).default([]), // M3.5 — reusable components with ≥1 finding
   notes: z.string().default(''),
+  // VT0-S2 (additive) — which engine produced this comparison. Optional (no default)
+  // so existing hand-built VisualComparison literals keep compiling; set by VT4+.
+  engine: z.enum(['legacy', 'shadow', 'pyramid']).optional(), // mirrors VisualEngine (visual-engine.ts)
 });
 export type VisualComparison = z.infer<typeof VisualComparison>;
 
@@ -417,6 +439,7 @@ export const CaseResult = z.object({
   expected: z.string().optional(),
   actual: z.string().optional(),
   evidence: z.array(z.string()).default([]), // screenshot/file paths captured
+  structuredDump: z.string().optional(), // VT3 — path to a structured dump (a11y/DOM/page-source) for this screen
   notes: z.string().default(''),
 });
 export type CaseResult = z.infer<typeof CaseResult>;
