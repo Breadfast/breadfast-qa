@@ -20,7 +20,11 @@ for a genuine blocker (unknown OTP/BCID, required backend status change, content
 
 ## Step 0 · Reconcile (reuse the shift-left baseline) ⟵ the whole point
 1. Fetch **current** source signals: Jira issue (Atlassian MCP) + Figma `lastModified`/`version`
-   (Figma REST, `depth=1`). Do **not** re-export frames yet.
+   (Figma REST, `depth=1` — metadata only). Do **not** re-capture frames yet.
+   - **If the metadata call `429`s** (Starter-plan quota): the Figma signal is **unknown**, not "unchanged".
+     Do **not** pass stored fingerprints as live ones — `reconcile` would report a false `reuse`. Either
+     read `version` via the authenticated browser session, or treat `figma-analysis` as **candidate-stale**
+     and re-capture per the `figma-analysis` skill (session channel is PRIMARY). Record which you did.
 2. Compute the plan:
    ```
    echo '<current-jira-issue-json>' | node qa-workflow/bin/qa-cli.js reconcile "<storyDir>" \

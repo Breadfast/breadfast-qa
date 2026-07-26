@@ -43,7 +43,8 @@ Creates the story folder (with standard subfolders per `CLAUDE.md` STEP 0) + a `
   ```
 
 ### 2 · Figma Analysis  → `figma-analysis`
-- Run the **`figma-analysis`** skill (subagent). It takes the per-story Figma file key from the ticket, exports frames (REST, scale=2, EN+AR), writes `figma-analysis/analysis.md` (+ `frames/`, `extract/`).
+- Run the **`figma-analysis`** skill (subagent). It takes the per-story Figma file key from the ticket, captures frames at **2×** (EN **and** AR), writes `figma-analysis/analysis.md` (+ `frames/`, `extract/`).
+- **Capture channel (updated 2026-07-26):** the **authenticated Playwright browser session** (`Ctrl+Shift+C` Copy-as-PNG) is **PRIMARY**; **REST** (`qa-cli.js figma-export`) is a **fallback** used only when the Starter-plan quota is available; the **Figma MCP** is last resort. The skill runs the **session gate first** (`figma-connect.js --status`) and, if the session is stale, **opens the reconnect browser and asks the user to sign in** — capture is never reported as "blocked". Channel order + the frame-set **completeness** rules (enumerate the whole sibling cluster; capture the **outer** frame) are in the skill; do not restate them here.
 - Fingerprint + record:
   ```
   node qa-workflow/bin/qa-cli.js fingerprint-figma "<storyDir>" --file <fileKey> --nodes <ids> --version <v> [--frames <sha256>]

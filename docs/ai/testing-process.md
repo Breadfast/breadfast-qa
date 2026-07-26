@@ -107,7 +107,7 @@ A test case is not complete without a Figma comparison result. Three non-negotia
 
 **RTL rule:** AR frame is the reference for AR layout; EN frame for EN. Never compare an AR screenshot to an EN frame or vice versa.
 
-### 4.1 Fetch workflow (before running test cases) — MCP BATCH EXPORT FIRST
+### 4.1 Fetch workflow (before running test cases) — BROWSER-SESSION COPY-AS-PNG FIRST
 
 > **⚠️ The Figma file key is PER-STORY.** It is NOT a constant. Every story links its own Figma
 > design; the key lives in that URL — `https://www.figma.com/design/<FILE_KEY>/<name>?node-id=<frame>`.
@@ -117,24 +117,40 @@ A test case is not complete without a Figma comparison result. Three non-negotia
 > (`automation/config/figma.js` / `FIGMA_API_TOKEN`) — never hardcode a file key or node IDs in the
 > helper or config. (`tvvGnEaxVjJvMWOTl4zjZC` is just B10-56336's key, used as an example only.)
 
-**Step 0 — mandatory session check (before opening the browser):** verify the Settings → Figma
-Browser Session cookies are saved and fresh (`GET /figma/status` in the QA Platform, or the
-Settings page badge). If `disconnected` or `expired`, **stop and ask the tester to (re)authenticate**
-via Settings → Figma Browser Session → Connect/Reconnect Figma — never attempt the batch export
-against a missing/stale session and silently fall through to REST/spec-only. In the QA Platform
-this is enforced in code: `apps/worker/src/nodes.ts` → `figma_analysis` calls
-`getFigmaSessionStatus()` first and pauses the run (`ask.awaiting`) if not `connected`.
+**Step 0 — mandatory session check (before opening the browser):** run
+`node qa-workflow/bin/figma-connect.js --status` — it reads the saved session `auth/figma-auth.json`
+(repo root; override `FIGMA_AUTH_PATH`) and exits **0 = FRESH**, **3 = MISSING/EXPIRED/INVALID**.
+If not FRESH, **notify the tester and open a browser to reconnect**: run
+`node qa-workflow/bin/figma-connect.js` (cwd `D:\Playwright\b55168_pom` so `@playwright/test`
+resolves) — a headed Chromium opens on Figma login, the tester signs in with Google, and the script
+auto-saves the full `storageState`. Resume once it exits 0. **Never** attempt capture against a
+missing/stale session or silently fall through to REST/spec-only, and **never** mark the phase
+"blocked" — reconnect is a normal prompt. (Fallback when no headed browser can launch: reconnect
+in-session via the Playwright MCP — §4.5 / the figma-analysis skill session gate.) This flow is
+**self-contained in this repo — no qa-platform dependency.**
 
-**Primary method: Playwright MCP batch export (Ctrl+Shift+E → ZIP).** Navigate to the story's
-Figma file with the container frame pre-selected (via `?node-id=<frame>` in the URL), press
-`Ctrl+Shift+E` to open the global export dialog, verify "N of N selected", click Export, and
-extract the downloaded ZIP to the story's `figma-analysis/` folder. The MCP browser is always
-authenticated — no API quota, no rate-limit. Output is **individual named screens** at the
-designer-configured resolution (typically 2× 750×1624 px for mobile) — one file per screen state,
-named by the Figma layer name, mapping 1:1 to test cases. Zero post-processing needed.
+**Primary method: authenticated browser-session capture** — immune to the **Starter-plan** limits
+that `429` the REST PAT (monthly content quota) and seat-cap the Figma MCP. Inject the saved Figma
+cookies (`figma-auth.json`) into the browser context **before** navigating (**session-gate first** —
+missing/expired ⇒ **stop and ask the tester to reconnect**, never fall through silently). The same
+authenticated channel has two variants:
+
+- **Copy as PNG (`Ctrl+Shift+C`) — the DEFAULT, per-frame.** Deep-link to the frame node
+  (`?node-id=<frame>`), wait for canvas (title contains "–"), `grantPermissions(['clipboard-read',
+  'clipboard-write'])`, press **`Ctrl+Shift+C` with the CANVAS focused** (not the right panel, or it
+  copies text), then in `page.evaluate` read `navigator.clipboard.read()` for `image/png` and save it
+  via a blob-URL `<a download>`. Renders the node at **2× natively, no editor chrome** — genuine
+  export quality, one clean file per screen. Image-heavy frame? wait ~10 s after load so lazy images
+  fill, else the mockups export **black**. (Proven end-to-end on B10-57393.)
+- **Batch (`Ctrl+Shift+E → ZIP`) — the BULK VARIANT for large multi-frame sections** (dozens of
+  frames at once, where one-at-a-time Copy-as-PNG is impractical). Navigate with the container frame
+  pre-selected (via `?node-id=<frame>`), press `Ctrl+Shift+E`, verify "N of N selected", click
+  Export, and extract the ZIP to `figma-analysis/`. Output is **individual named screens** at the
+  designer-configured resolution (typically 2× 750×1624 px for mobile) — one file per screen state,
+  named by the Figma layer name, mapping 1:1 to test cases. Zero post-processing needed.
 
 ```
-Step-by-step (Playwright MCP):
+Step-by-step (batch variant — Ctrl+Shift+E ZIP, for large multi-frame sections):
 1. browser_navigate → https://www.figma.com/design/<FILE_KEY>/design?node-id=<CONTAINER_FRAME>
 2. browser_wait_for  → canvas element + title contains "–"
 3. SELECT ALL FRAMES of the target section/page (see below) — this is mandatory when the node-id
@@ -157,9 +173,10 @@ the full set (via screenshot) before exporting**, trying tactics in order until 
 3. **Marquee** — `Shift+1` (zoom to fit), `Escape`, then rubber-band drag across the whole canvas
    from an empty-canvas corner (never start the drag on a frame — that moves it).
 Verified on B10-56729 (2026-07-13): tactic 2/3 exported the exact same **68 frames** as the
-designer's manual export; naive "select the section node only" gave 1–11. The QA Platform worker
-([apps/worker/src/nodes.ts](../../qa-platform/apps/worker/src/nodes.ts) `tryPlaywrightBatchExport`)
-implements this select-all + count-verification loop automatically.
+designer's manual export; naive "select the section node only" gave 1–11. Drive this select-all +
+count-verification loop via the Playwright MCP — screenshot to confirm the live selection count is
+the full set before exporting. *(Historically the now-deferred qa-platform worker automated this;
+it is a manual/agent-driven step now.)*
 
 Output: individual PNGs named by screen state (`Sufficient balance.png`, `CVV.png`,
 `Checkout.png`, etc.) stored directly in the story's `figma-analysis/` folder. These are the
@@ -250,28 +267,37 @@ Reference flow frames: [figma_full_flow_reference.md](../../figma_full_flow_refe
 ### 4.5 Figma fetch order & fallbacks (MANDATORY — never stop QA on a failure)
 Capture in this order; each step is a fallback for the one above. **Do not stop the QA process.**
 
-1. **Playwright MCP batch export (PRIMARY)** — `Ctrl+Shift+E → ZIP → extract` (§4.1). The MCP
-   browser is always authenticated; no API quota; no Retry-After. Produces individual named screen
-   files at 2× the designer-configured resolution. Works for every story where the designer has
-   pre-configured export settings on frames (standard practice on the Fintech team).
-2. **REST API export** — `FigmaExporter.exportNodes()` for specific frames not covered by the batch
-   export (e.g. a newly added frame without export settings). Needs explicit node IDs. Rate-limited
-   on View seats (Retry-After up to 77+ hours observed 2026-06-29) — use sparingly.
+1. **Authenticated browser-session capture (PRIMARY)** — the self-contained browser-session mechanism
+   (§4.1); reconnect via `qa-workflow/bin/figma-connect.js`, session at `auth/figma-auth.json` — **no
+   qa-platform dependency**. **Session-gate first** (`figma-connect.js --status`; not FRESH ⇒ notify
+   the tester and open the reconnect browser — never emit a "blocked" artifact). Immune to both the
+   Starter-plan REST quota and the MCP seat-cap. Two variants of the one channel:
+   - **Copy as PNG (`Ctrl+Shift+C`) — DEFAULT, per-frame.** 2× native, no editor chrome; one clean
+     file per screen. The reliable workhorse on this account.
+   - **`Ctrl+Shift+E → ZIP` — BULK VARIANT** for large multi-frame sections (dozens of frames at once).
+2. **REST API export (FALLBACK)** — `FigmaExporter.exportNodes()` when quota is available (paid seat /
+   service PAT / after a reset), or to recover specific frames flagged by the completeness gate. Needs
+   explicit node IDs. Rate-limits aggressively on the Starter-plan account (monthly content quota
+   `429`; View-seat Retry-After up to 77+ hours observed 2026-06-29) — do not rely on it as the default.
    - Need a token: Figma → Settings → Security → Personal access tokens, scope `file_content:read`;
      set `FIGMA_API_TOKEN` or `automation/config/figma.js`.
    - `GET /v1/files…` (used by `exportPage`) rate-limits faster than `/images` — prefer explicit
      node IDs from the Figma URL `node-id` or MCP `get_metadata`.
-3. **Figma MCP `get_metadata`** — enumerate node IDs when unknown. Use `get_screenshot` as a last
-   resort; it hits a **per-seat tool-call cap** on the Professional View seat.
+3. **Figma MCP (LAST RESORT)** — `get_metadata` to enumerate node IDs when unknown; `get_screenshot`
+   only if steps 1–2 are both unavailable — it hits a **per-seat tool-call cap** on the View seat.
 4. **Continue** requirements validation and design-vs-implementation comparison using whatever was
    captured (§4.2–4.4); store as `figma_*` in the story folder.
 5. If design access is truly impossible, record `NO FIGMA REF` and proceed on functional results —
    only after exhausting steps 1–3.
 
 *History: B10-56336 (2026-06-24) — MCP `get_screenshot` hit quota; REST API promoted to primary.
-B10-Card-Balance (2026-06-29) — REST API rate-limited (77h); Playwright MCP batch export (ZIP)
-produced 37 named individual screens at 750×1624 px, decisively better output than container
-frames. MCP batch export is now the documented primary.*
+B10-Card-Balance (2026-06-29) — REST API rate-limited (77h); Playwright MCP `Ctrl+Shift+E` batch
+export (ZIP) produced 37 named individual screens at 750×1624 px, decisively better than container
+frames, and became the documented primary. **B10-57393 (2026-07-26) — account confirmed Starter plan
+(REST PAT `429` monthly quota + MCP View-seat cap); the authenticated browser-session `Ctrl+Shift+C`
+Copy-as-PNG delivered export-grade 2× frames when both REST and MCP were down. Per user decision, the
+authenticated browser session is now the documented PRIMARY (Copy-as-PNG default; `Ctrl+Shift+E` ZIP
+for bulk); REST and MCP are fallbacks.**
 
 ---
 

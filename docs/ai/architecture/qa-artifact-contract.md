@@ -1,6 +1,10 @@
 # QA Artifact Contract — Reuse, Freshness & Regeneration
 
 > The contract between **Workflow 1 (Pre-Development)** and **Workflow 2 (Post-Development)**.
+> **Workflow 3 (`qa-full`)** runs both in one pass and is bound by this contract unchanged: it stamps each
+> artifact with its **producing skill's** generator, so its output is indistinguishable from a W1+W2 pair
+> and reconciles identically on any later run. (It replaces W2's *Reconcile* with a continuity assertion —
+> same `reconcile` call, expected to return all-`reuse`.)
 > Machine schema: [`qa-state.schema.json`](qa-state.schema.json). Decision context: [`adr-001-qa-workflow-independent-plugin-aligned.md`](adr-001-qa-workflow-independent-plugin-aligned.md).
 > Model: treat QA artifacts like a **build system** — Workflow 1 produces artifacts + records the *fingerprint of the inputs they were derived from*; Workflow 2 recomputes fingerprints, invalidates only what changed, and regenerates the minimal set plus anything downstream.
 
@@ -147,7 +151,29 @@ A Jira change flags `requirements`/`hls` stale mechanically, but **`clarificatio
 7. delete hand-authored CLAUDE.md QA sections; host-emitter generates them
 8. realign templates/ to plugin templates (frontmatter tweaks only)
 ```
-Untouched by migration: methodology in `docs/ai/**`, runtime helpers in `automation/**`, the DAG (§2), the freshness algorithm (§5), the subagent execution model.
+
+### 7.1 Cross-boundary coupling seams — harden AT migration, not before (tracked 2026-07-26)
+
+`qa-workflow/` reaches outside its own folder at runtime in three places that resolve fine in the
+current repo layout but **break on a naive `git mv`** to `breadfast-workflow/`. These are **deliberately
+NOT hardened today** — per ADR-001 §1 the plugin's packaging model is inferred from a *diagram*, not its
+files, so hardening now would aim at a guessed target and risk rework (violating ADR-001's "depend on
+nothing the plugin hasn't shipped"). Nothing here is broken in the current layout. **Trigger to act:**
+when the plugin ships its real `templates/`, `lib/schema`, and packaging model (ADR-001 §1 "re-verify
+when the plugin is available").
+
+| # | Coupling | Where | Fix at migration |
+|---|---|---|---|
+| R1 | Hard relative `require('../../automation/helpers/FigmaExporter')` — won't resolve once the tree relocates | [`qa-workflow/bin/qa-cli.js`](../../../qa-workflow/bin/qa-cli.js) | Inject/configure the path (env or resolver) **or** vendor `FigmaExporter` into the plugin so it's self-contained. |
+| R2 | No `package.json` in `qa-workflow/` — relies on ambient Node + *external* `node_modules` | `qa-workflow/` | Add a package manifest declaring deps (`@playwright/test`, `FigmaExporter`'s deps) so the plugin package stands alone. |
+| R3 | Absolute machine path `D:\Playwright\b55168_pom` for `@playwright/test` | [`qa-workflow/bin/figma-connect.js`](../../../qa-workflow/bin/figma-connect.js) | Resolve Playwright from the plugin's own deps (follows from R2); drop the machine-specific path. |
+
+**Already seamed (no action needed):** the `docs/ai/screens` registry dir → `QA_SCREEN_REGISTRY_DIR`;
+the Figma session file → `FIGMA_AUTH_PATH`. The plugin only needs to set these env vars. Also note:
+`qa-workflow/` has **zero runtime coupling to the deferred `qa-platform/`** (severed 2026-07-26) — only
+historical code comments remain.
+
+Untouched by migration: methodology in `docs/ai/**`, runtime helpers in `automation/**` *(they stay put — but qa-workflow's reference to them needs the R1/R3 seams in §7.1)*, the DAG (§2), the freshness algorithm (§5), the subagent execution model.
 
 ---
 *Contract spec for QA artifact reuse. Authoritative methodology: [`../QA_PROCESS.md`](../QA_PROCESS.md).*

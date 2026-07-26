@@ -25,6 +25,10 @@
  *          #   deterministic L1–L7, then the L8 residual runner. `--judge claude` runs ClaudeJudge on the residual ONLY
  *          #   (default: deterministic-only, no AI). Input adds `useRegistry`, `figmaUrl`, `nodeIdByFrameName`, `figmaByNode`,
  *          #   `platforms`, `locales` to the visual-compare shapes.
+ *   node qa-workflow/bin/qa-cli.js figma-export --url <figmaUrl> (--story <dir> | --out <dir>) [--scale 2] [--page <name>] [--nodes a:b,c:d] [--name <base>]
+ *          # STEP 2 one-liner: REST export (scale=2) of the story's Figma frames → PNGs. --url derives fileKey+node
+ *          #   (a FRAME exports as-is; a SECTION explodes into child frames). Prints a manifest + framesHash; with
+ *          #   --story it also writes sources.figma (fileKey/nodeIds/framesHash) into qa-state.json. Token: FIGMA_API_TOKEN or automation/config/figma.js.
  *
  * Jira issue JSON (stdin for fingerprint-jira / reconcile):
  *   { "updated": "<iso>", "summary": "...", "description": "...", "ac": "...", "comments": [ {"id":1,"body":"..."} ] }
@@ -49,6 +53,20 @@ const csv = (v) => (typeof v === 'string' && v ? v.split(',').map((s) => s.trim(
 function die(msg) { process.stderr.write('qa-cli: ' + msg + '\n'); process.exit(2); }
 function readStdin() { try { return fs.readFileSync(0, 'utf8'); } catch { return ''; } }
 function loadOrInit(dir, ticket) { return qs.load(dir) || qs.newState(ticket || 'B10-0'); }
+
+/** Inspect a Figma node (name/type/direct frame-children) so export scopes correctly (FRAME vs SECTION). */
+async function figmaInspectNode(token, fileKey, id) {
+  const url = `https://api.figma.com/v1/files/${fileKey}/nodes?ids=${encodeURIComponent(id)}&depth=1`;
+  const res = await fetch(url, { headers: { 'X-Figma-Token': token }, signal: AbortSignal.timeout(25000) });
+  if (res.status !== 200) throw new Error(`Figma node inspect HTTP ${res.status}`);
+  const data = await res.json();
+  const doc = data.nodes && data.nodes[id] && data.nodes[id].document;
+  if (!doc) throw new Error(`Figma node not found: ${id}`);
+  const children = (doc.children || [])
+    .filter((n) => ['FRAME', 'SECTION', 'COMPONENT', 'INSTANCE', 'GROUP'].includes(n.type))
+    .map((n) => ({ id: n.id, name: n.name, type: n.type }));
+  return { name: doc.name, type: doc.type, children };
+}
 
 async function main() {
   const [cmd, ...rest] = process.argv.slice(2);
@@ -241,6 +259,78 @@ async function main() {
       const judge = flags.judge === 'claude' ? makeClaudeJudge({ model: flags.model }) : undefined;
       const result = await evaluateStory(visual, { expected, actual }, { judge });
       process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+      break;
+    }
+    case 'figma-export': {
+      // STEP 2 one-liner: REST export (scale=2) of a story's Figma frames → PNGs.
+      // --url derives fileKey+node; a FRAME exports as-is, a SECTION explodes into
+      // its child frames. Prints a manifest + framesHash; with --story it also writes
+      // sources.figma (fileKey/nodeIds/framesHash) into qa-state.json.
+      let FigmaExporter;
+      try { FigmaExporter = require('../../automation/helpers/FigmaExporter'); }
+      catch (e) { die('figma-export: cannot load FigmaExporter (' + e.message + ')'); }
+      const { sha256, fileChecksum } = require('../lib/freshness/fingerprint');
+
+      let fileKey = flags.file;
+      let urlNode = null;
+      if (flags.url) {
+        try { fileKey = FigmaExporter.fileKeyFromUrl(flags.url); } catch (e) { die(e.message); }
+        urlNode = FigmaExporter.nodeIdFromUrl(flags.url);
+      }
+      if (!fileKey) die('figma-export: need --url <figmaUrl> or --file <key>');
+      const outDir = flags.out || (flags.story ? path.join(String(flags.story), 'figma-analysis', 'frames') : null);
+      if (!outDir) die('figma-export: need --out <dir> or --story <storyDir>');
+      const scale = Number(flags.scale) || 2;
+
+      const fx = new FigmaExporter();
+      let manifest;
+      try {
+        if (flags.page) {
+          manifest = await fx.exportPage({ fileKey, pageName: String(flags.page), outDir, scale });
+        } else {
+          const explicit = csv(flags.nodes).map((s) => s.replace('-', ':'));
+          let nodes;
+          if (explicit.length) {
+            nodes = explicit.map((id) => ({ id, name: flags.name ? `${flags.name}_${id.replace(':', '_')}` : id.replace(':', '_') }));
+          } else if (urlNode) {
+            // Inspect is an OPTIONAL optimization on the heavily rate-limited /v1/files
+            // endpoint. If it 429s/fails, fall back to exporting the node directly via
+            // /v1/images (far less limited) — never fatal.
+            let info = null;
+            try { info = await figmaInspectNode(fx.token, fileKey, urlNode); }
+            catch (e) { process.stderr.write(`figma-export: node inspect skipped (${e.message}) — exporting the node directly via /images.\n`); }
+            nodes = info && info.type === 'SECTION' && info.children.length
+              ? info.children.map((k) => ({ id: k.id, name: k.name }))
+              : [{ id: urlNode, name: flags.name || (info && info.name) || `frame_${urlNode.replace(':', '_')}` }];
+          } else {
+            die('figma-export: need a node — --url with node-id, --nodes a:b,c:d, or --page <name>');
+          }
+          manifest = await fx.exportNodes({ fileKey, outDir, scale, nodes });
+        }
+      } catch (e) {
+        if (/HTTP 429/.test(e.message)) {
+          die('figma-export: Figma REST rate-limited (' + e.message + ').\n' +
+              '  REST quota likely exhausted (Starter-plan PAT monthly content limit). This is the FALLBACK path —\n' +
+              '  use the PRIMARY browser-session Copy-as-PNG capture instead: check `node qa-workflow/bin/figma-connect.js --status`,\n' +
+              '  reconnect via `node qa-workflow/bin/figma-connect.js` if not FRESH (session at auth/figma-auth.json), or retry after the reset.');
+        }
+        throw e;
+      }
+
+      const checks = manifest.filter((m) => m.file).map((m) => fileChecksum(m.file)).filter(Boolean).sort();
+      const framesHash = checks.length === 0 ? null : checks.length === 1 ? checks[0] : sha256(checks.join(''));
+
+      if (flags.story && framesHash) {
+        const state = loadOrInit(String(flags.story), flags.ticket);
+        state.sources = state.sources || { jira: null };
+        state.sources.figma = { fileKey, nodeIds: manifest.map((m) => m.id), framesHash };
+        qs.save(String(flags.story), state, { validate: false });
+      }
+
+      process.stdout.write(JSON.stringify({
+        fileKey, outDir, scale, framesHash,
+        frames: manifest.map((m) => ({ id: m.id, name: m.name, file: m.file, bytes: m.bytes, rendered: !!m.bytes })),
+      }, null, 2) + '\n');
       break;
     }
     default:
