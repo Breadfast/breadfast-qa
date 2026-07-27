@@ -1,0 +1,117 @@
+{
+  "project": "PR-5",
+  "folder": "53134541",
+  "uploadedAt": "2026-07-27T12:45:43.546Z",
+  "cases": [
+    {
+      "id": "TC-53953",
+      "title": "Verify clicking \"Preview & save\" on a valid Create perk form opens the \"App preview\" modal",
+      "steps": null
+    },
+    {
+      "id": "TC-53954",
+      "title": "Verify the \"App preview\" modal renders both the Card perks tile view and the perk detail screen",
+      "steps": null
+    },
+    {
+      "id": "TC-53955",
+      "title": "Verify the \"App preview\" device frame measures 375 x 812 (iPhone 13 mini)",
+      "steps": null
+    },
+    {
+      "id": "TC-53956",
+      "title": "Verify scrolling within the device frame reveals all remaining perk detail content",
+      "steps": null
+    },
+    {
+      "id": "TC-53957",
+      "title": "Verify tapping a detail-screen section header expands and collapses that section",
+      "steps": null
+    },
+    {
+      "id": "TC-53958",
+      "title": "Verify the tile preview shows only the new perk's own category and tile, excluding all other categories and perks",
+      "steps": null
+    },
+    {
+      "id": "TC-53959",
+      "title": "Verify selecting the \"Arabic\" preview language renders the preview in Arabic with correct RTL layout",
+      "steps": null
+    },
+    {
+      "id": "TC-53960",
+      "title": "Verify selecting the \"English\" preview language returns the preview to English with LTR layout",
+      "steps": null
+    },
+    {
+      "id": "TC-53961",
+      "title": "Verify the \"App preview\" modal opens with English pre-selected as the default preview language",
+      "steps": null
+    },
+    {
+      "id": "TC-53962",
+      "title": "Verify clicking \"Save\" in the \"App preview\" modal creates the perk and it appears in the perks list",
+      "steps": null
+    },
+    {
+      "id": "TC-53963",
+      "title": "Verify clicking \"Cancel\" in the \"App preview\" modal closes it without saving and keeps the form data",
+      "steps": null
+    },
+    {
+      "id": "TC-53964",
+      "title": "Verify clicking \"Preview & save\" with missing mandatory fields blocks the preview and shows field-level errors",
+      "steps": null
+    },
+    {
+      "id": "TC-53965",
+      "title": "Verify every entered Create perk field renders in the correct place in the preview (Merchant cashback)",
+      "steps": null
+    },
+    {
+      "id": "TC-53966",
+      "title": "Verify the Coupon code section renders with the coupon code chip for a \"Discount/coupon\" perk",
+      "steps": null
+    },
+    {
+      "id": "TC-53967",
+      "title": "Verify the perk cover image and logo render correctly in both preview views",
+      "steps": null
+    },
+    {
+      "id": "TC-53968",
+      "title": "Verify closing the \"App preview\" modal with the X icon restores the Create perk page cleanly",
+      "steps": null
+    },
+    {
+      "id": "TC-53969",
+      "title": "Verify the preview reflects the Create perk form values at the moment the modal is opened",
+      "steps": null
+    },
+    {
+      "id": "TC-53970",
+      "title": "Verify maximum-length content does not break the preview layout, scrolling or the \"See more\" expander",
+      "steps": null
+    },
+    {
+      "id": "TC-53971",
+      "title": "Verify optional sections left empty are omitted from the perk detail preview",
+      "steps": null
+    },
+    {
+      "id": "TC-53972",
+      "title": "Verify a failed save keeps the \"App preview\" modal open, preserves the data and surfaces an error message",
+      "steps": null
+    },
+    {
+      "id": "TC-53973",
+      "title": "Verify the existing Create perk form and publish flow are not regressed by the \"App preview\" modal",
+      "steps": null
+    },
+    {
+      "id": "TC-53974",
+      "title": "Verify the \"App preview\" modal visual fidelity matches the Figma design in English and Arabic",
+      "steps": null
+    }
+  ]
+}

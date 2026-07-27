@@ -75,8 +75,12 @@ class PerksPage extends BasePage {
       .filter({ hasText: /create perk/i })
       .first();
 
-    // Perk type
-    this.perkTypeCombobox        = page.getByRole('combobox', { name: 'Select Type' });
+    // Perk type.
+    // NOT getByRole('combobox', { name: 'Select Type' }) — the funding_types select carries the
+    // same accessible name ("Select type"), so once the Value section renders that locator
+    // resolves to 2 elements and every click fails on strict mode (live 2026-07-27, B10-57393).
+    // formcontrolname is unique and stable.
+    this.perkTypeCombobox        = page.locator('mat-select[formcontrolname="type"]');
     this.generalSpendCashbackOpt = page.getByRole('option',   { name: 'General spend cashback' });
 
     // Titles — app-bf-input is a custom Angular component; navigate into it for the native input
@@ -166,6 +170,16 @@ class PerksPage extends BasePage {
     // fields, not a per-field message (live DOM: both inputs keep
     // aria-invalid="false" even while this is shown).
     this.addSectionErrorText = this.addSectionModal.locator('span.text-danger');
+    // FIELD-level validation (required / max-length) uses a DIFFERENT element:
+    // one <mat-error> per input. Confirmed live 2026-07-26 by DOM capture:
+    //   empty submit    → 2 × <mat-error>"This field is required."
+    //   >50 chars       → 2 × <mat-error>"Maximum length should be 50 characters."
+    //   duplicate name  → 1 × <span class="text-danger d-block"> (NO mat-error)
+    // The two are disjoint — span.text-danger is 0 in the first two states and
+    // mat-error is 0 in the duplicate state. Reading only span.text-danger
+    // therefore returns '' for required/max-length and silently looks like
+    // "no validation", so field-level checks MUST use this locator instead.
+    this.addSectionFieldErrors = this.addSectionModal.locator('mat-error');
 
     // ════════════════════════════════════════════════════════════════════
     //  B10-56729 gap-fill (TC22/23/24) — Merchant & Category pickers.
@@ -752,14 +766,75 @@ class PerksPage extends BasePage {
     await this.page.waitForTimeout(400);
   }
 
-  /** Open the Section dropdown and return the list of option labels (AC6). */
+  /**
+   * Open the Section dropdown and return the list of option labels (AC6).
+   *
+   * Uses allTextContents(), NOT allInnerTexts(). `innerText` returns only
+   * RENDERED text, so once the section list grew past the panel's visible height
+   * every option scrolled out of view came back as '' — the newly created
+   * section (appended last) was silently reported as "not listed", failing
+   * AC-12 and the P2 regression even though the option was present in the DOM.
+   * Confirmed 2026-07-26: the same specs passed while the list was short and
+   * began failing only as it grew. textContent ignores rendering, which is what
+   * we want for an option-inventory read.
+   */
   async getSectionOptions() {
     await this.page.locator('mat-select[formcontrolname="section_id"]').click();
     await this.page.locator('mat-option').first().waitFor({ state: 'visible', timeout: 8_000 });
-    const opts = await this.page.locator('mat-option').allInnerTexts();
+    await this._loadAllSectionOptions();
+    const opts = await this.page.locator('mat-option').allTextContents();
     await this.page.keyboard.press('Escape');
     await this.page.waitForTimeout(300);
     return opts.map((t) => t.trim()).filter(Boolean);
+  }
+
+  /**
+   * Internal: exhaust the Section dropdown's LAZY LOADING before reading options.
+   *
+   * The panel loads sections in pages of 20 (`POST .../section/list` fires again
+   * each time you scroll to the bottom: n=20, n=20, n=13 …). On first open only
+   * 21 rows exist (20 + the pinned "+ Add section"). A newly created section is
+   * appended LAST (id order), so with more than ~20 sections it is NOT in the
+   * first page — reading options without scrolling reports it as "not listed"
+   * and fails AC-12 / the P2 regression even though the product is correct.
+   * Confirmed 2026-07-26: those specs passed while fewer than 20 sections
+   * existed and started failing once the list grew past a page.
+   *
+   * Scrolls to the bottom until the option count stops growing.
+   */
+  async _loadAllSectionOptions(maxScrolls = 25) {
+    let previous = -1;
+    let quietRounds = 0;
+    for (let i = 0; i < maxScrolls; i += 1) {
+      // Scroll by asking Playwright to bring the LAST option into view, rather
+      // than setting scrollTop on a panel we have to identify by class. Guessing
+      // the panel selector proved unreliable (the option count stayed at the
+      // first page of 21), whereas scrollIntoViewIfNeeded works whatever the
+      // scroll container turns out to be.
+      await this.page.locator('mat-option').last().scrollIntoViewIfNeeded({ timeout: 5_000 }).catch(() => {});
+      // Poll for the next page instead of sleeping a flat 900ms per scroll. With a
+      // 50+ item list the flat sleep pushed getSectionOptions() to ~20s a call,
+      // and a test that reads the dropdown for all four perk types then blew the
+      // 120s test timeout. Break as soon as the count moves.
+      const before = await this.page.locator('mat-option').count();
+      let count = before;
+      for (let poll = 0; poll < 10; poll += 1) {
+        await this.page.waitForTimeout(120);
+        count = await this.page.locator('mat-option').count();
+        if (count !== before) break;
+      }
+      // A single no-growth round is NOT enough: the next page is often still in
+      // flight. Require two consecutive quiet rounds before deciding the list is
+      // fully loaded, otherwise the loop exits on the first slow fetch and the
+      // tail of the list (where a newly created section lives) is never read.
+      if (count === previous) {
+        quietRounds += 1;
+        if (quietRounds >= 2) break;
+      } else {
+        quietRounds = 0;
+        previous = count;
+      }
+    }
   }
 
   /**
@@ -865,19 +940,30 @@ class PerksPage extends BasePage {
     // negative on `closed`).
     await this.addSectionModal.waitFor({ state: 'hidden', timeout: 8_000 }).catch(() => {});
     const closed = !(await this.addSectionModal.isVisible().catch(() => false));
-    await this._closeStaleSectionPanel();
-    // On success, give Angular's change-detection a few beats to paint the
-    // newly auto-selected value into the (now-closed) trigger span — a
-    // single immediate read occasionally observed it still empty under
-    // trace/video recording overhead (confirmed by trial), even though the
-    // value is confirmed correct live moments later.
+
+    // ORDER MATTERS — wait for the auto-selected value to COMMIT *before* closing
+    // the stale mat-select panel.
+    //
+    // Bisected 2026-07-26 (B10-56750). `_closeStaleSectionPanel()` presses Escape,
+    // and Escape on the still-open Section panel during the window in which the
+    // app is writing the newly created Section into the control CANCELS that
+    // pending selection: the control keeps `mat-select-empty` and the trigger
+    // stays whitespace-only indefinitely (not a slow paint — it never arrives).
+    // Evidence: 9/9 runs that submitted WITHOUT the Escape auto-selected fine;
+    // every run that pressed Escape first left the control permanently empty,
+    // while create still returned 200, the modal closed and the toast fired.
+    // The `waitForResponse`/`evaluate` calls above were each cleared as suspects.
+    //
+    // So: poll for the value first (it lands ~300-500 ms after the dialog closes),
+    // and only then tidy the panel.
     if (closed && resp && resp.status() === 200) {
-      for (let i = 0; i < 6; i++) {
-        const text = ((await this.sectionDropdown.innerText().catch(() => '')) || '').trim();
+      for (let i = 0; i < 24; i++) {
+        const text = ((await this.sectionDropdown.textContent().catch(() => '')) || '').trim();
         if (text) break;
         await this.page.waitForTimeout(250);
       }
     }
+    await this._closeStaleSectionPanel();
     return { sawLoading, status: resp ? resp.status() : null, closed };
   }
 
@@ -927,6 +1013,33 @@ class PerksPage extends BasePage {
   async getAddSectionErrorText() {
     if (!(await this.addSectionErrorText.first().isVisible({ timeout: 3_000 }).catch(() => false))) return '';
     return ((await this.addSectionErrorText.first().textContent().catch(() => '')) || '').trim();
+  }
+
+  /**
+   * Read the FIELD-level validation messages (<mat-error>) — "This field is
+   * required." and "Maximum length should be 50 characters." Returns one entry
+   * per errored input (both fields error independently), [] if none.
+   * Distinct from getAddSectionErrorText(), which reads the form-level
+   * duplicate-name span — see the constructor note for why they are disjoint.
+   * @returns {Promise<string[]>}
+   */
+  async getAddSectionFieldErrorTexts() {
+    if (!(await this.addSectionFieldErrors.first().isVisible({ timeout: 3_000 }).catch(() => false))) return [];
+    return (await this.addSectionFieldErrors.allInnerTexts().catch(() => []))
+      .map((t) => t.trim())
+      .filter(Boolean);
+  }
+
+  /**
+   * Any Add-section error text, field-level or form-level, whichever is
+   * present. Use when a test only needs "did validation fire and what did it
+   * say" without caring which channel rendered it.
+   * @returns {Promise<string>}
+   */
+  async getAnyAddSectionErrorText() {
+    const field = await this.getAddSectionFieldErrorTexts();
+    if (field.length) return field.join(' | ');
+    return this.getAddSectionErrorText();
   }
 
   /**
@@ -1190,16 +1303,23 @@ class PerksPage extends BasePage {
    * That regex was NOT distinguishing a real rejection message — it was matching the
    * upload dialog's PERMANENT drop-zone copy ("Specs: 1080*1080 px / Max size: 500 KB,
    * 1:1 aspect ratio"), which is present before any file is even chosen. Confirmed live
-   * by polling the dialog's full innerHTML for 6+ seconds after uploading a wrong-spec
-   * image: there is NO error text, NO toast/snackbar, NO console error, and NO failed
-   * network request anywhere — the dialog simply stays frozen in its pristine
-   * "Drop files here to upload" state forever. A conforming image, by contrast,
-   * auto-closes the dialog within ~300ms. So the old check only ever "worked" because
-   * the always-present static copy happened to satisfy the regex while the dialog was
-   * open — it could not actually tell "rejected" apart from "not yet processed" or any
-   * other stuck state, making it a latent flaky/false-signal risk (this is very likely
-   * why this test was reported failing/flaky). See defects.md DEF-4 — the silent
-   * no-feedback rejection is itself a UX gap worth flagging, separate from this fix.
+   * by polling the DIALOG's full innerHTML for 6+ seconds after uploading a wrong-spec
+   * image: no error text appears inside it, and it simply stays in its pristine
+   * "Drop files here to upload" state. A conforming image, by contrast, auto-closes the
+   * dialog within ~300ms. So the old check only ever "worked" because the always-present
+   * static copy happened to satisfy the regex while the dialog was open — it could not
+   * tell "rejected" apart from "not yet processed" or any other stuck state, making it a
+   * latent flaky/false-signal risk.
+   *
+   * CORRECTION (2026-07-28, probe_image_spec.js): the earlier conclusion that the panel
+   * gives NO feedback at all — recorded here and elsewhere as "DEF-4, silent rejection" —
+   * was WRONG, and no such defect was ever filed. It came from scoping the search to
+   * mat-dialog-container. The panel DOES toast, immediately:
+   *     "Image resolution is invalid. Should be (1080 x 1080)"
+   * but Material renders a snack-bar in .cdk-overlay-container as a SIBLING of the dialog,
+   * so a dialog-scoped read can never see it. Anything checking for upload feedback must
+   * search the DOCUMENT, not the dialog. The behavioural signal below is still the more
+   * reliable one and is kept as the primary check.
    *
    * The RELIABLE signal is behavioral, not textual: an accepted image closes the
    * dialog (or shows a thumbnail/confirm step) promptly; a rejected one leaves the
@@ -1245,12 +1365,15 @@ class PerksPage extends BasePage {
     const rejected = !accepted;
     let message;
     if (rejected) {
-      // Confirm the drop-zone is still showing its untouched initial prompt (the real
-      // "nothing happened" signal), and report honestly — there is no distinct error
-      // text to surface (see the method-level finding above).
+      // Confirm the drop-zone is still showing its untouched initial prompt (the "nothing was
+      // committed" signal), and report the rejection toast alongside it. The toast is read from the
+      // DOCUMENT, not the dialog: Material renders it in .cdk-overlay-container as a sibling, so a
+      // dialog-scoped read misses it and makes a well-behaved panel look silent.
       const stillPristine = await dropZonePrompt.first().isVisible({ timeout: 1_000 }).catch(() => false);
+      const toast = (await this.getUploadFeedbackToasts()).join(' | ');
       message = stillPristine
-        ? 'no error message/toast rendered — dialog remained open showing the untouched "Drop files here to upload" prompt (silent rejection, see DEF-4)'
+        ? `rejected — dialog stayed open on the untouched "Drop files here to upload" prompt.`
+          + ` Feedback shown: ${toast || '(none seen — check whether the toast had already auto-dismissed)'}`
         : 'dialog remained open but the drop-zone prompt changed to an unrecognized state — inspect manually';
     } else {
       message = 'upload was accepted (dialog closed or a thumbnail/confirm control appeared)';
@@ -1553,9 +1676,15 @@ class PerksPage extends BasePage {
    * Read every data-row cell under the column whose header matches `headerName`
    * (AC-02 per-row Type/Category values; also reused as readColumnOrder). Returns
    * [] when the column is absent.
+   *
+   * The index MUST come from the raw header list, not getTableColumnHeaders(), which drops
+   * blank labels: the perks table opens with TWO unlabelled columns (drag handle + perk logo),
+   * so a filtered index is 2 short and silently reads the wrong column — "Title" returned the
+   * Category values on every row (live 2026-07-27, B10-57393, a false test failure on a perk
+   * that had in fact been created).
    */
   async getColumnValues(headerName) {
-    const headers = await this.getTableColumnHeaders();
+    const headers = (await this.tableHeaderCells.allInnerTexts()).map((t) => t.trim());
     const idx = headers.findIndex((h) => new RegExp(headerName, 'i').test(h));
     if (idx < 0) return [];
     const rows = this._rows();
@@ -1901,6 +2030,262 @@ class PerksPage extends BasePage {
     const out = {};
     for (const c of controls) out[c] = await this._readFieldState(this._fieldLocator(c));
     return out;
+  }
+
+  // ════════════════════════════════════════════════════════════════════════════
+  //  B10-57393 — complete the Create Perk form so "Preview & save" opens the
+  //  "App preview" modal. Selectors captured LIVE 2026-07-27 (panel 2.4.5).
+  //  Everything here composes the granular methods already above; nothing is
+  //  re-implemented. Filling ORDER matters — see fillCompleteMerchantCashbackPerk.
+  // ════════════════════════════════════════════════════════════════════════════
+
+  /**
+   * The nested merchant mat-menu keeps a cdk-overlay-backdrop alive after a single
+   * Escape, and that backdrop then swallows clicks on every field below it (observed
+   * live: section_id was visible+enabled but unclickable for 30s). Press Escape until
+   * the backdrop count reaches zero.
+   */
+  async dismissLingeringOverlays(tries = 5) {
+    for (let i = 0; i < tries; i++) {
+      if ((await this.page.locator('.cdk-overlay-backdrop').count()) === 0) return true;
+      await this.page.keyboard.press('Escape');
+      await this.page.waitForTimeout(350);
+    }
+    return (await this.page.locator('.cdk-overlay-backdrop').count()) === 0;
+  }
+
+  /**
+   * Click "Preview & save" (the bottom one).
+   *
+   * A plain .click() is not enough AFTER a dialog has been closed: the CDK can leave an overlay
+   * pane above the form that reports zero visible backdrops yet still owns the pointer, so the
+   * click passes every actionability check and then burns the full 30s on the hit-target wait
+   * (live 2026-07-27, B10-57393 — the X-close case). Clear overlays first, then fall back to a
+   * DOM click, which dispatches on the element itself and cannot be intercepted.
+   */
+  async clickPreviewAndSave() {
+    await this.dismissLingeringOverlays();
+    await this.previewAndSaveButton.scrollIntoViewIfNeeded().catch(() => {});
+    await this.previewAndSaveButton.click({ timeout: 8_000 })
+      .catch(() => this.previewAndSaveButton.evaluate((el) => el.click()));
+    await this.page.waitForTimeout(800);
+  }
+
+  /** Cashback limit + its duration are validated as a PAIR ("required together"). */
+  async fillCashbackConsumptionLimit(limit = '100', interval = 'monthly') {
+    const limitInput = this.page.locator('input[formcontrolname="consumption_limit"]');
+    if (!(await limitInput.count())) return;
+    await limitInput.fill(limit);
+    const intervalSelect = this.page.locator('mat-select[formcontrolname="consumption_interval"]');
+    await intervalSelect.scrollIntoViewIfNeeded().catch(() => {});
+    await intervalSelect.click();
+    await this.page.locator('mat-option', { hasText: interval }).first().click();
+    await this.page.waitForTimeout(300);
+  }
+
+  async fillCashbackValueAndLimit(percentage = '15', limit = '100') {
+    await this.page.locator('mat-radio-button', { hasText: 'Percentage' }).locator('label').click();
+    await this.page.waitForTimeout(600);
+    await this.page.locator('input[formcontrolname="cashback_value"]').fill(percentage);
+    const capField = this.page.locator('input[formcontrolname="cash_back_limit"]');
+    if (await capField.count()) await capField.fill(limit);
+  }
+
+  async fillDurationDescriptions(en, ar) {
+    await this.page.locator('textarea[formcontrolname="short_duration_description_en"]').fill(en);
+    await this.page.locator('textarea[formcontrolname="short_duration_description_ar"]').fill(ar);
+  }
+
+  /**
+   * End date & time. The input is readonly, so the value can only be set via the
+   * calendar. BOTH the start and end picker render a .dp-popup, so the VISIBLE one
+   * must be targeted rather than the first in the DOM.
+   */
+  async setEndDate(monthsForward = 5, dayOfMonth = 31) {
+    await this.page.locator('input.dp-picker-input').nth(1).click();
+    await this.page.waitForTimeout(500);
+    for (let i = 0; i < monthsForward; i++) {
+      await this.page.locator('.dp-popup:visible').first()
+        .locator('.dp-calendar-nav-right').click();
+      await this.page.waitForTimeout(220);
+    }
+    await this.page.locator('.dp-popup:visible').first()
+      .locator('button.dp-calendar-day').filter({ hasText: new RegExp(`^${dayOfMonth}$`) })
+      .first().click();
+    await this.page.waitForTimeout(400);
+    await this.page.keyboard.press('Escape');
+    await this.page.waitForTimeout(300);
+  }
+
+  /**
+   * Upload all four slots: Cover EN, Cover AR (1080x1080), Logo EN, Logo AR (240x180).
+   *
+   * Always targets slot 0 because a filled slot stops rendering its "Add image" button, so the
+   * remaining count IS the position in the sequence (4 left = Cover EN … 1 left = Logo AR).
+   *
+   * Driven as a loop rather than four straight calls: the upload dialog occasionally closes
+   * without committing the file, which left slot 4 empty, and the four blind calls could not
+   * notice. The form then blocked "Preview & save" on a required-image error and the test failed
+   * far from the cause (live 2026-07-27, B10-57393). The loop simply retries the slot that did
+   * not fill, and gives up loudly instead of walking into a mystery validation error.
+   */
+  async uploadAllFourPerkImages(maxAttempts = 8) {
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const remaining = await this.addImageButtons.count();
+      if (remaining === 0) return;
+      await this.uploadImage(0, remaining > 2 ? PHOTOS.coverSpec : PHOTOS.logoSpec);
+    }
+    const left = await this.addImageButtons.count();
+    if (left > 0) {
+      throw new Error(`${left} perk image slot(s) still empty after ${maxAttempts} upload attempts`);
+    }
+  }
+
+  /**
+   * Fill a COMPLETE valid Merchant-cashback perk so "Preview & save" opens the App
+   * preview modal. Assumes the Create perk page is already open on no perk type.
+   *
+   * Order is load-bearing: the perk type must come first (the form is progressive),
+   * the merchant picker must be followed by dismissLingeringOverlays(), and the
+   * Section must be chosen BEFORE the subheaders — subheader_en/_ar only render once
+   * a Section exists, and they are mandatory, so filling them earlier silently
+   * leaves a required field empty and the preview never opens.
+   *
+   * A null optional description means "leave that section empty", so the preview
+   * should omit it (used by the empty-optional-sections case).
+   */
+  async fillCompleteMerchantCashbackPerk(overrides = {}) {
+    const d = {
+      merchant: 'Breadfast Coffee',
+      section: 'Breadfast',
+      titleEn: '15% Cashback',
+      titleAr: '١٥٪ كاش باك',
+      subEn: 'Coffee & Bakery',
+      subAr: 'قهوة ومخبوزات',
+      descEn: 'Get 15% cashback on all Breadfast Coffee orders, capped at EGP 100.',
+      descAr: 'استرجع ١٥٪ من قيمة مشترياتك من بريدفاست كوفي بحد أقصى ١٠٠ جنيه.',
+      usageEn: 'Valid once per day at any Breadfast Coffee branch.',
+      usageAr: 'صالح مرة واحدة يومياً في أي فرع من بريدفاست كوفي.',
+      branchesEn: '- Promenade Mall\n- Rehab\n- Madinaty',
+      branchesAr: '- بروميناد مول\n- الرحاب\n- مدينتي',
+      cbEn: 'Cashback may take up to 14 days to reflect.',
+      cbAr: 'قد يستغرق الكاش باك ١٤ يوماً حتى يظهر.',
+      durEn: 'This offer expires on Dec 31st, 2026.',
+      durAr: 'ينتهي هذا العرض في ٣١/١٢/٢٠٢٦',
+      percentage: '15',
+      cashbackLimit: '100',
+      fundingType: 'Merchant funded',
+      setEndDate: true,
+      ...overrides,
+    };
+
+    await this.selectPerkTypeByName('Merchant cashback');
+    await this.selectMerchantForPerk(d.merchant);
+    await this.dismissLingeringOverlays();
+    await this.selectSection(d.section);
+    await this.fillTitles(d.titleEn, d.titleAr);
+    await this.fillSubheaders(d.subEn, d.subAr);
+    await this.fillCashbackValueAndLimit(d.percentage, d.cashbackLimit);
+    await this.descEnTextarea.fill(d.descEn);
+    await this.descArTextarea.fill(d.descAr);
+    await this.fillUsage(d.usageEn, d.usageAr);
+    if (d.branchesEn !== null) await this.fillBranches(d.branchesEn, d.branchesAr);
+    if (d.cbEn !== null) await this.fillCashbackProcessing(d.cbEn, d.cbAr);
+    if (d.durEn !== null) await this.fillDurationDescriptions(d.durEn, d.durAr);
+    await this.selectFundingType(d.fundingType);
+    await this.uploadAllFourPerkImages();
+    if (d.setEndDate) await this.setEndDate();
+    return d;
+  }
+
+  /**
+   * Fill a COMPLETE valid Discount/coupon perk — the only type that renders the
+   * Coupon code section. For this type the ARABIC description and usage are ALSO
+   * mandatory, and "Coupon type" only renders after a coupon code is entered.
+   */
+  async fillCompleteDiscountCouponPerk(overrides = {}) {
+    const d = {
+      merchant: 'Breadfast Coffee',
+      section: 'Breadfast',
+      titleEn: '20% Off Coffee',
+      titleAr: '٢٠٪ خصم قهوة',
+      subEn: 'Coffee & Bakery',
+      subAr: 'قهوة ومخبوزات',
+      couponCode: 'BFCOFFEE20',
+      couponType: 'Online',
+      descEn: 'Get 20% off any coffee order at Breadfast Coffee branches.',
+      descAr: 'احصل على خصم ٢٠٪ على أي طلب قهوة من فروع بريدفاست كوفي.',
+      usageEn: 'Use the coupon once per day at checkout in the Breadfast app.',
+      usageAr: 'استخدم الكوبون مرة واحدة يومياً عند الدفع في تطبيق بريدفاست.',
+      branchesEn: '- Cairo Festival City\n- Point 90\n- City Stars',
+      branchesAr: '- كايرو فيستيفال سيتي\n- بوينت ٩٠\n- سيتي ستارز',
+      cbEn: 'Discount applies instantly at checkout.',
+      cbAr: 'يطبق الخصم فوراً عند الدفع.',
+      durEn: 'Valid till Dec 31st, 2026.',
+      durAr: 'صالح حتى ٣١/١٢/٢٠٢٦',
+      fundingType: 'Merchant funded',
+      ...overrides,
+    };
+
+    await this.selectPerkTypeByName('Discount/coupon');
+    await this.selectMerchantForPerk(d.merchant);
+    await this.dismissLingeringOverlays();
+    await this.selectSection(d.section);
+    await this.fillTitles(d.titleEn, d.titleAr);
+    await this.fillSubheaders(d.subEn, d.subAr);
+    await this.fillCouponCode(d.couponCode);
+    if (await this.isCouponTypeVisible()) await this.selectCouponType(d.couponType);
+    await this.descEnTextarea.fill(d.descEn);
+    await this.descArTextarea.fill(d.descAr);
+    await this.fillUsage(d.usageEn, d.usageAr);
+    await this.fillBranches(d.branchesEn, d.branchesAr);
+    await this.fillCashbackProcessing(d.cbEn, d.cbAr);
+    await this.fillDurationDescriptions(d.durEn, d.durAr);
+    await this.selectFundingType(d.fundingType);
+    await this.uploadAllFourPerkImages();
+    return d;
+  }
+
+  /** Content sitting exactly ON each documented cap (title 20, subheader 30, desc 80,
+   *  usage 200, cashback 45, duration 40). The form REJECTS anything longer and blocks
+   *  Preview & save, so a max-length RENDER test must sit at the cap, not above it. */
+  static maxLengthContent() {
+    const fit = (s, n) => s.slice(0, n);
+    return {
+      titleEn: fit('Mega Cashback Bonanza Deal', 20),
+      subEn: fit('Coffee, Bakery, Pastry & Desserts', 30),
+      descEn: fit('Enjoy an unlimited 25% cashback on every single order placed at any branch nationwide', 80),
+      usageEn: fit('Valid once per calendar day at any participating Breadfast Coffee branch nationwide.'
+        + ' Cashback is credited to your Breadfast Pay wallet and is capped at EGP 100 per calendar month.'
+        + ' Excludes gift cards.', 200),
+      branchesEn: '- Promenade Mall\n- Rehab\n- Madinaty\n- Mivida\n- Cairo Festival City\n- Point 90'
+        + '\n- Mall of Egypt\n- Arkan Plaza\n- Zamalek\n- Maadi Degla\n- Heliopolis Korba\n- New Cairo Village',
+      cbEn: fit('Cashback may take up to 14 working days to appear in full', 45),
+      durEn: fit('This limited offer expires on December 31st 2026', 40),
+    };
+  }
+
+  /**
+   * Toast/snackbar text currently rendered ANYWHERE in the document.
+   *
+   * Document-scoped on purpose: Material puts a snack-bar in .cdk-overlay-container as a sibling of
+   * mat-dialog-container, so a dialog-scoped read cannot see it. Reading only the dialog is what
+   * produced the false "the panel rejects wrong-sized images silently" finding — it does not; it
+   * toasts "Image resolution is invalid. Should be (1080 x 1080)" immediately
+   * (verified 2026-07-28, B10-57393/automation/probe_image_spec.js).
+   */
+  async getUploadFeedbackToasts() {
+    return this.page.evaluate(() => [...document.querySelectorAll(
+      '.cdk-overlay-container .mat-snack-bar-container, snack-bar-container, simple-snack-bar,'
+      + ' .mat-mdc-snack-bar-container, .toast, [class*="toastr"], [role="alert"], [role="status"]'
+    )].map((n) => (n.innerText || '').replace(/\s+/g, ' ').trim()).filter(Boolean)).catch(() => []);
+  }
+
+  /** Every validation message currently rendered on the create form. */
+  async getFormValidationErrors() {
+    const errors = await this.page.locator('app-perk-form mat-error, app-perk-form .text-danger')
+      .allInnerTexts().catch(() => []);
+    return [...new Set(errors.map((e) => e.trim()).filter(Boolean))];
   }
 }
 
