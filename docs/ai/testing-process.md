@@ -89,11 +89,11 @@ All generated test cases — for every story, every platform — MUST follow the
 This standard is automatic for every future story — no additional instruction required.
 
 ### 3.8 Automation mirrors the approved test cases 1:1
-The automated suite is a **1:1 mirror of the imported BrowserStack test cases**: one automated test per case, **named identically to the BrowserStack title** (verbatim, no `[TC_...]` prefix — the BrowserStack case id is the traceability key), and **each assertion checks that case's expected result** (so a failure means the feature deviates from the AC, and per-case status maps straight to a defect). Consequences:
+The automated suite is a **1:1 mirror of the imported BrowserStack test cases**: one automated test per case, **named identically to the BrowserStack title** (verbatim, no `[TC_...]` prefix — the BrowserStack case id is the traceability key), and **each assertion checks that case's expected result** (so a failure means the feature deviates from the AC, and per-case status maps straight to a defect). In generated Java automation (the default since 2026-07-27 — [automation-generation.md](automation/automation-generation.md)) the title lives in `@Test(description = "…")` and the case id in `@TmsLink("TC-xxxx")`; in legacy Playwright it is the spec title. Consequences:
 - A test that covers a persistence/traceability AC must assert against the **destination** (§1), e.g. query the audit-trail API after posting — not just that the request returned 200.
 - For ACs that can't be exercised (no role account, surface not present), use an explicit **skip with a reason** so the status is visible — never a silent pass.
 - Generate a per-test-case report so every case shows PASS / FAIL / SKIP and its mapped defect (see [release-validation.md](release-validation.md) §2). *Pattern established on B10-55570: `B10-55570_browserstack_suite.spec.js` (28 cases) + `gen_suite_report.js`.*
-- **Maintain a test-case → script mapping table** in the story's automation `README.md`: BrowserStack Case ID + Title → spec file → automated? (with a reason for any non-automatable case). This makes 1:1 coverage auditable. Format + rules: [coding-standards.md](automation/coding-standards.md) "Test-case → script traceability".
+- **Maintain a test-case → script mapping table** in the story's automation `README.md`: BrowserStack Case ID + Title → test class#method (or spec file) → automated? (with a reason for any non-automatable case). This makes 1:1 coverage auditable. Format + rules: [coding-standards.md](automation/coding-standards.md) "Test-case → script traceability".
 
 ---
 
@@ -363,3 +363,24 @@ Rules:
 > (Available/Consumed/Reserved ledger) are superseded by the above and no longer used by the KYC specs.
 > Kept temporarily for reference; remove once dynamic provisioning is verified against a healthy env.
 > If a flow genuinely cannot be provisioned via API, fall back to requesting data from the user — never invent it.
+
+---
+
+## Transient & lazily-rendered state — verification rules (added 2026-07-26, B10-56750)
+
+Visual comparison assumes the captured "actual" shows what the user sees. Four states break that
+assumption, and each produced a **false finding** before being caught:
+
+| State | Why a single capture lies | Correct method |
+|---|---|---|
+| **Toast / snackbar** | auto-dismisses in a few seconds | arm the wait **before** the triggering action, await it after; capture the header region explicitly |
+| **In-flight / loading** | window can be **< 500 ms** | poll the element in a loop (e.g. every 40 ms) until the request resolves; never one delayed read |
+| **Focus-dependent attributes** | Material floating labels remove `placeholder` while unfocused, so it reads `null` | focus the field first, and report unfocused **and** focused states as a pair |
+| **Off-viewport elements** | a `fullPage:false` screenshot taken while scrolled elsewhere shows nothing | scroll to the element (or clip to its bounding box) before capturing |
+
+**Rule:** a *negative* visual observation ("X is not shown", "no error appeared", "placeholder missing")
+must be re-verified by a second, differently-timed or differently-scoped capture **before** it becomes a
+finding. Positive observations are safe on one capture; negatives are not.
+
+This is also why the deterministic pipeline should not be handed a single screenshot per state for
+transient UI — pair it with a DOM/attribute read, which is what actually settled all four cases above.

@@ -10,6 +10,15 @@
  *   node qa-workflow/bin/qa-cli.js fingerprint-jira <storyDir>            # issue JSON on stdin
  *   node qa-workflow/bin/qa-cli.js fingerprint-figma <storyDir> --file <key> --nodes 1:1,1:2 [--version v] [--frames <sha256>] [--last <iso>]
  *   node qa-workflow/bin/qa-cli.js checksum <file>
+ *   node qa-workflow/bin/qa-cli.js branch-check <storyDir> [TICKET] [--repos a,b] [--year 2026]
+ *          # STEP 0 gate: assert BOTH repos are on <year>/sprintQ<n>.<n>/<ticket>-<slug>. Exit 1 otherwise.
+ *          #   The git hooks validate the branch NAME on push only, so they cannot catch "no branch was
+ *          #   ever created" — the B10-56717 failure, where both repos stayed on the PREVIOUS story.
+ *   node qa-workflow/bin/qa-cli.js complete-check <storyDir> [--expect a,b,...]
+ *          # COMPLETION gate: exit 1 while any required artifact is missing or not "complete" and has no
+ *          #   recorded operator deferral. `show` always exits 0, so it can never fail a run.
+ *   node qa-workflow/bin/qa-cli.js defer <storyDir> <key> --by "<operator>" --reason "<why>"
+ *          # The ONLY way past the phase dependency and complete-check. A deferral must have a name on it.
  *   node qa-workflow/bin/qa-cli.js record <storyDir> <key> --path <rel> --generator <name@x.y>
  *          [--derive-sources jira,figma] [--derive-artifacts requirements,...] [--domains card,...] [--status complete]
  *   node qa-workflow/bin/qa-cli.js reconcile <storyDir> [--figma-file K --figma-nodes 1:1 --figma-version v]
@@ -51,6 +60,29 @@ function parseFlags(argv) {
 }
 const csv = (v) => (typeof v === 'string' && v ? v.split(',').map((s) => s.trim()).filter(Boolean) : []);
 function die(msg) { process.stderr.write('qa-cli: ' + msg + '\n'); process.exit(2); }
+
+// --- Run-integrity constants (added 2026-07-29, root cause analysis of B10-56717) --------------
+/** A phase that may not be recorded until its upstream phase is genuinely finished. */
+const PHASE_DEPS = { execution: 'automation' };
+/** The artifact set a finished post-development run must contain. */
+const REQUIRED_ARTIFACTS = [
+  'requirements', 'figma-analysis', 'clarifications', 'impact', 'hls',
+  'testcases', 'browserstack-import', 'automation', 'execution', 'visual-findings', 'defects', 'qa-summary',
+];
+
+/** Current git branch of a repo, or null. Kept dependency-free — no git library, no shell string building. */
+function gitBranch(repo) {
+  try {
+    const out = require('child_process').execFileSync('git', ['-C', repo, 'rev-parse', '--abbrev-ref', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    const b = out.trim();
+    return b && b !== 'HEAD' ? b : null;
+  } catch { return null; }
+}
+
+/** The Java framework path, via the same loader the rest of the companion uses. */
+function frameworkPath() {
+  try { return require('../../automation/config/framework.js').resolve(); } catch { return null; }
+}
 function readStdin() { try { return fs.readFileSync(0, 'utf8'); } catch { return ''; } }
 function loadOrInit(dir, ticket) { return qs.load(dir) || qs.newState(ticket || 'B10-0'); }
 
@@ -148,9 +180,93 @@ async function main() {
       };
       const domains = csv(flags.domains);
       if (domains.length) record.domains = domains;
+
+      // ---- HARD PHASE DEPENDENCY (added 2026-07-29 after B10-56717) --------------------------
+      // `automation-gen` is phase 4 and `execution` is phase 5, but nothing stopped execution from
+      // being recorded while automation was still missing or `partial`. On B10-56717 the phases were
+      // run out of order and automation ended up never generated at all — no test class, no page
+      // objects, and not even a story branch — while every other artifact reported `complete`.
+      // Recording `execution` now requires automation to be `complete`, or an explicit, recorded
+      // operator deferral (`--automation-deferred-by "<who>: <reason>"`).
+      for (const [k, dep] of Object.entries(PHASE_DEPS)) {
+        if (key !== k) continue;
+        const upstream = state.artifacts && state.artifacts[dep];
+        const deferral = state.deferrals && state.deferrals[dep];
+        if (deferral) continue;
+        if (!upstream) die(`cannot record "${k}": "${dep}" has not been recorded yet (phase order), and no operator deferral exists.\n     -> generate it, or record the deferral: qa-cli.js defer <storyDir> ${dep} --by "<operator>" --reason "<reason>"`);
+        if (upstream.status !== 'complete') die(`cannot record "${k}": "${dep}" is "${upstream.status}", not "complete", and no operator deferral exists.\n     -> finish it, or record the deferral: qa-cli.js defer <storyDir> ${dep} --by "<operator>" --reason "<reason>"`);
+      }
+
       qs.setArtifact(state, key, record);
       qs.save(dir, state);
       process.stdout.write(JSON.stringify({ key, ...record }, null, 2) + '\n');
+      break;
+    }
+    case 'defer': {
+      // Record an OPERATOR-APPROVED deferral of a phase. This is the only way past PHASE_DEPS and the
+      // only thing `complete-check` accepts in place of a `complete` artifact. It exists so a deferral
+      // is a decision with a name attached, not a silent self-exemption — the failure on B10-56717,
+      // where CLAUDE.md §5's "(or deferred with reason)" was invoked without ever asking the operator.
+      const [dir, key] = positional;
+      if (!dir || !key || !flags.by || !flags.reason) die('defer <storyDir> <key> --by "<operator>" --reason "<why>"');
+      const state = loadOrInit(dir);
+      state.deferrals = state.deferrals || {};
+      state.deferrals[key] = { approvedBy: String(flags.by), reason: String(flags.reason), at: new Date().toISOString() };
+      qs.save(dir, state);
+      process.stdout.write(JSON.stringify({ deferred: key, ...state.deferrals[key] }, null, 2) + '\n');
+      break;
+    }
+    case 'branch-check': {
+      // Assert BOTH repos are on this story's branch. The git hooks in D:\projects validate the branch
+      // NAME on push only, so they can never catch the actual B10-56717 failure: no branch was created
+      // at all and nothing was pushed, leaving both repos on the PREVIOUS story's branch while a full
+      // QA run reported success. Call this at Step 0, where it costs one second.
+      const [dir, ticketArg] = positional;
+      const state = qs.load(dir);
+      const ticket = ticketArg || (state && state.ticket);
+      if (!ticket) die('branch-check <storyDir> [TICKET] — ticket not given and not in qa-state.json');
+      const repos = csv(flags.repos).length ? csv(flags.repos) : [process.cwd(), frameworkPath()];
+      const year = flags.year || String(new Date().getFullYear());
+      const pattern = new RegExp(`^${year}/sprintQ\\d+\\.\\d+/${ticket.toLowerCase()}-[a-z0-9-]+$`, 'i');
+      const rows = repos.filter(Boolean).map((repo) => {
+        const branch = gitBranch(repo);
+        return { repo, branch, ok: !!branch && pattern.test(branch) };
+      });
+      const bad = rows.filter((r) => !r.ok);
+      process.stdout.write(JSON.stringify({ ticket, expected: `${year}/sprintQ<n>.<n>/${ticket.toLowerCase()}-<slug>`, repos: rows, ok: bad.length === 0 }, null, 2) + '\n');
+      if (bad.length) {
+        process.stderr.write('qa-cli: branch-check FAILED — these repos are not on this story\'s branch:\n');
+        bad.forEach((r) => process.stderr.write(`     ${r.repo}  ->  ${r.branch || '(no branch)'}\n`));
+        process.stderr.write(`     create it in EACH repo:  git checkout -b ${year}/sprintQ<n>.<n>/${ticket.toLowerCase()}-<slug>\n`);
+        process.exit(1);
+      }
+      break;
+    }
+    case 'complete-check': {
+      // Completion assertion for qa-full / W2. `show` prints state and always exits 0, so a `partial`
+      // artifact could sit alongside eleven `complete` ones and never contradict the QA summary.
+      // This exits non-zero on anything not `complete` without a recorded operator deferral.
+      const [dir] = positional;
+      const state = qs.load(dir);
+      if (!state) die('no qa-state.json in ' + dir);
+      const required = csv(flags.expect).length ? csv(flags.expect) : REQUIRED_ARTIFACTS;
+      const problems = [];
+      for (const key of required) {
+        const a = state.artifacts && state.artifacts[key];
+        const deferral = state.deferrals && state.deferrals[key];
+        if (deferral) continue;
+        if (!a) problems.push({ key, issue: 'missing' });
+        else if (a.status !== 'complete') problems.push({ key, issue: a.status });
+      }
+      const deferred = Object.entries(state.deferrals || {}).map(([k, v]) => ({ key: k, ...v }));
+      process.stdout.write(JSON.stringify({ ticket: state.ticket, required: required.length, problems, deferred, ok: problems.length === 0 }, null, 2) + '\n');
+      if (problems.length) {
+        process.stderr.write('qa-cli: complete-check FAILED — the run is not complete:\n');
+        problems.forEach((p) => process.stderr.write(`     ${p.key}: ${p.issue}\n`));
+        process.stderr.write('     finish each, or record an operator-approved deferral:\n');
+        process.stderr.write('     qa-cli.js defer <storyDir> <key> --by "<operator>" --reason "<why>"\n');
+        process.exit(1);
+      }
       break;
     }
     case 'reconcile': {

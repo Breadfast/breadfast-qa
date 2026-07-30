@@ -133,7 +133,7 @@ D:\BreadfastQA\<JIRA_TICKET_ID>\
 ├── hls/                     High-Level Scenarios (mirror of the Jira checklist)
 ├── browserstack/            CSV import evidence (project/folder, screenshots)
 ├── testcases/               the BrowserStack-compatible CSV
-├── automation/              STORY-SPECIFIC ONLY — tests/ (specs + playwright.config.js) + generators + framework-reference.md + README. Shared page objects/helpers/config are NOT duplicated here.
+├── automation/              STORY-SPECIFIC ONLY — framework-reference.md (reuse map) + README (run commands + traceability table) + generators. Generated Java code lives INSIDE the Java framework (automation-generation.md §8); legacy Playwright stories additionally keep tests/ (specs + playwright.config.js).
 ├── execution-reports/       test_report_<STORY_ID>.html
 ├── screenshots/             live UI screenshots
 ├── defects/                 defects.md (findings + Jira links)
@@ -143,8 +143,9 @@ D:\BreadfastQA\<JIRA_TICKET_ID>\
 Rules:
 - Every Jira story gets its own folder; all of its outputs go under it.
 - **Future updates, retesting, automation changes, and bug investigations reuse the SAME story folder** (do not create a second folder for the same ticket).
-- **Shared automation code (page objects, helpers, config) is NOT duplicated per story** — it lives once at `D:\BreadfastQA\automation\` (`pages/ helpers/ config/`), reused across stories. A story's `automation/` keeps only story-specific files (`playwright.config.js`, its `tests/` specs, generators, framework-reference.md, README) and reuses the shared classes (specs `require('../../../automation/pages/…')`). New reusable page objects/helpers go in the shared folder, not the story folder.
-- **Runnable workspace:** `D:\BreadfastQA` is a Playwright workspace (`package.json` + root `playwright.config.js` + `node_modules`). Playwright reads the config from the **cwd only** (no walk-up), so run from one of: the **workspace root** `D:\BreadfastQA` (`npx playwright test <file>`, all stories) or a **story's `automation/tests/` folder** (per-story `playwright.config.js` with `testDir '.'`, that story only). The original framework `D:\Playwright\b55168_pom` still runs independently.
+- **Generated automation lives inside the Java framework** (default `D:\projects`, path configurable — [automation-generation.md](automation/automation-generation.md)): story test class `B10_<id>_<Feature>Tests`, new page objects/helpers, story suite XML. The story folder never holds Java copies — its `automation/` carries the traceability README + framework-reference.md + generators, and the run command (`mvn test -DsuiteXmlFile=b10-<id>-tests.xml`).
+- **Legacy Playwright stories:** shared JS code (page objects, helpers, config) is NOT duplicated per story — it lives once at `D:\BreadfastQA\automation\` (`pages/ helpers/ config/`), reused across stories; a story's `automation/` keeps only story-specific files (`playwright.config.js`, its `tests/` specs) and reuses the shared classes (specs `require('../../../automation/pages/…')`).
+- **Runnable Playwright workspace (legacy):** `D:\BreadfastQA` is a Playwright workspace (`package.json` + root `playwright.config.js` + `node_modules`). Playwright reads the config from the **cwd only** (no walk-up), so run from one of: the **workspace root** `D:\BreadfastQA` (`npx playwright test <file>`, all stories) or a **story's `automation/tests/` folder** (per-story `playwright.config.js` with `testDir '.'`, that story only). The original framework `D:\Playwright\b55168_pom` still runs independently.
 - Reports must contain links/references to the stored evidence (§2.1).
 - Keep a root `README.md` in the story folder indexing the subfolders, the result, and Jira/artifact links.
 - First implemented for B10-56336.

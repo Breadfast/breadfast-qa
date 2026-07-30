@@ -67,7 +67,7 @@ a different story.
   browser-touching phase silently breaks this requirement the same way the QA Platform's per-node
   subprocess architecture does. Prefer running browser-touching phases inline in the main session;
   reserve sub-agents for phases that don't touch the live app.
-- **Long-running-session limits.** A single session spanning all six phases of a story may be a long
+- **Long-running-session limits.** A single session spanning all seven phases of a story may be a long
   task. Verify this against any session/context-length practicalities before treating it as free —
   the requirement is architectural intent, not a claim that no engineering is needed at scale.
 - **Crash/resume.** The QA Platform's Run Lifecycle Management (pause/resume/restart, see

@@ -96,7 +96,7 @@ Base classes: `BaseAndroidScreen`, (iOS equivalent) — each constructor calls `
 ### Other portals / apps
 | Module | Package | Classes |
 |---|---|---|
-| Card admin panel | `modals/cardsAdminPanel` | `CardAdminPanelLoginPage`, `CardPanelDashboard`, `PerksPage`, `MerchantPerkCreatePage`, `GeneralCashbackPerkPage`, `SearchCardsUsers`, `ViewCardUsersDetails`, `EditCustomerDetailsPage`, `SetCardPinPage`, `update` |
+| Card admin panel | `modals/cardsAdminPanel` | `CardAdminPanelLoginPage`, `CardPanelDashboard`, `SearchCardsUsers`, `ViewCardUsersDetails`, `EditCustomerDetailsPage`, `SetCardPinPage`, `PerksPage` (B10-56750, branch `feat/b10-56750-selenium-automation` — perks list + Create Perk form + Section dropdown + Add-section modal; **extended B10-57393** with the rest of the Create-perk form — merchant nested-menu picker, Branches/Cashback-processing/Duration descriptions, coupon code + coupon type, cashback consumption limit + interval, readonly end-date picker, and five whole-form fills with `getEntered*()` readbacks; **the fills take no data arguments** — the perk copy, coupon code and `PerkArtwork` set are POM constants, and the four image slots are filled Cover EN / Cover AR / Logo EN / Logo AR from the set's own EN and AR artwork; **outside-merchant support** added 2026-07-27: `selectOutsideMerchantWithAllBranches()` creates H&M through the picker's `+ Add merchant` dialog when the environment lacks it and reuses it after, and `fillValidOutsideMerchantDiscountPerk()` fills a full third-party Discount/coupon perk under the `General Purchases` section), **`AppPreviewModal`** (B10-57393, branch `2026/sprintQ3.3/B10-57393-mobile-app-preview-for-perk-creation` — the "App preview" modal: device-frame measurement, in-frame scrolling, detail sections, tile isolation, EN/AR preview language + RTL, images, "See more", Save/Cancel/X). *Drift note 2026-07-27: previously listed `MerchantPerkCreatePage`/`GeneralCashbackPerkPage` do not exist in the tree (uncommitted B10-55168-era work, since lost).* |
 | Main admin portal | `modals/mainAdminPortal` (17) | `LoginPage`, `GoogleLoginPage`, `HomePage`, `ControlRoomV2AdminPage`, `BannersAdminPage`, `BulkDiscountsAdminPage`, `CollectionsAdminPage`, `CategoriesSortingAdminPage`, `CancellationReasonsAdminPage`, `RecommendationsAdminPage`, `PopUpsAdminPage`, `ScheduledOrdersAdminPage`, `SignatureAdminPage`, `AttendanceAdminPage`, `PlanningCenterAdminPage`, `DevlieryCapacityManagementAdminPage`, `SwitcherPage` |
 | Chatbot SDK (web) | `modals/chatbotSdk` | `ChatbotSdkHostPage`, `WebChatbotSdk` |
 | RMS dashboards | `modals/rmsDashboards` | `RmsLoginPage`, `RestaurantListPage`, `RestaurantDetailsPage`, `CreateRestaurantFromDashboard` |
@@ -195,7 +195,7 @@ Most `extend BaseHelper`, take `Configs` in the constructor, return `models` POJ
 | Ordering | `Order`, `OrderPaymentTransactions`, `Coupon`, `Discount`, `Bill`, `Timeslot` |
 | Catalog | `Product`, `Category`, `Options`, `OptionSets`, `Shop` |
 | Address / geo | `Address`, `Area` |
-| Fintech card | `CardService`, `CardServiceWalletUserReport` (+`…CardDetails`, `…UserDetails`) |
+| Fintech card | `CardService`, `CardServiceWalletUserReport` (+`…CardDetails`, `…UserDetails`), **`PerkArtwork`** (B10-57393 — the four upload files of one perk: cover EN/AR 1080x1080 + logo EN/AR 240x180; factories per merchant set, lazy absolute-path resolution, fails with the regeneration command when an asset is missing) |
 | Payments | `PaymentService`, `PaymentServiceProvider`, `PaymentServiceInputParam`, `PaymentCategory`, `BusinessCategory` |
 | Supply chain / ops | `Warehouse`, `Batch`, `BatchLocation`, `StockBuckets`, `Transfer`, `TransferDestinationLocations`, `Trip`, `Truck`, `PlanningCenter` |
 | Logistics / fleet | `FleetTrip` |
@@ -214,7 +214,7 @@ All test classes `extend BaseTest`; tests carry TestNG `groups` (e.g. `smoke`, `
 | `customerApp` | 123 | RN (`android`/`ios`), native (`androidNative`/`iosNative`), `api`, `web`, `database` — auth, home, more, place-order, food aggregator, chatbot, payments, referrals, customization |
 | `roles` | 39 | RBAC permission tests per admin module |
 | `fleetApp` (+`api`,`android`) | 10 | Login, side menu, pickup/delivery tasks, cash collect, end trip |
-| `cardService` (`adminPanel`,`api`) | 5 | `CardAdminPanelTests`, `MidExclusionCapacityTests`, `CardApiTests`, `CardActivationTests`, `GeneralCashbackPerkApiTests` |
+| `cardService` (`adminPanel`,`api`) | 6 | `CardAdminPanelTests`, `B10_56750_AddSectionToPerksTests` (branch `feat/b10-56750-selenium-automation`), `B10_57393_AppPreviewModalTests` (20 tests, branch `2026/sprintQ3.3/B10-57393-mobile-app-preview-for-perk-creation`), `CardApiTests`, `CardActivationTests`, `PipelineValidationTests`. *Drift note 2026-07-27: `MidExclusionCapacityTests`/`GeneralCashbackPerkApiTests` no longer exist (uncommitted B10-55168-era work; the stale root `b10-55168-tests.xml` still references one).* |
 | `midMileApp` / `midMilePortal` | 4 / 2 | Mid-mile auth, orders, trucks, dashboard |
 | `rmsDashboards` / `rms` | 4 / 1 | Restaurant management |
 | `mainAdminPortal` (`authentication`,`orders`) | 2 | `LoginTests`, `EditOrderTests` |

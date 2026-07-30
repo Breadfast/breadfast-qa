@@ -102,12 +102,51 @@ WebElement el = wait.until(ExpectedConditions.visibilityOfElementLocated(
 `"\n"` inside one iOS checkout xpath literal. These are working selectors, not bugs to "fix" without
 verifying against the live app.
 
-**Known fragile spot — Pay/fintech surfaces (durable finding, confirmed again in this pass):**
-Android Pay is an opaque Jetpack ComposeView with **zero locators** — `AndroidPasscodeScreen` drives it
-via raw W3C pointer-tap coordinates (`Map<Character,int[]>` keypad map) instead of `@FindBy`. iOS Pay
-(`IosNativePayScreen`) has at least one absolute 25-segment XPath with no accessibility id (popup close
-button). **Expect to need the same coordinate-tap/brittle-xpath escape hatch for any new Pay screen** —
-don't force the standard `@FindBy(content-desc)` pattern where the app genuinely exposes nothing.
+**Pay/fintech surfaces on Android — Compose reports its nodes as INVISIBLE (durable finding, corrected
+2026-07-29).** Android Pay *looks* like an opaque ComposeView with zero locators: with Appium's default
+settings the whole content area is one childless `android.view.View` and the page source is ~31 nodes. That
+is a **tooling artifact, not an app limitation.** Jetpack Compose marks these nodes invisible, and
+UiAutomator2 filters invisible nodes by default. Turn the filter off and the full tree appears:
+
+```java
+androidDriver.setSetting(Setting.ALLOW_INVISIBLE_ELEMENTS, true);   // ← the one that matters
+androidDriver.setSetting(Setting.IGNORE_UNIMPORTANT_VIEWS, false);  // ← adds the nested TextViews
+```
+
+Measured on Samsung Galaxy S23 / Android 13, Pay home, 2026-07-29: defaults **31–35 nodes / 0 perk cards** →
+`allowInvisibleElements` alone **72 nodes / 2 perk cards** → both settings **140 nodes / 2 perk cards**, with
+`resource-id`, `content-desc` and `text` all populated. **Set these before concluding that any Compose
+surface "exposes nothing"** — an entire story's Android coverage was written off on that mistaken premise
+(B10-56652), and a bug was filed and retracted over it.
+
+Scope the settings to the screen that needs them (`AndroidNativePayScreen.enableComposeAccessibilityTree()`)
+rather than globally in `BaseTest` — `allowInvisibleElements` changes what `findElements` returns everywhere,
+so a global flip can silently alter other suites' negative assertions.
+
+**The Pay-access OTP gate is CONDITIONAL — never enter it unconditionally.** After the passcode, Breadfast
+Pay challenges for a 4-digit code (= the **last 4 digits of the account's own phone number**, so it is
+derived, never fetched from a channel) **only when the device id has changed**. On a device the account has
+already been trusted on, the passcode leads straight to Pay home and the screen never appears — an
+unconditional `enterOtp` there hangs and then fails. Every BrowserStack session is a new device so the gate
+does appear in CI; a re-used local device is where it does not. Use the `...IfDisplayed` convention
+(`AndroidNativePayOtpScreen.enterOtpIfDisplayed` / `IosNativePayOtpScreen.enterOtpIfDisplayed`). The same
+applies to the "Save card for a faster checkout" interstitial and the "Introducing Breadfast Card" promo —
+both are conditional dismissals.
+
+**Nothing on the Pay surface is genuinely opaque — corrected 2026-07-29 (second pass).** An earlier
+version of this section said the Android **passcode gate** stayed un-addressable "even with both settings"
+and had to be driven by a coordinate keypad map. **That was wrong, and it was wrong for the same reason
+twice: the dumps it rested on were captured BEFORE the settings were applied.** With
+`allowInvisibleElements` on, the gate exposes 53 nodes and every keypad digit is a clickable
+`android.view.ViewGroup` whose `content-desc` is the digit itself
+(`evidence/android-en-04-pay-gate.xml`, B10-56652). The Pay-access OTP screen likewise exposes
+`Verify your mobile number` and a focused `android.widget.EditText`.
+
+**Check the capture date of any dump before concluding a screen exposes nothing.** The coordinate map that
+this false conclusion produced was captured on a 1080x2340 device, and silently missed every key on the
+1440x3088 Galaxy S22 Ultra the suite actually runs on — the passcode was never entered and the test failed
+15s later on an unrelated-looking wait. Locators are device-independent; coordinates are not. Reach for a
+coordinate tap only after re-reading the page source **with the settings applied**.
 
 ---
 

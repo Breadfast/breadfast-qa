@@ -22,7 +22,12 @@ Checklist:
 
 ### 1.1 Defect Grounding Gate (precision — prevents false positives)
 
-A finding becomes a **filed Defect only if it passes ALL of the checks below**. Otherwise it is a **report-only observation** (put it in notes / the report), never a Jira bug. Added after the B10-56337 certification run filed 4 false positives out of 7 (B10-57364/65/66/68) — each failed one of these:
+A finding becomes a **filed Defect only if it passes ALL of the checks below**. Otherwise it is a **report-only observation** (put it in notes / the report), never a Jira bug. Added after the B10-56337 certification run filed 4 false positives out of 7 (B10-57364/65/66/68) — each failed one of these; checks **7–8** were added after B10-56750 (2026-07-26) produced two more, both from over-trusting the Figma frame:
+
+> **Apply this gate to your OWN findings, not just to inherited ones.** On B10-56750 the gate existed and
+> was quoted in the report, yet a finding that plainly failed check 2 was still filed (B10-58196) — because
+> the gate was never run against my own list before filing. Run it as an explicit pass over every candidate
+> defect immediately before creating tickets.
 
 1. **Source cited.** Name the exact thing it violates — a specific **AC**, a **Figma** element, or an **established business rule**. If you can't name it, it is not a defect — never invent an "ideal" expectation the spec never states (an extra dialog, a disabled state, a copy tweak). **But check the AC first: if the AC _does_ state it (e.g. "the Confirm button must be disabled until Package Number is entered" — a real B10-56337 AC), a deviation IS a valid defect.**
 2. **Not test data.** Seeded/garbage values in the testing env — dropdown entries like `test`, `dsa`, `{{7*7}}`, `@SUM(...)`, duplicate demo branches — are not product defects. → *B10-57364*
@@ -30,6 +35,30 @@ A finding becomes a **filed Defect only if it passes ALL of the checks below**. 
 4. **Not a tooling artifact.** `pdf-parse` reverses/re-orders Arabic (RTL) numerals and shaping. A digit-order/RTL difference seen **only in extracted text** is not a defect unless confirmed by eyeballing the rendered PDF/screenshot. *(Note: a genuine RTL render defect confirmed visually IS valid — cf. B10-57367.)*
 5. **No cross-language / derived-field false mismatches.** Don't assert an English UI label must equal an Arabic stored value (a correct branch **code** = valid mapping, regardless of the Arabic name → *B10-57365*). Don't flag derived fields as inconsistent with a display label (Gender is derived from the **Egyptian NID 13th digit**: odd = male, even = female → *B10-57368*).
 6. **One defect = one problem.** Never bundle two distinct issues (or a strong issue + a weak one) into one bug — split them. → *B10-57363* bundled a valid AC-based disabled-button defect with a flaky "no-op" observation. (Reinforces the one-defect-per-bug standard.)
+7. **Is the design actually the AUTHORITY for this thing?** A Figma frame is authoritative for *layout,
+   copy, states and affordances*. It is **not** authoritative for **user-created content** or for
+   **page chrome it merely happens to draw**. Ask "who owns this value?" before filing. Added after
+   **B10-56750** produced two findings from exactly this error — both raised against the design and both
+   wrong:
+   - **Filed and retracted (B10-58196):** the design's Section dropdown draws `Food & Beverage` /
+     `Fitness`. Those are **user-created sections**, not a seeded set — an absent one is not a fault, it
+     can just be added. Diffing the live list against the frame's list produced a defect out of ordinary
+     content. *(Also fails check 2 above.)*
+   - **Nearly filed (F-09):** the same frames show an `عربي` locale toggle in the header. The card panel
+     has **no Arabic UI at all** and none is in scope, so the toggle is mock chrome — not a missing
+     feature. Withdrawn before filing.
+
+   **Test:** if the "expected" value is something a user or admin creates, configures, or seeds at will,
+   the design cannot make its absence a defect. If the element is outside the story's ACs and is only
+   present as surrounding page furniture, confirm it is in scope before treating it as a requirement.
+8. **Verify the observation is real before it is a finding — transient and lazily-rendered state lies.**
+   A toast that auto-dismisses, an in-flight spinner lasting ~400 ms, a `placeholder` attribute that is
+   `null` until the field is focused, a screenshot taken while scrolled away from the element: each of
+   these will "prove" something is missing when it is present. **B10-56750** produced a false
+   "no success toast" finding (viewport scrolled + toast expired) and a false "Arabic placeholder is
+   missing" finding (Material floating label removes the attribute while unfocused). Poll for transient
+   state, focus before reading focus-dependent attributes, and re-check a negative before reporting it.
+   See [automation/playwright-framework.md](automation/playwright-framework.md) *Authoring traps*.
 
 Enforced in the QA Platform execution node (`apps/worker/src/nodes.ts`) as a mandatory pre-filing gate in the execution prompt.
 
@@ -55,68 +84,143 @@ Enforced in the QA Platform execution node (`apps/worker/src/nodes.ts`) as a man
 
 ---
 
-## 4. Jira Bug Template
+## 4. Jira Bug Structure — B10 (Breadfast 1.0)
 
-**Golden rules (every bug):**
-- **One defect per bug.** Never bundle multiple issues ("Issue A / Issue B", "Step B") — split into separate bugs.
-- **Title describes the ACTUAL wrong result**, format `[Screen]: <actual wrong behavior>` — readable on its own. E.g. *"Single Adjustment: no-card validation shows 'Select a card' instead of the required 'Please select a card to apply this adjustment.'"* (not a vague "validation issue").
-- **Specific Actual & Expected**, quoting the exact on-screen strings.
+> **This is the ONLY bug shape for B10. It is not a template to adapt — every field below has a place and
+> the bug is wrong if any of them is missing.** Verified against the reference set
+> **B10-58191 … B10-58197** (B10-56750, filed 2026-07-27) and re-verified 2026-07-28.
+>
+> **Revision 2026-07-28 (operator decision):** the **`description` field is NO LONGER USED — leave it
+> empty.** Everything a bug needs lives in the title plus the three template fields. This *supersedes* the
+> earlier narrative markdown template, which used to put a prose report in `description`; that block has
+> been removed from this document so it cannot be copied again. Rationale: the report was being written
+> twice, and a description-shaped bug hides the fields the squad actually reads.
+>
+> **Why this section is so blunt:** on **B10-56652 (2026-07-28) five bugs were filed with the whole report
+> crammed into `description`, no template fields, no Severity/Environment, and zero attachments** — all five
+> were rejected. The filer had cited this document without reading it. **Use the script in §4.3; do not
+> hand-assemble a bug.**
 
-When filing in Jira (via the Atlassian MCP), include:
+### 4.1 The five parts of a B10 bug
 
-```markdown
-## Bug Title
-[Screen]: [actual wrong result]
+**1 · Issue type + parent.** `Bug` is **issue type `10084`, a SUB-TASK** → always pass
+`parent` = the story key. Never a standalone issue.
 
-## Environment
-- App: com.breadfast.testing [version]
-- Platform: iOS / Android
-- Device: iPhone 14 / iOS 18.0  —OR—  Samsung Galaxy S23 / Android 13
-- Locale: Arabic (ar/EG) / English (en/US)
-- BrowserStack Session: [session ID]
-- Date: YYYY-MM-DD
+**2 · Title** — `[System Testing][<combo>] <specific statement of the actual wrong behaviour>`
+- `[System Testing]` is the phase. `[<combo>]` is the platform/locale: `web`, `ios-en`, `ios-ar`,
+  `android-en`, `android-ar`.
+- The title must **describe the defect well enough to be understood on its own**, naming the screen/element
+  and the wrong result. Quote the on-screen string where it helps.
+- ✅ `[System Testing][web] "Add section" modal has no X close icon to dismiss it`
+- ✅ `[System Testing][web] Section list is not ordered alphabetically after Breadfast`
+- ❌ `[System Testing][web] Modal issue` · ❌ `[Android][Pay home] …` (wrong prefix shape)
+- **Never put AC numbers in the title or in ANY field** — ACs get renumbered and reworded.
 
-## Severity / Priority
-Severity: [Critical/High/Medium/Low]   Priority: [P1/P2/P3/P4]
+**3 · The three template fields** — plain-text `textarea` custom fields. **Pass STRINGS, not ADF.**
+Preserve layout with `\n`. *(Shape corrected by the operator 2026-07-28 — this supersedes the earlier,
+noisier Environment block.)*
 
-## Steps to Reproduce
-1. Launch app in [language] locale
-2. Navigate to [screen]
-3. [action] …
-5. Observe [element/behavior]
+| Field | Id | Contents |
+|---|---|---|
+| **Steps** | `customfield_10042` | `Environment:` block (**mobile only**) → optional `Language :` → optional `Precondition:` → `Steps:` **numbered**, one action per line, ending with the observation step |
+| **Actual Result** | `customfield_10043` | What happened, with the concrete observed values / exact strings. **Short and factual.** |
+| **Expected Result** | `customfield_10044` | What should happen + the authority — `Ref: design node <id>`, the AC's wording (not its number), or the named business rule |
 
-## Expected Behavior
-[What PRD/Figma says]
+**The Environment block — versions and build numbers, nothing else:**
 
-## Actual Behavior
-[What happens — quote labels verbatim]
+```
+Environment:
+IOS : Version: 2026.31.0
+Build Number: 11084
 
-## Evidence
-- Screenshot: [filename / attachment]
-- Video: [BrowserStack session link]
-
-## Root Cause Hint
-[Optional dev-friendly hint]
-
-## Regression Risk
-[Low / Medium / High]
+Android : Version: 2026.31.0
+Build Number: 1057
 ```
 
-For mobile bugs, always note the affected platform(s) and language(s) explicitly. For platform-specific failures, label as e.g. "FAIL (Android only)".
+- **WEB bugs carry NO Environment block at all.** Omit it entirely.
+- **No** `Device:`, `Locale:`, `Account:`, BrowserStack session id or `bs://` app id. Those belong in the
+  story's execution report, not in the bug.
+- **`Language : Arabic`** goes after the Environment block **only when the bug is locale-specific**. Never on
+  an English-only bug.
+- **`Precondition:` — OMIT IT unless it is genuinely mandatory to reproduce.** Most bugs do not need one; a
+  precondition that merely restates "be logged in" is noise.
 
-### 4.1 Filing mechanics — Jira project B10 (Breadfast 1.0)
-- A "Bug" in B10 is issue type **`Bug` (id 10084), a sub-task** — file it with **`parent` = the story key** (not a standalone issue).
-- **Required fields:** Components, **Platform** `customfield_10467` (e.g. `BE` / `FE` / `FE/BE`), **Squad name** `customfield_10183` (array, e.g. `[{value:"Card Core"}]`), Priority.
-- The template fields are **rich text (ADF)** custom fields — pass ADF docs, not markdown strings:
-  - **Steps** `customfield_10042` (Environment + Build number + Precondition + numbered Steps)
-  - **Actual Result** `customfield_10043`
-  - **Expected Result** `customfield_10044`  · (Environment `customfield_10348` if used separately)
-- **Attachments (screenshots/videos):** the Atlassian MCP has **no attachment tool**. Attach via the Jira REST API with an API token (Basic `email:token`): `POST https://breadfast.atlassian.net/rest/api/3/issue/{key}/attachments`, header `X-Atlassian-Token: no-check`, multipart `file`. (Token + creds: see memory.) Convert `.webm` test videos to `.mp4` before attaching.
-  - **Set the right `Content-Type` on the multipart part** (`video/mp4`, `video/webm`, `image/png`, `application/pdf`, …). An untyped part uploads as `application/octet-stream` and Jira shows an opaque download instead of an **inline, playable preview**. (The platform's `attachFiles` maps this by extension.)
-  - **Prefer a short screen recording over a lone screenshot** when the defect is a **multi-step flow or a state/DB-transition** a single frame can't convey (e.g. "value not persisted after action"). A **full-screen recorder** (OBS-style) captures native browser chrome a Playwright `video.webm` cannot — the **print/PDF preview, print dialog, file-save/OS dialogs, cursor, tabs**; a Playwright video records only the page DOM. For defects that hinge on backend/DB state (invisible in the UI), add a **narrated overlay** in the automated recording that prints the live DB value on-page. The two together (UI/print + DB proof) make the defect self-explanatory. *(cf. B10-57537.)*
-- Tooling chain: Atlassian MCP `claude_ai_Atlassian_Rovo` for create/edit/comment; Figma frames via the REST exporter (the MCP get_screenshot rate-limits on a View seat); BrowserStack TM import via the UI (REST API is SSO-gated).
+**Actual / Expected must read as a senior QA engineer wrote them — not as generated prose.**
+State the fact, give the number or the exact string, cite the authority, stop. Specifically avoid: describing
+your own methodology (*“measured from the live accessibility tree, so these are exact frames rather than
+estimates”*), hedging (*“plausibly”*, *“arguably”*, *“this may well be”*), essay connectives (*“furthermore”*,
+*“moreover”*, *“in other words”*), and *“Note for triage:”* paragraphs. If a caveat genuinely matters, it is
+**one short line**. The filer in §4.3 flags all of these.
 
----
+Good:
+```
+Actual    Only 24 pt of the third perk card is visible — 15% of the card.
+          Card width 163 pt, gutter 12 pt. On a 390 pt screen the third card starts at x=366.
+Expected  Around 14 pt of the next card is visible (~8%) — a subtle peek, not a partially-shown card.
+          Ref: design node 9163-7909.
+```
+
+**4 · Fields — every one of these, every time.** (`Testing Phase`, `Platform`, `Squad name` and
+`Components` are **required by the schema**; the rest are required by this standard.)
+
+| Field | Id | Allowed values / rule |
+|---|---|---|
+| Severity | `customfield_10076` | `Blocker` \| `Critical` \| `Major` \| `Minor` \| `Enhancement` |
+| Priority | `priority` | `Highest` \| `High` \| `Medium` \| `Low` — map: Blocker/Critical→`Highest`/`High`, Major→`High`, Minor→`Medium`, cosmetic→`Low`. **No "P2"-style values.** |
+| **Testing Phase** | `customfield_10078` | `System Testing` \| `Regression Testing` \| `Sanity Testing` \| `PM Review` |
+| **Bug type** | `customfield_10079` | `Functional` \| `UI/UX` \| `Change Request ` \| `Performance` |
+| Environment | `customfield_10348` | `KSA` \| `Egypt` \| `Both (KSA, Egypt)` |
+| Platform | `customfield_10467` | `iOS` \| `Android` \| `Huawei` \| `Android/Huawei` \| `Both (iOS/Android)` \| `BE` \| `FE` \| `FE/BE` \| `None` |
+| Squad name | `customfield_10183` | array, e.g. `[{value:"Card Core"}]` / `[{value:"Card Ops Squad"}]` |
+| Components | `components` | the surface, e.g. `Bcard Dashboard` (card panel UI), `Bcard Cst app` (customer app), `Bcard BE` (backend). **Do not use a BE component for a UI defect.** |
+| Labels | `labels` | `["ai-created","qa-found"]` + any specific tag |
+| **Description** | `description` | **LEAVE EMPTY.** (Operator decision 2026-07-28.) |
+
+**5 · Attachments — MANDATORY on every bug, before the bug is announced anywhere.**
+
+| # | File | Naming |
+|---|---|---|
+| 1 | the **actual** screenshot showing the wrong result | `actual-<slug>.png` |
+| 2 | the **design / expected** frame it is compared against (when a design exists) | `design-<slug>.png` |
+| 3 | a **short screen recording** of the failing flow | `F-0N-<slug>.mp4` |
+
+Reference set for shape: `actual-add-section-modal-no-X.png`, `design-add-section-modal-with-X.png`,
+`F-01-no-x-close-icon.mp4`. **Never** `image1.png` / `video.webm`.
+
+- **The Atlassian MCP cannot attach files.** Use the REST API:
+  `POST https://breadfast.atlassian.net/rest/api/3/issue/{key}/attachments`,
+  Basic `email:token`, header **`X-Atlassian-Token: no-check`**, multipart field name **`file`**.
+- **Set the real `Content-Type` per part** (`image/png`, `video/mp4`). An untyped part uploads as
+  `application/octet-stream` and Jira shows an opaque download instead of an **inline, playable preview**.
+- Convert `.webm` → `.mp4` before attaching.
+- Prefer a **recording** over a lone screenshot when the defect is a multi-step flow or a state/DB
+  transition a single frame cannot convey. For BrowserStack runs the session video is a legitimate source.
+
+### 4.2 Golden rules
+
+- **One defect = one bug.** Never bundle ("Issue A / Issue B") — split.
+- **Specific Actual & Expected**, quoting exact on-screen strings.
+- **Severity/Priority live in the FIELDS only** — never restate them in any text field.
+- For mobile bugs the affected **platform(s) and locale(s)** must be explicit (the `[<combo>]` title prefix
+  plus the Platform field). Platform-specific failures read e.g. "Android only".
+- **Use REST v2** (`/rest/api/2/issue`) for create/update — v3 demands ADF for `description`, v2 accepts
+  plain strings and the textarea fields behave identically. (The MCP `createJiraIssue` also works for
+  create, but it cannot attach — so the script below is preferred end to end.)
+
+### 4.3 File it with the script, not by hand
+
+[`automation/file_jira_bug.js`](../../automation/file_jira_bug.js) encodes everything above: it validates
+the option values and the required set **before** calling Jira, creates the sub-task with all fields,
+uploads each attachment with the correct MIME type, then **re-reads the created issue and prints what
+actually landed** (fields + attachment list) so a silent omission cannot pass.
+
+```
+node automation/file_jira_bug.js --spec <bug.json>        # file it
+node automation/file_jira_bug.js --spec <bug.json> --dry  # validate + preview, no write
+node automation/file_jira_bug.js --verify B10-58191       # audit an existing bug against this standard
+```
+
+**Always `--dry` first, and always read the verify output before telling anyone the bug is filed.**
 
 ## 5. Test-Data Reclassification
 

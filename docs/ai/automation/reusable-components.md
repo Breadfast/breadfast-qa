@@ -1,6 +1,7 @@
 # Reusable Components Index
 
 > **Before writing new automation, search here first.** Most card-service and mobile building blocks already exist — call or extend them rather than duplicating.
+> **New automation is generated in the Java framework** (web→Selenium, mobile→Appium — [automation-generation.md](automation-generation.md)); for those, the Java row-groups below and [java-framework.md](java-framework.md) §4–7 are the primary reuse surface. The JS (`b55168_pom`) rows serve legacy Playwright maintenance.
 
 ## Capability → existing asset
 
@@ -42,6 +43,9 @@
 | **Page objects — admin / card panel / RMS** | `mainAdminPortal/*`, `cardsAdminPanel/*`, `rmsDashboards/*` | `modals/...` |
 | **Driver / server creation** (BrowserStack app select by type) | `MobileDriversFactory`, `WebDriversFactory`, `ServerFactory` | `helpers/factories/` |
 | **Test data + sessions** | `dataFactories/*` (User/Otp, customerApp, fintech, foodAggregator, testSessions) | `helpers/factories/dataFactories/` |
+| **Perk upload artwork** (cover 1080x1080 + logo 240x180, EN + AR, per merchant) | `PerkArtwork.breadfastCoffeeCashback()` / `breadfastCoffeeCoupon()` / `breadfastMarketCashback()` / `hmDiscount()` / `zaraCashback()` / `fromSet(name)` — resolves the four slot files, absolute paths, fails with the regeneration command if one is missing | `models/PerkArtwork.java`; assets in `resources/images/perks/<set>/` (see its `README.md`) |
+| **Perk for an OUTSIDE (non-Breadfast) merchant** | `PerksPage.fillValidOutsideMerchantDiscountPerk()` — whole-form H&M Discount/coupon fill; `selectOutsideMerchantWithAllBranches()` creates the merchant through the picker's `+ Add merchant` dialog on first run and reuses it after (a merchant cannot be deleted from the panel) | `modals/cardsAdminPanel/PerksPage.java` |
+| **Generating new perk artwork** (any merchant, exact spec, guaranteed under the byte cap) | `generate_perk_images.py` — add a `CATALOG` entry + `THEMES` palette, re-run; Breadfast perks use the Breadfast brand system, outside perks (H&M, Zara…) their own | `resources/scripts/generate_perk_images.py` |
 | **JSON → POJO parsing** | `dataParsers/*` (26 parsers, `BaseDataParser`) | `helpers/dataParsers/` |
 | **RBAC permission assertions** | `rolesValidators/*` (39, `BaseRolesValidator`) + `RolesDataProviderSource` | `helpers/rolesValidators/`, `helpers/dataProviders/` |
 | **Per-tag config mutation** | `ConfigurationsManagementHelper.updateConfigsToMatchTestTag` | `helpers/ConfigurationsManagementHelper.java` |
@@ -64,8 +68,12 @@
 
 From [AUTOMATION_B10-55185.md](b55168_pom/AUTOMATION_B10-55185.md) and the code — build these out when needed instead of assuming they exist:
 
-1. **Perk-form selectors not captured (open dep #8)** — `PerksPage.fillCouponPerk`, `fillCategoryPerk`, and `setLimits` are **stubs that throw**. Coupon type, category type, and daily/weekly/monthly/annual/max-cap fields must be recorded from the live panel before use.
-2. **Merchant-cashback form incomplete** — `PerksPage.fillMerchantPerk` wires branch names + MIDs only; cashback-value / limit fields still need a live-DOM check. No API client for merchant/coupon/category creation (only `general-cashback`).
+1. **Perk-form selectors — PARTIALLY RESOLVED 2026-07-27 (B10-57393).** The JS `PerksPage.fillCouponPerk` / `fillCategoryPerk` / `setLimits` are still **stubs that throw**, but the selectors they were waiting on are now **captured live** and implemented in the **Java** `modals/cardsAdminPanel/PerksPage` — port them rather than re-recording:
+   - coupon code `app-bf-input[controlname='coupon_code'] input`; **coupon type** `mat-radio-button` `Online`/`Physical`, which **only renders after a coupon code is entered** (missing it silently blocks Preview & save)
+   - cashback value `input[formcontrolname='cashback_value']`, limit `input[formcontrolname='cash_back_limit']`, minimum transaction `input[formcontrolname='minimum_transaction_amount']` (renders pre-filled with `0`)
+   - consumption limit `input[formcontrolname='consumption_limit']` + interval `mat-select[formcontrolname='consumption_interval']` (`daily|weekly|monthly|yearly`) — **validated as a pair**: "Both limit and duration are required together"
+   - still genuinely open: **category / MCC** referencing (see gap 3)
+2. **Merchant-cashback form — RESOLVED 2026-07-27 (B10-57393).** The cashback-value / limit fields are captured (above), and the merchant picker is fully worked out: the trigger is a **read-only** `matInput` (`input[readonly][data-placeholder*='Select'][data-placeholder*='branch']`) opening a **nested two-level `mat-menu`** — merchants, then that merchant's branch checklist whose **"Select All" must be clicked via its `<label>`** (a click on the wrapping menu-item leaves `aria-checked="false"`). It also leaves a `cdk-overlay-backdrop` alive after one `Escape`, which then **swallows clicks on every field below it** — press Escape until the backdrop count is zero. Implemented as Java `selectMerchantWithAllBranches`. *Still open:* no API client for merchant/coupon/category creation (only `general-cashback`).
 3. **Category / MCC referencing (open dep #10)** — unknown how a category perk references MCCs in the panel; blocks `fillCategoryPerk`.
 4. **Eligibility predicate (open dep #1)** — exact success/cleared definition (status value, `external_response_code='00'`, `externalSettlementDateTime`) unconfirmed; `cloneEligiblePurchase` copies a known-good template to sidestep it.
 5. **`transaction_data` column type** — `adjustPurchaseForTest` assumes JSON (`JSON_SET`); if it's plain TEXT, callers must use `setRawTransactionData`.

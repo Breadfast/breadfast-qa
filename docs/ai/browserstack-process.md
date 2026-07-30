@@ -297,10 +297,70 @@ This is the standing process — no extra instruction required:
 5. **Upload the test cases** (§10.6).
 6. **Verify the import succeeded** — folder count = expected case count (e.g. `28(28)`), cases land directly in the target folder (no nested/duplicate folder), open one case and confirm the Steps & Results render granularly with an expected result per step. Record destination + result in the story report.
 
-### 10.6 Upload method — Test Management UI via Playwright (proven)
-The Test Management **REST API is SSO-gated** for this org (the App Automate access key returns 401 + `auth/start-sso`), so import is driven through the **UI with Playwright**, logged in via the Test Management web login. Reusable API importer (`D:\Playwright\b55168_pom\import_browserstack_csv.js`) is kept for when API access is enabled.
+### 10.6 Upload method — **REST API v2 (preferred, proven)**
 
-UI flow (logged in):
+> **Correction (2026-07-26).** This section previously stated the Test Management REST API was
+> "SSO-gated for this org". **That was wrong.** The `401 Unauthorized` + `auth/start-sso` response
+> comes from calling the **v1** path, which does not exist — not from a permissions or SSO
+> restriction. Plain HTTP Basic `username:access_key` works fine on **v2**. The bad diagnosis cost a
+> QA cycle reported as "blocked on credentials".
+
+**Base:** `https://test-management.browserstack.com/api/v2` · **Auth:** Basic `username:access_key`
+(loader: `automation/config/credentials.js` → `browserstack.tmUsername()` / `tmApiToken()`).
+**Reference implementation:** [`B10-56750/automation/upload_browserstack.js`](../../B10-56750/automation/upload_browserstack.js)
+— verified end-to-end: 28 cases / 197 steps into folder `53074476`.
+
+Create cases **individually** (more reliable and more controllable than a CSV import):
+
+```
+GET  /api/v2/projects?p=1                                  → identifiers like PR-5
+     ↳ match a folder URL's numeric project id against projects[].urls.self
+GET  /api/v2/projects/{PR-x}/folders                       → folder tree
+GET  /api/v2/projects/{PR-x}/folders/{id}/sub-folders      → walk for nested folders
+GET  /api/v2/projects/{PR-x}/folders/{id}                  → cases_count (verify before/after)
+POST /api/v2/projects/{PR-x}/folders/{folder_id}/test-cases  ← create
+DELETE /api/v2/projects/{PR-x}/test-cases/{TC-xxxxx}         ← remove
+```
+
+**Payload + the four traps that will silently bite you:**
+```json
+{ "test_case": {
+    "name": "…",                       // ← `name`, NOT `title` (a `title` payload 400s)
+    "description": "…",
+    "preconditions": "<p>…</p><br/>",
+    "case_type": "Functional",
+    "priority": "Critical|High|Medium|Low",
+    "status": "Active",
+    "template": "test_case_steps",
+    "automation_status": "not_automated",
+    "tags": ["ai-created"],
+    "issues": ["B10-56750"],           // ← array of PLAIN STRINGS on input
+    "test_case_steps": [               // ← `test_case_steps`, NOT `steps`
+      { "step": "<p>…</p><br/>", "result": "<p>…</p><br/>" }
+    ] } }
+```
+1. **`steps` is silently dropped.** Using `steps` returns **HTTP 200** and creates the case with
+   **zero steps**. Always re-read the cases and assert the total step count after uploading.
+2. **`folders` is plural** in the create path. `/folder/{id}/test-cases` and
+   `/projects/{p}/test-cases` both return `404 "invalid endpoint"`.
+3. **`PATCH` replaces, it does not merge** — a partial PATCH wiped the `issues` link off a case.
+4. `GET /projects/{p}/test-cases/{TC-id}` is **not** a valid endpoint; read cases from the paginated
+   list (`/test-cases?p=N`) and filter by `folder_id`.
+5. **Create and list paths are asymmetric — do not reuse the create path for the read-back.** Cases are
+   created at `POST /projects/{p}/folders/{id}/test-cases` but listed at
+   `GET /projects/{p}/test-cases?folder_id={id}`. A **GET on the create path returns
+   `404 "You have stumbled on an invalid endpoint"`**, which reads like "the folder is empty" and makes a
+   verify step silently report zero cases even though the upload succeeded. (Hit on B10-57393: 22 cases
+   uploaded fine, first `--verify` reported `listed 0`.) Make the verifier fail loudly on an empty
+   listing rather than printing a reassuring "all cases have steps".
+
+Generate the case data once and share it: `gen_browserstack_csv.js` exports its `cases` array, so the
+CSV, the markdown execution input and this uploader cannot drift apart.
+
+---
+
+#### 10.6b Fallback — Test Management UI via Playwright
+Use only if the API is unavailable. UI flow (logged in):
 1. Navigate to `test-management.browserstack.com/projects/2407303/folder/<FOLDER_ID>/test-cases` → **Import Test Cases** (deep link `/projects/2407303/import?folder=<FOLDER_ID>`).
 2. Upload the CSV → **Proceed** → **Map Fields** (24 values auto-map) → **Proceed** → **Import Test Cases** (final).
 3. Verify the folder count and open a case to confirm structure.
@@ -335,3 +395,52 @@ await bsReq('POST', `/wd/hub/session/${SID}/back`, {});
 ```
 
 Helper functions (`bsReq`, `getSource`, `findElement(s)`, `clickEl`, `tap`, `sleep`) are catalogued in [appium-framework.md](automation/appium-framework.md).
+
+---
+
+### 10.7 Test NAMES are the contract between automation and BrowserStack (**required**)
+
+> Added 2026-07-26 (B10-56750), by operator instruction: *"the testcase names in the automation script
+> should match the testcase name in BrowserStack — same name for all automatable test cases — so the
+> test run just runs the automatable testcases from BrowserStack."*
+
+**Rule: every automated test's title MUST be the exact, verbatim name of its BrowserStack test case.**
+Not a prefix, not an abbreviation, not an `HLS7 · AC-05 · …` style label — the whole sentence, character
+for character.
+
+**Carrier by framework (2026-07-27):** in generated **Java** automation the title lives in
+`@Test(description = "…")` and the case **id** additionally in `@TmsLink("TC-xxxx")` — the framework's
+`BrowserstackSyncListener` + `BaseTest` post results to Test Management by id, which is stronger than
+the name join ([automation-generation.md](automation/automation-generation.md) §6). In legacy Playwright
+the title is the spec title.
+
+Why it matters:
+- **Results map by name.** The run-result pusher joins automated results to cases on the title alone. No
+  hand-maintained index table to rot, and a rename can never silently post a result onto the wrong case.
+- **BrowserStack can filter to the automatable set.** With names joined, each case's
+  `automation_status` is set from whether a test of that name exists, so a run can execute just the
+  automated ones.
+
+**Consequences for spec structure** — one test per case, which means:
+- Do **not** cover two cases with one test (split them, e.g. "lists bilingual labels" and "shows no
+  numeric IDs" become two tests).
+- Do **not** cover one case with several tests (fold them into one, e.g. a case that says "for all four
+  perk types" loops the four types *inside* a single test).
+- A case that is deliberately **not** automated simply has no test, and is declared as such (see below)
+  and left `not_automated` in BrowserStack.
+
+**Write the names as literals.** An earlier attempt read titles from the generator at runtime
+(`test(TC(14), …)`). It guaranteed parity but made the specs unreadable — you could not tell which test
+was which. Literals are the standard; parity is enforced by a checker instead. For a case parameterised
+over a loop, put the literal names in an array in loop order (`AC01_NAMES[i]`).
+
+**Two guards keep the names honest — run the first before every suite:**
+1. `node check_test_name_parity.js` — **offline**, no browser, no environment. Fails if any case name
+   lacks a verbatim test, if a not-automated declaration is stale, or if **mojibake** is present. That
+   last check is not paranoia: converting titles through a non-UTF-8 codec once turned `→` into `â†’`,
+   which looks nearly identical in a diff and breaks every match.
+2. `push_browserstack_results.js` — refuses to post at all if any case has neither a name-matched test
+   nor a `MANUAL` entry, rather than reporting a partial or mismatched run.
+
+Reference implementation: `B10-56750/automation/` (`tests/*.spec.js`, `check_test_name_parity.js`,
+`push_browserstack_results.js`, `create_browserstack_run.js`).

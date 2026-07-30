@@ -3,6 +3,25 @@
 /**
  * import_browserstack_csv.js — reusable BrowserStack Test Management CSV importer.
  *
+ * ⚠️  SUPERSEDED (2026-07-26). This script targets the **v1** API, which does not
+ *     exist: `https://test-management.browserstack.com/api/v1/...` answers
+ *     `401 Unauthorized` + `{"login_url": ".../auth/start-sso"}` for perfectly
+ *     VALID credentials. That 401 is NOT an auth failure and NOT proof that the
+ *     org requires SSO — it is a wrong-version endpoint, and it cost a full QA
+ *     cycle being reported as "blocked on credentials".
+ *
+ *     The working API is **v2** (plain HTTP Basic `username:access_key`), and the
+ *     reliable path is to create cases individually rather than upload a CSV:
+ *         POST /api/v2/projects/{PR-x}/folders/{folder_id}/test-cases
+ *     Reference implementation (verified end-to-end, 28 cases + 197 steps):
+ *         B10-56750/automation/upload_browserstack.js
+ *     Key schema traps documented there: the field is `name` (not `title`),
+ *     `issues` is an array of plain strings, and steps MUST go in
+ *     `test_case_steps` — a `steps` payload returns 200 and silently saves NONE.
+ *
+ *     Prefer that uploader. The BASE default below has been moved to v2 so any
+ *     remaining GET helpers here at least authenticate.
+ *
  * Uploads a generated test-case CSV into BrowserStack Test Management via the public
  * REST API (https://test-management.browserstack.com/api/v1), authenticated with the
  * same userName + accessKey used for App Automate (read from the Java framework's
@@ -21,7 +40,7 @@ const fs   = require('fs');
 const path = require('path');
 const props = require('./helpers/PropertiesReader');
 
-const BASE = process.env.BS_TM_BASE || 'https://test-management.browserstack.com/api/v1';
+const BASE = process.env.BS_TM_BASE || 'https://test-management.browserstack.com/api/v2';
 const BS_PROPS_PATH =
   process.env.BS_PROPERTIES_PATH ||
   'D:\\projects\\resources\\environments\\browserStackConfigs.properties';

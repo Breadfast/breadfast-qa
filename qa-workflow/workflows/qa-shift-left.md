@@ -26,6 +26,17 @@ inputs: { ticket: required, figmaUrl: optional-override, appUrl: optional }
 
 ## Steps
 
+### −1 · Prerequisite Gate (`detect-prerequisites`) ⟵ **runs FIRST**
+Run [`../skills/detect-prerequisites/SKILL.md`](../skills/detect-prerequisites/SKILL.md) inline before
+anything else. Enumerate every input the run needs (access, destinations, targets, test data, backend
+state, design links, locale scope), verify each access item with **one real authenticated call**, and
+**ask the operator in a single batch** for whatever is missing. Write `prerequisites.md` into the story
+folder.
+
+**Never report a step as blocked without asking first.** A `401`/`404` from a destination is as likely
+to be our own wrong URL/API-version/path as a permissions problem — diagnose before escalating.
+*(Added 2026-07-26; see the skill for the B10-56750 failures that motivated it.)*
+
 ### 0 · Initialize
 ```
 node qa-workflow/bin/qa-cli.js init "<storyDir>" <ticket>

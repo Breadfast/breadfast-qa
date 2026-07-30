@@ -14,6 +14,7 @@ that return the artifact **by path**, keeping the orchestrating workflow's conte
 | `visual-testing` | Visual | subagent | `figma-analysis`, screenshots | `visual-findings` + evidence |
 | `browserstack-mgmt` | BrowserStack | inline | `testcases` | `browserstack-import` |
 | `automation-gen` | Automation | subagent | `testcases` | `automation` |
+| `framework-conformance` | Automation (gate) | subagent | `automation` | (none — `automation/conformance-review.md`) |
 | `defect-reporting` | Defects | inline | `execution`, `visual-findings` | `defects` |
 
 > **Clarification** is the existing **grill-me** skill (inline, interactive) — invoked by the workflow, not re-authored here.

@@ -2,8 +2,8 @@
 
 > **Status:** Canonical QA methodology. Every implemented story follows this process.
 > **Nature:** Platform-agnostic. It can be executed **manually**, via **Claude Code**, or by **any orchestration system** — it defines *what* each phase produces and *when* a phase is complete, never *which tool* runs it.
-> **Relationship to other docs:** This operationalizes the QA lifecycle into six gated phases and makes **Visual Testing** a first-class phase. It governs the per-story methodology. Detailed test-design/business rules live in the `docs/ai/**` knowledge base; tool-specific operation of the deterministic visual engine lives in the Visual Testing Operations Manual; session/browser-lifecycle requirements for Claude Code as executor live in [`execution-engine.md`](execution-engine.md).
-> **Workflow architecture:** the split into **Pre-Development (shift-left)** and **Post-Development (implementation-validation)** workflows — plus **`qa-full`**, which composes both into one end-to-end run of Phases 1–6 for a story with no existing baseline — the reusable-artifact contract, and the plugin-alignment strategy are defined in [`architecture/adr-001-qa-workflow-independent-plugin-aligned.md`](architecture/adr-001-qa-workflow-independent-plugin-aligned.md) (contract: [`architecture/qa-artifact-contract.md`](architecture/qa-artifact-contract.md), schema: [`architecture/qa-state.schema.json`](architecture/qa-state.schema.json)). QA_PROCESS.md remains authoritative on *phase methodology*; the ADR governs *workflow orchestration and artifact reuse*.
+> **Relationship to other docs:** This operationalizes the QA lifecycle into **seven gated phases (Phase 0 – Phase 6)** and makes **Visual Testing** a first-class phase. It governs the per-story methodology. Detailed test-design/business rules live in the `docs/ai/**` knowledge base; tool-specific operation of the deterministic visual engine lives in the Visual Testing Operations Manual; session/browser-lifecycle requirements for Claude Code as executor live in [`execution-engine.md`](execution-engine.md).
+> **Workflow architecture:** the split into **Pre-Development (shift-left)** and **Post-Development (implementation-validation)** workflows — plus **`qa-full`**, which composes both into one end-to-end run of Phases 0–6 for a story with no existing baseline — the reusable-artifact contract, and the plugin-alignment strategy are defined in [`architecture/adr-001-qa-workflow-independent-plugin-aligned.md`](architecture/adr-001-qa-workflow-independent-plugin-aligned.md) (contract: [`architecture/qa-artifact-contract.md`](architecture/qa-artifact-contract.md), schema: [`architecture/qa-state.schema.json`](architecture/qa-state.schema.json)). QA_PROCESS.md remains authoritative on *phase methodology*; the ADR governs *workflow orchestration and artifact reuse*.
 
 ---
 
@@ -54,6 +54,46 @@ flowchart TD
 ```
 
 Each phase has an **exit gate**. Do not enter the next phase until the current gate passes.
+
+---
+
+# Phase 0 — Prerequisites
+
+**Purpose:** establish what this run needs and does not have, and **obtain it**, before any analysis or
+planning is done. Added 2026-07-26 (ported from the QA Platform's `detect_prerequisites` node) after a
+story shipped a QA summary containing two avoidable "blocked" outcomes, both discoverable in the first
+minutes.
+
+**Governing rule — never block, always ask:**
+> Do not report a step as blocked without having asked for the missing input first. A run may legitimately
+> end "asked, awaiting X". It must never end with a flat "blocked on X" the operator was never asked about.
+
+**Activities**
+1. Enumerate the required inputs by category: **access** (URLs, credentials, API tokens), **destinations**
+   (test-management project/folder, Jira parent, report paths), **targets** (app IDs, build under test,
+   device/OS matrix), **test data** — including any record an AC names explicitly — **backend state**
+   (migrations run, flags on, account status), **design** (file key + node ids for *this* story; is the
+   linked design alive?), and **platform/locale scope**.
+2. Resolve from configuration first — a credential loader or env var beats asking. Never ask for what is
+   already available.
+3. **Verify every access item with one real authenticated call.** A prerequisite is "have" only when a call
+   succeeded, never merely because a value exists.
+4. **Diagnose failures before escalating them.** A `401`/`403`/`404` is at least as likely to be a wrong
+   base URL, **API version**, path or payload shape as a permissions problem. Consult the vendor's current
+   API reference before declaring an access blocker.
+5. **Settle platform/locale scope here**, against the real application — not from the design or a default.
+   A surface that has no locale switch cannot be given a localisation sweep.
+6. Ask for everything still missing **in one batch**, naming each value and where it comes from.
+
+**Outputs:** `prerequisites.md` in the story folder — every category marked **have / ask / not-applicable**,
+each "have" backed by the call that proved it.
+
+**Exit gate**
+- Every category is explicitly resolved; none silently skipped.
+- Every access "have" is backed by a successful live call.
+- Everything missing has been asked for in one batch.
+- Scope (platforms × locales) is stated as a fact about the application under test.
+- Nothing is labelled "blocked" that the operator was not asked about.
 
 ---
 

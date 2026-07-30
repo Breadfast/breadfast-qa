@@ -93,3 +93,102 @@ test('reconcile --apply-modified re-baselines a hand-edited artifact', () => {
 test('unknown command exits non-zero', () => {
   assert.throws(() => run(['bogus']));
 });
+
+// --- Run-integrity gates (added 2026-07-29 after the B10-56717 root cause analysis) -------------
+// These three gates exist because a full qa-full run reported every quality gate met while no
+// automation had been generated into the framework and neither repo was on the story's branch.
+// If any of them regresses, that failure becomes silently possible again.
+
+const seed = (dir, ticket) => {
+  run(['init', dir, ticket]);
+  run(['fingerprint-jira', dir], JSON.stringify({ updated: 't', summary: 's', description: 'd', ac: 'a', comments: [] }));
+  run(['fingerprint-figma', dir, '--file', 'K', '--nodes', '1:1']);
+  fs.writeFileSync(path.join(dir, 'a.md'), 'body');
+};
+const rec = (dir, key, extra = []) =>
+  run(['record', dir, key, '--path', 'a.md', '--generator', 'g@1.0', ...extra]);
+const fails = (args) => {
+  try { run(args); return null; } catch (e) { return String(e.stderr || e.message); }
+};
+
+test('recording execution is BLOCKED while automation is missing or partial', () => {
+  const dir = tmp();
+  seed(dir, 'B10-56717');
+
+  const missing = fails(['record', dir, 'execution', '--path', 'a.md', '--generator', 'execution@1.0']);
+  assert.ok(missing, 'execution must not record while automation is absent');
+  assert.match(missing, /automation.*has not been recorded/);
+
+  rec(dir, 'automation', ['--status', 'partial']);
+  const partial = fails(['record', dir, 'execution', '--path', 'a.md', '--generator', 'execution@1.0']);
+  assert.ok(partial, 'execution must not record while automation is partial');
+  assert.match(partial, /is "partial", not "complete"/);
+
+  rec(dir, 'automation'); // now complete
+  const ok = JSON.parse(rec(dir, 'execution'));
+  assert.equal(ok.status, 'complete');
+});
+
+test('an operator-approved deferral is the only way past the phase dependency', () => {
+  const dir = tmp();
+  seed(dir, 'B10-56717');
+  rec(dir, 'automation', ['--status', 'partial']);
+  assert.ok(fails(['record', dir, 'execution', '--path', 'a.md', '--generator', 'execution@1.0']));
+
+  const d = JSON.parse(run(['defer', dir, 'automation', '--by', 'Operator', '--reason', 'capacity']));
+  assert.equal(d.deferred, 'automation');
+  assert.equal(d.approvedBy, 'Operator');           // a deferral always carries a name
+  assert.match(d.at, /^\d{4}-/);
+
+  const ok = JSON.parse(rec(dir, 'execution'));
+  assert.equal(ok.status, 'complete');
+
+  // ...and `defer` requires both --by and --reason, so it cannot be a silent self-exemption.
+  assert.ok(fails(['defer', dir, 'visual-findings', '--by', 'Operator']));
+  assert.ok(fails(['defer', dir, 'visual-findings', '--reason', 'x']));
+});
+
+test('complete-check exits non-zero on a partial artifact, unlike show', () => {
+  const dir = tmp();
+  seed(dir, 'B10-56717');
+  for (const k of ['requirements', 'figma-analysis', 'clarifications', 'impact', 'hls',
+    'testcases', 'browserstack-import']) rec(dir, k);
+  rec(dir, 'automation', ['--status', 'partial']);
+
+  const failed = fails(['complete-check', dir]);
+  assert.ok(failed, 'complete-check must fail while automation is partial');
+  assert.match(failed, /automation: partial/);
+
+  // `show` is deliberately NOT a gate — it always succeeds, which is why it could not catch this.
+  assert.doesNotThrow(() => run(['show', dir]));
+
+  rec(dir, 'automation');
+  for (const k of ['execution', 'visual-findings', 'defects', 'qa-summary']) rec(dir, k);
+  const passed = JSON.parse(run(['complete-check', dir]));
+  assert.equal(passed.ok, true);
+  assert.deepEqual(passed.problems, []);
+});
+
+test('complete-check honours a recorded deferral but still reports it', () => {
+  const dir = tmp();
+  seed(dir, 'B10-56717');
+  for (const k of ['requirements', 'figma-analysis', 'clarifications', 'impact', 'hls',
+    'testcases', 'browserstack-import']) rec(dir, k);
+  run(['defer', dir, 'automation', '--by', 'Operator', '--reason', 'scheduled follow-up']);
+  for (const k of ['execution', 'visual-findings', 'defects', 'qa-summary']) rec(dir, k);
+
+  const out = JSON.parse(run(['complete-check', dir]));
+  assert.equal(out.ok, true);
+  assert.equal(out.deferred.length, 1);
+  assert.equal(out.deferred[0].key, 'automation');
+  assert.equal(out.deferred[0].approvedBy, 'Operator');  // the deferral stays visible in the record
+});
+
+test('branch-check fails when a repo is not on the story branch', () => {
+  const dir = tmp();
+  seed(dir, 'B10-56717');
+  // A repo that is not a git repo at all has no branch -> must fail, never pass by default.
+  const failed = fails(['branch-check', dir, 'B10-56717', '--repos', dir]);
+  assert.ok(failed, 'branch-check must fail when the branch cannot be confirmed');
+  assert.match(failed, /branch-check FAILED/);
+});

@@ -10,7 +10,7 @@ inputs: { ticket: required, figmaUrl: optional-override, appUrl: optional, mobil
 # Workflow 3 — Full QA Lifecycle (Pre-Dev + Post-Dev)
 
 **Executor:** Claude Code (agent-followed). **Methodology (source of truth):**
-[`../../docs/ai/QA_PROCESS.md`](../../docs/ai/QA_PROCESS.md) **Phases 1–6, all six gates** · `CLAUDE.md` §2 STEP 0–7 + §3/§4.
+[`../../docs/ai/QA_PROCESS.md`](../../docs/ai/QA_PROCESS.md) **Phases 0–6, all seven gates** · `CLAUDE.md` §2 STEP 0-pre–7 + §3/§4.
 **Reuse contract:** [`../../docs/ai/architecture/qa-artifact-contract.md`](../../docs/ai/architecture/qa-artifact-contract.md).
 
 > **This workflow composes; it does not restate.** It is the original single end-to-end QA process
@@ -50,13 +50,41 @@ re-run reconciles them identically.
 
 ---
 
+## Phase 0 — Prerequisite Gate (`detect-prerequisites`) ⟵ **runs FIRST, before Phase A**
+
+Run [`../skills/detect-prerequisites/SKILL.md`](../skills/detect-prerequisites/SKILL.md) inline.
+Enumerate every input the whole run will need — access, destinations, targets, test data, backend state,
+design links, locale scope — verify each access item with **one real authenticated call**, and **ask the
+operator in a single batch** for whatever is missing. Write `prerequisites.md` into the story folder.
+
+Because `qa-full` runs end-to-end, this gate matters most here: a missing BrowserStack destination or
+absent test data discovered in Phase B wastes the entire Phase A run. **Never report a step as blocked
+without asking first**, and diagnose a `401`/`404` as a possible wrong URL/API-version/path on our side
+before calling it a permissions blocker. *(Added 2026-07-26 — see the skill for the motivating failures.)*
+
+## Phase 0b — Story-branch gate ⟵ **runs with Step 0, before any generation**
+
+```
+node qa-workflow/bin/qa-cli.js branch-check "<storyDir>" <TICKET>
+```
+Asserts **both** repos — the companion (`D:\breadfast-qa`) and the Java framework (resolved via
+`automation/config/framework.js`) — are on this story's branch
+`<year>/sprintQ<n>.<n>/<ticket>-<slug>`. Exit 1 otherwise. If it fails, create the branch in **each**
+repo before continuing.
+
+*Why this is a gate and not a note (added 2026-07-29):* the framework's git hooks validate the branch
+**name on push only**, so they cannot catch the failure that actually happened on **B10-56717** — no
+story branch was ever created, both repos stayed on the **previous** story's branch
+(`…/B10-56652-…`), no automation was generated into the framework at all, and the run still reported
+every quality gate met. One second at Step 0 replaces that.
+
 ## Phase A — Pre-Development baseline (Workflow 1)
 
 Execute [`qa-shift-left.md`](qa-shift-left.md) **Steps 0–5 exactly as written**, in order:
 
 | Step | Skill (runsAs) | Artifact key |
 |---|---|---|
-| 0 · Initialize (`qa-cli.js init`) | — | — |
+| 0 · Initialize (`qa-cli.js init`) **+ story-branch gate (below)** | — | — |
 | 1 · Story Analysis | `story-analysis` (subagent) | `requirements` |
 | 2 · Figma Analysis | `figma-analysis` (subagent) | `figma-analysis` |
 | 3 · Clarification ⟵ **GATE, may STOP** | `grill-me` (inline, interactive) | `clarifications` |
@@ -110,6 +138,7 @@ as written** — skipping only its Step 0 (satisfied by Step 6 above):
 | 2 | `test-design` Phase B (subagent) | `testcases` |
 | 3 | `browserstack-mgmt` (inline) | `browserstack-import` |
 | 4 | `automation-gen` (subagent) | `automation` |
+| 4b | `framework-conformance` (subagent) — gate, runs before 4 is recorded | — (`automation/conformance-review.md`) |
 | 5 | Execution — 4 combos (iOS/Android × en/US + ar/EG) | `execution` |
 | 6 | `visual-testing` (subagent) | `visual-findings` |
 | 7 | `defect-reporting` (inline) | `defects` |
@@ -135,7 +164,20 @@ session:
 There is no `qa-full`-only state, so nothing is stranded by resuming through a different entrypoint.
 
 ## Completion
-- `node qa-workflow/bin/qa-cli.js show "<storyDir>"` — every produced artifact `complete`, state validates.
+- ```
+  node qa-workflow/bin/qa-cli.js complete-check "<storyDir>"
+  ```
+  **Exits 1** while any of the twelve required artifacts is missing or not `complete` and has no recorded
+  operator deferral. **This is the completion gate — `show` is not**, because `show` prints state and
+  always exits 0, which is how a `partial` **automation** artifact sat beside eleven `complete` ones on
+  B10-56717 and never contradicted the QA summary. Run `show` for detail, `complete-check` to pass.
+- A phase may only be skipped with an **operator-approved, recorded** deferral:
+  ```
+  node qa-workflow/bin/qa-cli.js defer "<storyDir>" automation --by "<operator>" --reason "<why>"
+  ```
+  Recording `execution` is **blocked** while `automation` is missing or `partial` and no such deferral
+  exists (`PHASE_DEPS` in `qa-cli.js`). Deferral is a decision with a name attached, never a
+  self-exemption.
 - Verify the **quality gates** in `CLAUDE.md` §5 and the six phase gates in `docs/ai/QA_PROCESS.md`.
 - Report: baseline summary + QA Summary + defects filed + coverage/risks + recommendation.
 

@@ -1,106 +1,128 @@
-# B10-56750 — Automation (Playwright, web / Card Admin Panel)
+# B10-56750 — Automation (Java + Selenium, Breadfast Java framework)
 
-Automates the **Add Section to All Perk Types** story: the required Section
-dropdown (shared surface with B10-56729) and the brand-new **"Add Section"**
-inline-creation modal. Specs mirror the approved BrowserStack test cases 1:1
-and cover AC-01 through AC-17 (14 ACs + 6 risk-driven, non-AC cases).
+Automates the **Add Section to All Perk Types** story: the required Section dropdown
+(shared surface with B10-56729) and the **"Add section"** inline-creation modal.
+**One `@Test` per approved BrowserStack case, 1:1** (27 automated + 1 declared
+not-automated), with `@TmsLink("TC-xxxxx")` bindings and `description` = the exact
+BrowserStack title.
+
+> **Migrated 2026-07-27** from the validated Playwright suite (HLS v2, 2026-07-26) to
+> **Java + Selenium inside the Breadfast Java framework**, per the new
+> [automation-generation contract](../../docs/ai/automation/automation-generation.md).
+> The Playwright specs are archived (selector provenance + port reference) in
+> [`_archive_playwright_hls_v2/`](./_archive_playwright_hls_v2/); the v1 suite remains in
+> [`_archive_hls_v1/`](./_archive_hls_v1/). **No new Playwright automation** for this story.
 
 ## Where things live
-- **Specs + self-contained config:** `automation/tests/*.spec.js` + `automation/playwright.config.js`
-  (this folder), matching the B10-56757 "each story owns its architecture" pattern.
-- **Shared page object:** reuses & extends `D:\breadfast-qa\automation\pages\PerksPage.js`
-  (new **"B10-56750"** Add Section modal method group + a `skipSection` option
-  added to B10-56729's `fillGeneralCashbackMandatory`) — no parallel page
-  object was created (reuse-before-build). The Section dropdown ITSELF
-  (`mat-select[formcontrolname="section_id"]`) is the exact same control
-  B10-56729 already selectored — not re-selectored here.
-- **Runnable mirror:** `PerksPage.js` is mirrored byte-for-byte to
-  `D:\Playwright\b55168_pom\pages\PerksPage.js`.
+
+| What | Where |
+|---|---|
+| Story test class (27 tests) | `<framework>/src/test/java/cardService/adminPanel/B10_56750_AddSectionToPerksTests.java` |
+| Page object (new) | `<framework>/src/main/java/modals/cardsAdminPanel/PerksPage.java` |
+| Story suite XML | `<framework>/b10-56750-tests.xml` |
+| Image assets (perk-save case) | `<framework>/resources/images/perks/` — referenced via the `perkCoverImagePath` / `perkLogoImagePath` config keys, never hardcoded |
+| Framework branch | **`2026/sprintQ3.3/B10-56750-add-section-to-all-perk-types`** (the convention the git hooks enforce; never on main) — single commit `75795e581` |
+
+**Verification is UI-only** — no API client is used. The perks table's Category column is populated
+from the perk's Section, which is the UI evidence for the perk-save and backfill cases. See
+[`framework-reference.md`](./framework-reference.md), which also holds the reuse map and migration notes.
+
+`<framework>` = the Breadfast Java framework — default `D:\projects`, resolved via
+`QA_FRAMEWORK_PATH` → [`automation/config/framework.js`](../../automation/config/framework.js).
 
 ## How to run
+
 ```bash
-cd D:\breadfast-qa\B10-56750\automation
-npx playwright test                                 # whole suite (20 tests)
-npx playwright test tests/add_section_dropdown.spec.js      # AC-01–AC-04
-npx playwright test tests/add_section_modal.spec.js         # AC-05–AC-10, TC19
-npx playwright test tests/add_section_cross_story.spec.js   # AC-11–AC-14, AC-17, localization, consistency, TC20 E2E
+cd D:\projects            # or your framework location
+git checkout 2026/sprintQ3.3/B10-56750-add-section-to-all-perk-types
+
+# whole story class (fresh Chrome per test; framework setup builds test data each test)
+mvn test -Dtest=B10_56750_AddSectionToPerksTests            # the pom ignores -DsuiteXmlFile
+
+# a single case
+mvn test -Dtest=B10_56750_AddSectionToPerksTests#verifySectionFieldDisplayedForDiscountCouponPerkType
+
+# by story group
+mvn test -Dgroups=B10-56750
 ```
-Login uses `ConfigReader.getAdminUserName()/getAdminPassword()` (admin panel
-`agent`) against `card-panel-testing.breadfast.tech`.
 
-### Destructive / gated tests
-| Env flag | Enables |
-|----------|---------|
-| `RUN_PERK_CREATE=1` | actually save a perk in the AC-11/B10-56757 cross-story test and the TC20 E2E happy path |
+Login + URL come from `resources/environments/config_testing.properties` +
+`cardServiceConfigs_testing.properties` (`cardServicesAdminPanelBaseURL` =
+card-panel-testing, `getCardAdminPanelAdminUserName/Password`). Requires **Java 25**;
+Checkstyle runs at `validate` and fails the build on violations.
 
-All other tests create real **Sections** (there is no "Cancel"-only path for
-most of them — creating a Section IS the thing under test) but do NOT save a
-**perk**, so the perks list itself stays clean; the Section dropdown will
-accumulate `QA ...`-prefixed test sections across runs (harmless test data,
-consistent with how the sibling stories already leave test perks behind).
+**BrowserStack TMS result sync:** set `targetProjectId` + `targetRunId` in
+`browserStackConfigs.properties` and results post automatically per `@TmsLink`
+(`BrowserstackSyncListener` → `BaseTest` → `BrowserstackApiClient`). Leave them blank to
+run without posting.
 
-## Live-driven selector capture (2026-07-16, card-panel-testing)
-Every selector in the new "B10-56750" PerksPage block — the Section
-dropdown's `+ Add section` row, the Add Section modal, its fields/CTAs, the
-duplicate-name error, and the Merchant/Category pickers needed to exercise
-Section behavior across perk types — was captured by **actually driving the
-live admin panel** (Playwright MCP browser), not inferred from Figma or the
-BrowserStack CSV text. This surfaced several **confirmed live deviations**
-from the documented AC/CSV wording and the Figma export — see
-`ac-coverage-matrix.md` "Live findings" for the full list, including:
-- The Add Section modal's title/labels differ in casing/wording from the CSV
-  ("Add section" vs "Add Section"; "Section name EN/AR" vs "Section name
-  English"/"Section Name Arabic").
-- **AR IS required** live (resolves the AC-05 ambiguity flagged in
-  requirements-analysis.md Risk 2).
-- **No distinct "X" close icon exists** on the modal (only Cancel) — a live
-  deviation from TC11's wording.
-- The duplicate-name error is a **shared message**, not a red per-field
-  highlight — a live deviation from AC-09's wording.
-- The live-seeded Section data is only **Breadfast** + **General Purchases**
-  (not the four shown in the reused Figma export) — and "General Purchases"
-  (not "General") is confirmed as the real name, resolving the AC-14
-  Figma-vs-AC naming discrepancy in the AC text's favor.
-- No character cap was observed on the Section name field.
-- The "+ Add section" row is a **disabled `<mat-option>` wrapping an enabled
-  `<button>`** — clicking it requires `{ force: true }` (documented in
-  `PerksPage.openAddSectionModal()`).
-- The create-section endpoint is `POST /api/v1/web/card/perks/section/create`
-  (`{name_en, name_ar}` → 200, or 400 `{"message":"This section already
-  exists"}` on duplicate) — captured via direct network inspection and reused
-  for a genuine parallel-request concurrency test (TC19).
+## Test data notes (unchanged semantics from the JS suite)
+- There is **no delete-section flow** — every successful create permanently adds a
+  `QA ...`-stamped Section to the shared environment; creates are kept to the minimum the
+  ACs require. Duplicate-rule cases reuse an EXISTING section name so they create nothing.
+- The perk-save case (TC-53897) **creates a real perk** when the form completes; if the
+  save never fires it skips with the outstanding validation errors listed (never a
+  silent pass).
+- Assertions target the **spec**, not the shipped build, so tests covering an open defect are
+  **expected to fail** until it is fixed. The framework has no `SoftAssert`, so where one case
+  covers several open defects the deviations are collected and reported in a single assertion
+  message rather than stopping at the first.
 
-## Known follow-ups / honestly-unverified items
-- **AC-13 (mobile Section-tab ordering)** is only checked from the admin
-  dropdown/API, per the story's own scope — full "Breadfast first, rest
-  alphabetical" confirmation needs the Breadfast Pay **mobile app**, out of
-  this Playwright/web run's reach. The admin dropdown's own order was simply
-  recorded, not asserted against, since Figma already flags that the admin
-  dropdown's internal order is not guaranteed to be Breadfast-first.
-- **AC-14 (data-migration backfill)** is intentionally `test.skip` with the
-  reason recorded — it is a DB/API verification of existing perks' Section
-  assignment, not a Create-Perk UI flow, and no DB/API access was available in
-  this Playwright-only run.
-- **Full ar-EG locale-switch localization (non-AC risk case)** — no dedicated
-  Arabic/locale-switcher control was located on the Admin Portal in this
-  session; the test `test.skip`s with an annotation rather than fabricate a
-  pass. (The Section dropdown/modal DO already render bilingual EN/AR content
-  by design — e.g. "Breadfast - بريدفاست" — which was confirmed live; a
-  dedicated portal-wide ar-EG toggle specifically was not found.)
-- **A live-confirmed, only-partially-diagnosed intermittency** affecting
-  AC-08/AC-12: a just-created Section's visibility in the dropdown — whether
-  on a same-session "new Create Perk session" (AC-12) or immediately after
-  creation for the E2E happy path (AC-08 auto-select) — was observed to
-  succeed on some live runs and fail on others, with no page reload involved
-  either way. A "hard-coded backend pagination cap" hypothesis was tested
-  directly (a raw script call to `POST .../section/list` with no `limit` and
-  with an explicit `limit:100` both returned every Section that exists, ~40+
-  by the end of this session) and **ruled out** — the backend is not
-  truncating results. The client-side mechanism was not pinned down (the live
-  browser session used for capture became unavailable mid-investigation). This
-  is reported as an honest, reproducible finding, not smoothed over with a
-  longer timeout — see the dated comments in `add_section_cross_story.spec.js`.
+## BrowserStack test-case ↔ test mapping (1:1 traceability)
 
-## BrowserStack test-case ↔ spec mapping (1:1 traceability)
-Each `test(...)` title matches its BrowserStack case title verbatim.
-Full AC coverage tally + live-run results: [`ac-coverage-matrix.md`](./ac-coverage-matrix.md).
+Verify offline anytime: `node check_test_name_parity.js` (now scans the Java class's
+`@Test(description)` strings; ✓ 27/27 verbatim as of 2026-07-27).
+
+| BrowserStack ID | Automated by (method in `B10_56750_AddSectionToPerksTests`) |
+|---|---|
+| TC-53876..79 | `verifySectionFieldDisplayedFor<Type>PerkType` (×4) |
+| TC-53880..83 | `verifySectionRequiredBlocksSaveFor<Type>PerkType` (×4) |
+| TC-53884 | `verifySectionDropdownListsBilingualLabels` |
+| TC-53885 | `verifySectionDropdownShowsNamesOnlyAndNeverNumericIds` |
+| TC-53886 | — **not automated** (expectation retracted; B10-58196 withdrawn) |
+| TC-53887 | `verifyGeneralSpendSectionIsNamedGeneralPurchases` |
+| TC-53888 | `verifyAddSectionPinnedAtBottomForAllFourPerkTypes` |
+| TC-53889 | `verifyAddSectionModalStructureAndRequiredMarkers` |
+| TC-53890 | `verifyArabicSectionNameIsEnforcedAsRequired` |
+| TC-53891 | `verifyAddSectionModalCtasAndThatCancelSavesNothing` |
+| TC-53892 | `verifyAddSectionInFlightStateAndNoDoubleCreation` |
+| TC-53893 | `verifySuccessfulSectionCreationClosesModalAndAutoSelects` |
+| TC-53894 | `verifyDuplicateSectionNameShowsInlineErrorAndPreservesValues` |
+| TC-53895 | `verifyDuplicateSectionMatchingRule` |
+| TC-53896 | `verifyDismissingAddSectionModalClearsAllInputs` |
+| TC-53897 | `verifyPerkIsSavedWithExactlyOneSectionAttached` |
+| TC-53898 | `verifyNewSectionIsAvailableInABrandNewSession` |
+| TC-53899 | `verifySectionOrderingBreadfastFirstThenAlphabetical` *(soft-fails: B10-58192)* |
+| TC-53900 | `verifyExistingPerksAreBackfilledWithTheirSections` |
+| TC-53901 | `verifySectionNamesAreCappedAtFiftyCharacters` |
+| TC-53902 | `verifyCategoryDropdownRemainsIntactAndNeverCrossesWithSection` |
+| TC-53903 | `verifySectionCreatedFromOnePerkTypeIsSelectableOnTheOthers` |
+
+## Open bug ↔ test coverage (story subtasks)
+
+| Story bug subtask | Covered by | State |
+|---|---|---|
+| No X close icon to dismiss the modal | `verifyDismissingAddSectionModalClearsAllInputs` | fails correctly. **Live DOM correction:** the two close icons DO exist but carry `close-icon--hidden` (`visibility:hidden`), so the fix is CSS, not missing markup |
+| Section list not alphabetical after Breadfast | `verifySectionOrderingBreadfastFirstThenAlphabetical` | fails correctly |
+| Duplicate name: no red highlight, `aria-invalid="false"` | `verifyDuplicateSectionNameShowsInlineErrorAndPreservesValues` | fails correctly |
+| No required marker / `aria-required="false"` | `verifyAddSectionModalStructureAndRequiredMarkers` | fails correctly (collected with the placeholder deviation) |
+| Labels inside the input box; placeholders are Perk-subheader examples | same test | placeholder half covered (EN is `e.g Ready to Eat`, AR is empty). **Label position is CSS — belongs to visual testing, not asserted here** |
+| Seeded Sections missing / list contains test data (**Deferred**) | TC-53886 | not automated — expectation retracted |
+| Success toast renders top-right instead of inline (**Open**) | — | **not covered**; needs a geometry assertion once the toast DOM is captured |
+
+Also reported by the suite though not yet a subtask: after a successful create the new Section is
+**not auto-selected** (AC-08) — reproduced on every run, matching the intermittency the story
+recorded.
+
+## Execution results
+
+| Run | Result | Notes |
+|---|---|---|
+| 1 | 18/27 | 5 test bugs found (SPA routing, Properties backslash escaping, stale element, native-select filter, dropdown race) |
+| 2 | 21/27 | those 5 fixed |
+| 3 | 22/27 | locators hardened live; the close-icon false pass became a correct failure |
+| 4 | 18/27 | regression caused by over-tuning the lazy-load scroll loop — reverted |
+
+Steady state is **run 3's configuration plus the post-dialog reload fix**. A clean confirming run is
+still outstanding: the framework tree is currently being edited by another session (B10-57393), so a
+run there would not be trustworthy.

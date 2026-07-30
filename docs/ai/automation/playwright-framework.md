@@ -1,6 +1,13 @@
-# Playwright POM Framework (`b55168_pom/`) — PRIMARY WEB-AUTOMATION REFERENCE
+# Playwright POM Framework (`b55168_pom/`) — LEGACY for new web generation
 
-> **`D:/Playwright/b55168_pom` is the primary reference for web/backend-JS automation structure.** Before adding any web Playwright test, page object, or helper, read this and **follow its POM implementation, folder organization, naming conventions, helper/utility patterns, fixture/config patterns, reporting implementation, and test-organization strategy.** Most building blocks already exist — reuse them (reuse-before-build, [coding-standards.md](coding-standards.md)). `D:/projects` (Java) stays the source of truth for mobile/Selenium + config; this is its sanctioned web counterpart (resolved 2026-06-22).
+> **Status change (operator decision 2026-07-27):** new web automation is generated as **Java + Selenium
+> inside the Java framework** — see [automation-generation.md](automation-generation.md) (canonical).
+> **Do not generate new Playwright automation unless the user explicitly requests it.** This supersedes
+> the 2026-06-22 "sanctioned web counterpart" resolution below for *new* generation only: this framework
+> and the existing story suites remain **maintained** (bug fixes, re-runs, extending an existing
+> Playwright suite when the user asks), and this doc stays their reference.
+
+> **`D:/Playwright/b55168_pom` is the primary reference for web/backend-JS automation structure.** Before touching any web Playwright test, page object, or helper, read this and **follow its POM implementation, folder organization, naming conventions, helper/utility patterns, fixture/config patterns, reporting implementation, and test-organization strategy.** Most building blocks already exist — reuse them (reuse-before-build, [coding-standards.md](coding-standards.md)). `D:/projects` (Java) stays the source of truth for mobile/Selenium + config.
 
 ## Overview
 
@@ -121,3 +128,80 @@ This Playwright framework was built as a companion/extension to an existing Java
 - It **reuses** the Java framework's `config_testing.properties` for DB/SSH secrets (via `PropertiesReader`) rather than duplicating them.
 - `DbHelper` deliberately mirrors the Java `DatabaseConnectionFactory` (JSch `-L` forward → `ssh2 forwardOut`).
 - Several `PerksPage` selectors (Merchant cashback form) are **ported from** the Java `MerchantPerkCreatePage.java` / `PerksPage.java`.
+
+---
+
+## Authoring traps in the Card-Panel admin UI (Angular Material) — read before writing specs
+
+Learned the hard way on **B10-56750**, where **6 of 11** first-run failures were bugs in the *tests*, not
+the product. Each one below looked exactly like a product defect. Check these before writing up any
+failure as a bug.
+
+### 1. The Create-Perk form is PROGRESSIVE
+Landing on `#/perks/create` renders **only** `Perk type`. Every other Basic-details control — including
+`Section (Mobile display)` — is created **after** a perk type is selected. A probe that asserts a field
+"exists on the form" without selecting a type reports `count: 0` and reads exactly like *"the field is
+missing"*. **Always select the perk type first.**
+
+### 2. Two stacked `cdk` overlays — the panel survives the dialog
+The `mat-select` panel stays **open behind** a dialog opened from inside it, and dismissing the dialog
+closes only the dialog. The orphaned `.cdk-overlay-backdrop` then intercepts pointer events, so the next
+click reports *"element is visible, enabled and stable"* and still times out after 30 s. Tear overlays
+down between interactions:
+```js
+async function settleOverlays(page) {
+  for (let i = 0; i < 4; i += 1) {
+    if (!(await page.locator('.cdk-overlay-backdrop').count().catch(() => 0))) break;
+    await page.keyboard.press('Escape').catch(() => {});
+    await page.waitForTimeout(350);
+  }
+}
+```
+
+### 3. Validation renders through TWO DISJOINT channels
+| State | Element | The other element's count |
+|---|---|---|
+| required / max-length (per field) | `<mat-error>` | `span.text-danger` = **0** |
+| form-level error (e.g. duplicate name) | `<span class="text-danger d-block">` | `mat-error` = **0** |
+
+Reading only one channel returns `''`, which in an assertion is **indistinguishable from "no validation
+fired"** — this produced two false defects. `PerksPage` now exposes `getAddSectionFieldErrorTexts()`
+(mat-error), `getAddSectionErrorText()` (form-level) and `getAnyAddSectionErrorText()`.
+
+### 4. Transient states need an armed wait, never a fixed sleep
+Toasts auto-dismiss and in-flight windows are ~400 ms. **Arm the wait before the action, await it after:**
+```js
+const seen = page.locator('snack-bar-container').filter({ hasText: /…/ }).first()
+  .waitFor({ state: 'visible', timeout: 20_000 }).then(() => true).catch(() => false);
+await doTheThing();
+const ok = await seen;
+```
+A wait *started after* the action misses it; a short wait *started before* expires before it renders.
+Sample in-flight button state in a poll loop, not once. And beware the viewport: a `fullPage:false`
+screenshot taken while scrolled away from the header will "prove" a toast is absent when it fired.
+
+### 5. Floating labels double as placeholders
+Material fields here use `mat-form-field-can-float`. While unfocused and empty the **label occupies the
+placeholder slot** (`mat-form-field-hide-placeholder`) and `input.getAttribute('placeholder')` returns
+**`null`**. Reading a placeholder without focusing the field yields a false *"placeholder is missing"*.
+Focus first, or read both states and report the difference.
+
+### 6. Never re-run the login helper on an authenticated page
+Navigating to `#/pages/login` with a live session redirects to `#/dashboard`, so the username field never
+appears and `fillLoginFormAndSubmit` times out waiting for it. Reuse the session (re-navigate to the
+form) instead of logging in twice on the same `page`.
+
+### 7. Perk-image assets: use the exact-spec helper
+`fillMandatoryFields()` still points at old composite images that (a) are **absent** from the shared
+`automation/perks photos/` folder (`ENOENT`) and (b) are rejected as *"Image resolution is invalid"* by
+the redesigned form anyway. Use **`fillGeneralCashbackMandatory()`**, which uploads the exact-spec
+`exact_1080x1080.jpg` / `exact_240x180.jpg` assets and fills every currently-required field.
+
+### 8. Every test logging in separately is a flake source
+A full 29-test pass performs 30+ logins in ~11 min and produced a login timeout. Prefer one
+authentication reused via `storageState` (project dependency or `globalSetup`).
+
+### Rule that ties these together
+> **Reconcile every automated failure against hand-captured evidence before writing it up as a defect.**
+> In this UI a failing assertion is as likely to be a locator/sequencing bug as a product bug. Skipping
+> that step would have reported 11 defects instead of the 5 that were real.
