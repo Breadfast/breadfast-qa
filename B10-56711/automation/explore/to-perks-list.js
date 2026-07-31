@@ -98,9 +98,22 @@ async function run(platform, locale, phone) {
   let all = await rows(sid);
   let seeAll = perksSeeAll(all);
   for (let i = 0; !seeAll && i < 6; i++) {
-    await bsReq('POST', `/wd/hub/session/${sid}/appium/settings`,
-      { settings: { allowInvisibleElements: true, ignoreUnimportantViews: false } }).catch(() => {});
-    await sleep(2500);
+    // The Pay tab intermittently fails to load and renders "Something went wrong. / Try reloading
+    // the page or restarting the app." with a "Try again" button. Observed 2026-07-30 on Android;
+    // other runs of the identical flow reached Pay home normally. Recover by tapping "Try again"
+    // rather than mistaking an app error state for missing Compose nodes.
+    const errBtn = all.find((r) => /^(Try again|إعادة المحاولة|حاول مرة أخرى)$/i.test((r.text || r.label || r.name || r.desc || '').trim()));
+    const errText = all.some((r) => /Something went wrong|حدث خطأ/i.test((r.text || r.label || r.name || r.desc || '')));
+    if (errBtn) {
+      const c = centre(errBtn.bounds);
+      await tap(sid, c.x, c.y);
+      log(`  Pay tab showed an error state${errText ? ' ("Something went wrong")' : ''} — tapped "Try again"`);
+      await sleep(9000);
+    } else {
+      await bsReq('POST', `/wd/hub/session/${sid}/appium/settings`,
+        { settings: { allowInvisibleElements: true, ignoreUnimportantViews: false } }).catch(() => {});
+      await sleep(2500);
+    }
     all = await rows(sid);
     seeAll = perksSeeAll(all);
     log(`  retry ${i + 1}: ${all.length} labelled nodes, perks "See all" ${seeAll ? 'FOUND' : 'not yet'}`);
