@@ -29,30 +29,34 @@ async function tryFind(sid, using, value) {
   return id ? 'FOUND' : 'no';
 }
 
+const PLATFORM = process.argv[2] || 'android';
+
 (async () => {
   await R.loadLivePerks();
   const perkId = R.pickFixtures().find((i) => i.startsWith('DC_')) || 'DC_17';
-  const { sid } = await toPerksList.run('android', 'en', PHONE);
+  const { sid } = await toPerksList.run(PLATFORM, 'en', PHONE);
 
   const find = async () => (await rows(sid)).find((r) => (r.name || r.id || r.desc || '').includes(`perk-card-${perkId}`));
   let card = await find();
-  for (let i = 0; !card && i < 12; i++) { await D.swipeUp(sid, 'android'); card = await find(); }
+  for (let i = 0; !card && i < 12; i++) { await D.swipeUp(sid, PLATFORM); card = await find(); }
   let c = centre(card.bounds);
-  for (let i = 0; i < 40 && (c.y < 300 || c.y > 2000); i++) { await D.swipeUp(sid, 'android'); const f = await find(); if (!f) break; card = f; c = centre(card.bounds); }
+  for (let i = 0; i < 40 && (c.y < 300 || c.y > 2000); i++) { await D.swipeUp(sid, PLATFORM); const f = await find(); if (!f) break; card = f; c = centre(card.bounds); }
   await tap(sid, c.x, c.y);
   await sleep(6500);
-  await bsReq('POST', `/wd/hub/session/${sid}/appium/settings`, { settings: { allowInvisibleElements: true, ignoreUnimportantViews: false } }).catch(() => {});
+  if (PLATFORM === 'android') await bsReq('POST', `/wd/hub/session/${sid}/appium/settings`, { settings: { allowInvisibleElements: true, ignoreUnimportantViews: false } }).catch(() => {});
   await sleep(1500);
 
   const src = await getSource(sid);
   console.log(`\n[probe] on ${perkId} details. Legend: inSource = the id appears in the page source.\n`);
-  console.log('id                          inSource  by:id   by:accessibility id  xpath@resource-id  xpath@content-desc');
+  console.log(PLATFORM === 'ios'
+    ? 'id                          inSource  by:id   by:accessibility id  xpath@name         xpath@label'
+    : 'id                          inSource  by:id   by:accessibility id  xpath@resource-id  xpath@content-desc');
   for (const id of IDS) {
     const inSource = src.includes(`"${id}"`) ? 'yes' : 'NO ';
     const byId = await tryFind(sid, 'id', id);
     const byAcc = await tryFind(sid, 'accessibility id', id);
-    const byXpathRes = await tryFind(sid, 'xpath', `//*[@resource-id='${id}']`);
-    const byXpathDesc = await tryFind(sid, 'xpath', `//*[@content-desc='${id}']`);
+    const byXpathRes = await tryFind(sid, 'xpath', PLATFORM === 'ios' ? `//*[@name='${id}']` : `//*[@resource-id='${id}']`);
+    const byXpathDesc = await tryFind(sid, 'xpath', PLATFORM === 'ios' ? `//*[@label='${id}']` : `//*[@content-desc='${id}']`);
     console.log(`${id.padEnd(28)}${inSource.padEnd(10)}${byId.padEnd(8)}${byAcc.padEnd(21)}${byXpathRes.padEnd(19)}${byXpathDesc}`);
   }
   await bsReq('DELETE', `/wd/hub/session/${sid}`);

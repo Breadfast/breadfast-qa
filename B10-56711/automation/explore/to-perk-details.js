@@ -44,8 +44,11 @@ const CARD_LABELS = [
   { key: 'cashback', order: 4, en: /^Cashback processing$/i, ar: /^الكاش باك$/ },
   { key: 'expiry', order: 5, en: /^Expiry$/i, ar: /^الصلاحية$/ },
 ];
-const SEE_MORE = /^(See more|اعرض المزيد|أعرض المزيد)$/;
-const SEE_LESS = /^(See less|اعرض أقل|عرض أقل)$/;
+// AR strings read off the LIVE build, not guessed: the collapse toggle is "اعرض اقل" with a BARE alef,
+// not "اعرض أقل" with a hamza. The hamza variant matched nothing, so the toggle was both reported
+// MISSING and counted as a 17th branch line — a false AC12 failure in Arabic.
+const SEE_MORE = /^(See more|اعرض المزيد|أعرض المزيد|عرض المزيد)$/;
+const SEE_LESS = /^(See less|اعرض اقل|اعرض أقل|عرض اقل|عرض أقل)$/;
 const COPIED = /^(Copied!?|تم النسخ!?)$/;
 const VIEW_CTA = /^(View|عرض)$/;
 const CLOSE_CTA = /^(Close|إغلاق|اغلاق)$/;

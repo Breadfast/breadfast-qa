@@ -92,6 +92,14 @@ function pickFixtures() {
   return [...new Set(Object.values(chosen).filter(Boolean))];
 }
 
+/**
+ * Usable vertical band of the viewport, per platform. iOS reports LOGICAL points (375x812) while
+ * Android reports PIXELS (1080x2340) — using the Android band on iOS would treat every on-screen
+ * element as off-screen and scroll forever.
+ */
+const VIEW = { android: { top: 300, bottom: 2000 }, ios: { top: 120, bottom: 700 } };
+const band = (platform) => VIEW[platform] || VIEW.android;
+
 const yOf = (b) => { const m = /\[(\d+),(\d+)\]\[(\d+),(\d+)\]/.exec(b || ''); if (m) return Number(m[2]); const p = String(b || '').split(',').map(Number); return p.length === 4 ? p[1] : 0; };
 
 async function shot(sid, name) { fs.mkdirSync(SHOTS, { recursive: true }); const f = path.join(SHOTS, `${name}.png`); await screenshot(sid, f); return path.basename(f); }
@@ -173,14 +181,15 @@ async function clickBranchesToggle(sid, platform) {
     const [x1, y1, x2, y2] = m.slice(1).map(Number); if (y2 <= y1 || x2 <= x1) return null;
     return { cx: Math.round((x1 + x2) / 2), cy: Math.round((y1 + y2) / 2) }; };
   const node = async () => (await rows(sid)).find((r) => D.SEE_MORE.test(txt(r)) || D.SEE_LESS.test(txt(r)));
+  const B = band(platform);
   let n = await node();
   let r = n && sane(n.bounds);
-  for (let i = 0; i < 8 && !(r && r.cy > 250 && r.cy < 2050); i++) {
+  for (let i = 0; i < 8 && !(r && r.cy > B.top && r.cy < B.bottom); i++) {
     await D.swipeUp(sid, platform);
     n = await node();
     r = n && sane(n.bounds);
   }
-  if (!(r && r.cy > 250 && r.cy < 2050)) return false;
+  if (!(r && r.cy > B.top && r.cy < B.bottom)) return false;
   if (await clickById(sid, 'branches-toggle-btn')) return true;
   await tap(sid, r.cx, r.cy);
   return true;
@@ -197,15 +206,16 @@ async function openPerk(sid, platform, perkId) {
   // Bounds are content-space, so a card can sit ABOVE the viewport (negative y) once the list has been
   // scrolled past it — which is what stranded GC_56/DC_8/MC_67 on the first run, because the search only
   // ever swiped one way. Scroll toward the target in whichever direction it actually lies.
+  const B = band(platform);
   let c = centre(card.bounds);
-  for (let i = 0; i < 40 && (c.y < 300 || c.y > 2000); i++) {
-    if (c.y < 300) await swipeDown(sid, platform);
+  for (let i = 0; i < 40 && (c.y < B.top || c.y > B.bottom); i++) {
+    if (c.y < B.top) await swipeDown(sid, platform);
     else await D.swipeUp(sid, platform);
     const fresh = await find();
     if (!fresh) break;
     card = fresh; c = centre(card.bounds);
   }
-  if (c.y < 300 || c.y > 2000) throw new Error(`perk-card-${perkId} never reached the viewport (y=${c.y})`);
+  if (c.y < B.top || c.y > B.bottom) throw new Error(`perk-card-${perkId} never reached the viewport (y=${c.y}, band ${B.top}-${B.bottom})`);
   await tap(sid, c.x, c.y);
   await sleep(6500);
   await settle(sid, platform);
