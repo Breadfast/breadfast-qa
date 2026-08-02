@@ -2,7 +2,14 @@
 
 **Gate:** Phase 4b ([`framework-conformance`](../../qa-workflow/skills/framework-conformance/SKILL.md)) ·
 run 2026-07-31 · framework `D:\projects` @ `1ea0895c3`+
-**Verdict:** ✅ **PASS** — after four self-caught corrections (§3). `mvn -o test-compile` → **BUILD SUCCESS**.
+**Verdict:** ✅ **PASS** — after **five** corrections (§3). `mvn -o test-compile` → **BUILD SUCCESS**.
+
+> **This review initially passed a check it should have failed.** C5 below — every Android locator using a
+> strategy that resolves nothing on a Compose surface — was signed off as "locators verified against the
+> running app" because the ids appeared in a page-source dump. They did; the driver still could not resolve
+> them. The lesson is specific and worth keeping: **verifying a locator means issuing a find and getting an
+> element back, not finding the string in an XML dump.** It was caught only because a *product* result
+> (AC12 "does not expand") looked wrong enough to probe.
 
 ## 1. Assets produced
 
@@ -46,7 +53,7 @@ Per [[reuse-existing-flows]] these are **composed inline**, never wrapped in a n
 ### C. Locators
 | Check | Result |
 |---|---|
-| Verified against the running app | ✅ **Android** — every id read off the live build (`evidence/android-en-10-perk-details.xml`): `perk-details-screen`, `perk-details-back-btn`, `coupon-code-card`, `coupon-code-copy-btn`, `perk-details-usage-card`, `branches-card`, `branches-toggle-btn`, `perk-details-cashback-card`, `perk-details-expiry-card` |
+| Verified against the running app | ✅ **Android, after correction C5.** Every id was read off the live build (`evidence/android-en-10-perk-details.xml`) — but reading an id out of a page-source dump is **not** the same as the driver being able to resolve it, and this check originally passed on that weaker evidence. Re-tested by actually issuing find requests (`explore/probe-locators.js`, 2026-08-02): all nine ids are in the source, `by:id` resolves **0/9**, `by:accessibility id` resolves **0/9**, `xpath //*[@resource-id='…']` resolves **9/9**. |
 | | ⚠ **iOS — MIRRORED, NOT OBSERVED.** The iOS surface could not be captured because the card backend began returning `502`. Documented in the class header **and** in the suite XML. **A failure in the iOS class must be re-verified against a live iOS session before it is called a product defect.** |
 | Preference order (app contract before text) | ✅ ids everywhere structural; text only for the localisable controls that carry no id (`See more`/`See less`, `View`, `Close`, `Copied!`), each with EN + AR constants |
 | Match count checked | ✅ `findElements(...).isEmpty()` / `.get(0)` on single-instance controls; no unpinned multi-match |
@@ -84,6 +91,7 @@ produced **false results** rather than compile errors.
 | **C2** | **Vacuous pass.** In the AC5 order tests `expected` is derived from `actual` via `retainAll`, so an **empty** `actual` satisfied `assertEquals(actual, expected)` | If the details screen rendered **no cards at all** — precisely the failure mode seen during exploration when a tap silently missed — the AC5 test would have reported **PASS**. This is the single most dangerous defect I introduced. | Assert **completeness first**: all five cards for a fully populated perk; ≥2 surviving cards in the hidden-card case |
 | **C3** | AC7's wait was a hand-rolled `while` loop with `Thread.sleep(250)` | Violates "no new waiting abstraction"; also slower and less accurate than the inherited wait | Now `wait.until(driver -> !isCopiedConfirmationDisplayed())`, still returning elapsed ms so a timing miss reads as a measurement rather than a functional failure |
 | **C4** | 17 assertions per class carried **no diagnostic message** (the inherited post-login `isPageDisplayed()` check) | A bare failure there says nothing about which of login / OTP / passcode broke | Message naming the account and the consequence |
+| **C5** | **Every Android locator used `@FindBy(id = …)` / `By.id(…)`, which resolves NOTHING on this surface.** Compose exposes a `testTag` as a **bare** `resource-id` with no `package:id/` prefix, and UiAutomator2's `id` strategy does not index it. | **The entire Android suite would have failed at runtime with "no such element" — 17 tests, none of them reaching an assertion.** Worse, the same mistake in the JS runner made `clickById` fall through to a stale-bounds coordinate tap, which reported **AC12 and AC8 as FAILURES while the product was working correctly**. Two false defects, from one bad locator strategy. | All `@FindBy(id=…)`/`By.id(…)` → `//*[@resource-id='…']` XPath; same fix in the runner. Verified by re-running: AC12 then expanded 3 → 16 lines with the toggle flipping to "See less". |
 
 ## 4. Deviations accepted, with reasons
 
@@ -98,6 +106,8 @@ produced **false results** rather than compile errors.
 
 - **No test has been executed.** This gate is static: compile, shape, locator provenance, assertion
   quality. Execution is blocked by the `502` card backend and is recorded as pending, **not** as passed.
-- iOS locator resolution (D1).
+- iOS locator resolution (D1) — and after C5 this is a sharper risk than it first looked: if the iOS build
+  exposes its test ids the way Android does, `//*[@name='…']` may resolve nothing there either. The iOS
+  page object must be probed the same way (`probe-locators.js`) before its results mean anything.
 - Whether the Android `swipeGesture` percentages scroll the details body at a sensible rate — first real
   run will show it.

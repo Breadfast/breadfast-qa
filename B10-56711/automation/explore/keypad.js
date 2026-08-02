@@ -70,7 +70,13 @@ function coordMap(platform, locale) {
  * @param {{locale?:string, pauseMs?:number}} opts
  */
 async function enter(sid, platform, digits, { locale = 'en', pauseMs = 450 } = {}) {
-  let map = platform === 'ios' ? await resolveFromTree(sid) : coordMap(platform, locale);
+  // Prefer the LIVE TREE on BOTH platforms. The Android Pay surface is usually unlabelled, which is why
+  // this used fixed coordinates — but in ar/EG the passcode keypad DOES expose its keys (as Arabic-Indic
+  // glyphs, mixed Arabic-Indic and Persian forms: ٤٥٦ alongside ۰۱۲۳۷۸۹). Resolving from the tree is both
+  // locale-proof and mirror-proof; the hardcoded ANDROID_RTL map assumed a column flip that did not match
+  // this build, so the Arabic run entered the wrong passcode and never left the gate.
+  let map = await resolveFromTree(sid);
+  if (!map && platform !== 'ios') map = coordMap(platform, locale);
   if (!map) {
     // iOS tree not (yet) labelled — fall back to the measured LTR/RTL iOS geometry.
     const cols = locale === 'ar' ? [295, 195, 95] : [95, 195, 295];
