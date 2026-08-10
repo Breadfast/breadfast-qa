@@ -45,7 +45,7 @@ executes each of the 27 lifecycle nodes as an **independent headless `claude -p`
 invocation** (`packages/engine/src/claude-runner.ts`). Each of those invocations gets its own fresh MCP
 client connection, and therefore its own fresh Playwright-driven browser — there is no continuity
 between them unless something explicitly persists and restores state, which is exactly what
-`appSessionCredsStep()`/`appSessionSaveStep()` (`qa-platform/apps/worker/src/nodes.ts`) do.
+`appSessionCredsStep()`/`appSessionSaveStep()` (the deleted platform worker (`apps/worker/src/nodes.ts`)) do.
 
 Claude Code, running a story's QA Process **as one continuous session/task**, does not have that
 problem by construction: an MCP server (Playwright MCP) holds its browser open for the lifetime of the
@@ -71,7 +71,7 @@ a different story.
   task. Verify this against any session/context-length practicalities before treating it as free —
   the requirement is architectural intent, not a claim that no engineering is needed at scale.
 - **Crash/resume.** The QA Platform's Run Lifecycle Management (pause/resume/restart, see
-  `qa-platform/ARCHITECTURE.md`) exists because a headless worker run can be paused for hours/days and
+  [`legacy-qa-platform/qa-platform-ARCHITECTURE.md`](architecture/legacy-qa-platform/qa-platform-ARCHITECTURE.md)) exists because a headless worker run can be paused for hours/days and
   resumed on a different machine. A future Claude Code execution engine that wants equivalent
   resilience (resume a story's QA Process after an interruption) will need to decide how — or
   whether — a persistent browser session survives that, since a genuinely continuous browser process
@@ -82,7 +82,7 @@ a different story.
 
 - This is **not** a requirement to make the QA Platform's worker spawn a standalone long-lived
   Playwright MCP server. That was considered and explicitly rejected as over-engineering a platform
-  being moved away from — see the Tier 1/Tier 2 split in `qa-platform/ARCHITECTURE.md`'s Run Lifecycle
+  being moved away from — see the Tier 1/Tier 2 split in [`legacy-qa-platform/qa-platform-ARCHITECTURE.md`](architecture/legacy-qa-platform/qa-platform-ARCHITECTURE.md)'s Run Lifecycle
   Management section.
 - This is **not** a new methodology requirement. `QA_PROCESS.md`'s phases, artifacts, and gates are
   unchanged; this doc only constrains how the *execution environment* carries state between them.

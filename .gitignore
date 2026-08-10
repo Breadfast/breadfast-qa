@@ -36,11 +36,19 @@ playwright-report/
 /*.png
 /*.pdf
 
-# Per-story folders at the repo root (B10-<key>/): version-control the automation
-# test scripts + README only; ignore the heavy per-run artifacts (figma frames,
-# screenshots, evidence, analysis exports, CSVs, reports) so the repo stays lean.
-/B10-*/*
-!/B10-*/automation/
-!/B10-*/README.md
-/B10-*/automation/**/*.png
+# Per-story folders at the repo root (B10-<key>/) are NEVER committed (changed 2026-08-10).
+# This repo carries the WORKFLOW; a story run's output is local to whoever ran it.
+# Previously only the per-run artifacts were ignored and B10-*/automation/ was tracked — that
+# let 9 copies of upload_browserstack.js and 7 of gen_browserstack_csv.js accumulate, and made
+# STEP 7 depend on files that vanish whenever a story folder is cleaned up. The reusable parts
+# now live once in automation/browserstack/; anything story-specific stays out of git.
+/B10-*/
+/*-session.txt
+
+# Legacy execution engine — removed 2026-08-10 (zero runtime coupling; deferred since 2026-07-15).
+# The design docs still cited by live docs were kept at docs/ai/architecture/legacy-qa-platform/.
+/qa-platform/
+
+# Orphaned image fixtures — nothing references these; PerksPage uses "automation/perks photos/".
+/perks-images/
 /B10-*/automation/**/*.zip

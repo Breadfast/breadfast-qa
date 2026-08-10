@@ -1,5 +1,12 @@
 # Process Parity Audit — Claude Code (`qa-workflow/`) vs QA Platform (`qa-platform/`)
 
+> **HISTORICAL (2026-08-10).** The QA Platform was removed from this repo — it was a deferred
+> legacy engine with zero runtime coupling to the workflow. This audit is kept because its
+> *resolved decisions* are still in force in `CLAUDE.md` and `docs/ai/**`; the `qa-platform/**`
+> paths it cites no longer exist here. See
+> [architecture/legacy-qa-platform/](architecture/legacy-qa-platform/).
+
+
 **Date:** 2026-07-26 · **Trigger:** operator request to confirm every step, working method and
 upload/creation mechanism matches what the QA Platform did, and to surface mismatches for a decision.
 **Method:** read qa-platform's authoritative implementations — `packages/shared/src/prompts.ts`

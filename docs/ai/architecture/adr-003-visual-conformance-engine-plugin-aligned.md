@@ -4,7 +4,7 @@
 - **Date:** 2026-07-26
 - **Deciders:** QA Lead (Ahmed Essam) + Claude Code (Principal Architect review)
 - **Relationship to prior ADRs:**
-  - **Extends & re-homes** [ADR-002 Rev.2](../../../qa-platform/docs/design/adr-002-visual-testing-redesign-rev2.md) (the deterministic pyramid design) and [AIP-002](../../../qa-platform/docs/design/adr-002-implementation-plan.md) (its migration plan). ADR-002's **methodology is kept**; this ADR changes only *where the engine lives* and *how it is invoked*.
+  - **Extends & re-homes** [ADR-002 Rev.2](legacy-qa-platform/adr-002-visual-testing-redesign-rev2.md) (the deterministic pyramid design) and [AIP-002](legacy-qa-platform/adr-002-implementation-plan.md) (its migration plan). ADR-002's **methodology is kept**; this ADR changes only *where the engine lives* and *how it is invoked*.
   - **Continues** [ADR-001](./adr-001-qa-workflow-independent-plugin-aligned.md) (plugin-aligned QA workflow) — the visual engine becomes one plugin capability under the same primitives.
   - **Related:** [`QA_PROCESS.md` Phase 5](../QA_PROCESS.md), [`CLAUDE_CODE_OPERATOR.md`](../visual-testing/CLAUDE_CODE_OPERATOR.md), [`qa-artifact-contract.md`](./qa-artifact-contract.md), [`../../../CLAUDE.md`](../../../CLAUDE.md).
 - **Governing principles (inherited):** deterministic-first / AI-on-residual (ADR-001 §ADR-001 frugality); structural isomorphism + dependency inversion (ADR-001 §3); additive-only schema (ARCHITECTURE.md principle 10); single source of business truth (domains consumed, not re-encoded).
@@ -266,8 +266,8 @@ Migration mechanics reuse the checklist in [`qa-artifact-contract.md` §7](./qa-
 | Doc | Status after ADR-003 |
 |---|---|
 | [ADR-001](./adr-001-qa-workflow-independent-plugin-aligned.md) | **Unchanged.** ADR-003 continues its plugin alignment for the visual capability. |
-| [ADR-002 Rev.2](../../../qa-platform/docs/design/adr-002-visual-testing-redesign-rev2.md) | **Methodology kept; home changed.** The L1–L7 design, Screen Registry model, and AI-skip predicate stand; they relocate to the plugin and are reframed as Conformance-instance #1. (Recommend adding a status banner pointing here — a human edit, not made by this ADR.) |
-| [AIP-002](../../../qa-platform/docs/design/adr-002-implementation-plan.md) | **Valid; re-homed.** Its phases/Strangler-Fig discipline apply to the relocated engine. |
+| [ADR-002 Rev.2](legacy-qa-platform/adr-002-visual-testing-redesign-rev2.md) | **Methodology kept; home changed.** The L1–L7 design, Screen Registry model, and AI-skip predicate stand; they relocate to the plugin and are reframed as Conformance-instance #1. (Recommend adding a status banner pointing here — a human edit, not made by this ADR.) |
+| [AIP-002](legacy-qa-platform/adr-002-implementation-plan.md) | **Valid; re-homed.** Its phases/Strangler-Fig discipline apply to the relocated engine. |
 | [`QA_PROCESS.md` Phase 5](../QA_PROCESS.md) | **Unchanged & now honored in fact** (deterministic-first on the primary path). |
 
 ---

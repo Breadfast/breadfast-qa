@@ -22,7 +22,7 @@ automation/
 ## Rules
 - **Do NOT duplicate these classes into per-story folders.** A story's `automation/` holds only story-specific files (its `tests/` specs, generators, framework-reference.md, README) and reuses the page objects/helpers from here.
 - **Reuse before you build** — extend these shared page objects/helpers; never create a parallel implementation.
-- Primary framework reference + patterns: [framework-reference.md](../B10-56336/automation/framework-reference.md) and [docs/ai/automation/playwright-framework.md](../docs/ai/automation/playwright-framework.md).
+- Primary framework reference + patterns: [docs/ai/automation/playwright-framework.md](../docs/ai/automation/playwright-framework.md) and [coding-standards.md](../docs/ai/automation/coding-standards.md). (The old per-story `B10-56336/automation/framework-reference.md` link is gone — story folders are no longer committed.)
 - Source of truth for mobile/Selenium + config = `D:\projects` (Java, path configurable); web/backend JS = **this folder**, runnable in place.
 
 New shared page objects/helpers (reusable across stories) are added here; story-only specs stay under `<repo root>\<TICKET>\automation\tests\`.

@@ -348,7 +348,7 @@ This is the standing process — no extra instruction required:
 
 **Base:** `https://test-management.browserstack.com/api/v2` · **Auth:** Basic `username:access_key`
 (loader: `automation/config/credentials.js` → `browserstack.tmUsername()` / `tmApiToken()`).
-**Reference implementation:** [`B10-56750/automation/upload_browserstack.js`](../../B10-56750/automation/upload_browserstack.js)
+**Reference implementation:** [`automation/browserstack/upload_browserstack.js`](../../automation/browserstack/upload_browserstack.js) — shared, arg-driven (`--cases --project --folder`); promoted 2026-08-10 out of the story folders
 — verified end-to-end: 28 cases / 197 steps into folder `53074476`.
 
 Create cases **individually** (more reliable and more controllable than a CSV import):
@@ -551,5 +551,5 @@ over a loop, put the literal names in an array in loop order (`AC01_NAMES[i]`).
 2. `push_browserstack_results.js` — refuses to post at all if any case has neither a name-matched test
    nor a `MANUAL` entry, rather than reporting a partial or mismatched run.
 
-Reference implementation: `B10-56750/automation/` (`tests/*.spec.js`, `check_test_name_parity.js`,
+Reference implementation: [`automation/browserstack/`](../../automation/browserstack/) (`upload_browserstack.js`, `check_tmslink_parity.js`, the `*.template.js` story templates,
 `push_browserstack_results.js`, `create_browserstack_run.js`).
