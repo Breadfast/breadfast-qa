@@ -1,18 +1,27 @@
 ---
 name: qa-shift-left
 type: workflow
-version: 1.0
-description: Pre-Development QA (shift-left) — validate the story before implementation; produce reusable analysis artifacts.
-purpose: Produce the reusable baseline (requirements, figma-analysis, clarifications, impact, hls) and publish the HLS checklist to Jira.
+version: 2.0
+description: Pre-Development QA (shift-left) — validate the story before implementation and establish the complete QA coverage baseline.
+purpose: Produce the reusable baseline (requirements, figma-analysis, clarifications, impact, optional exploratory analysis, hls, testcases, testcase-review, browserstack-import) and publish the HLS checklist to Jira.
 inputs: { ticket: required, figmaUrl: optional-override, appUrl: optional }
 ---
 
 # Workflow 1 — Pre-Development (Shift-Left)
 
 **Executor:** Claude Code (agent-followed). **Methodology (source of truth):**
-[`../../docs/ai/QA_PROCESS.md`](../../docs/ai/QA_PROCESS.md) Phases 1–5-analysis · `CLAUDE.md` §2 STEP 1–5.
+[`../../docs/ai/QA_PROCESS.md`](../../docs/ai/QA_PROCESS.md) Phases 0–3 · `CLAUDE.md` §2 STEP 1–7.
 **Reuse contract:** [`../../docs/ai/architecture/qa-artifact-contract.md`](../../docs/ai/architecture/qa-artifact-contract.md).
-**Discipline:** **clarify-first** — Step 3 may STOP and ask; do not proceed past it until scope is locked.
+**Discipline:** **clarify-first** — this workflow has **two planned stops**: the Clarification gate
+(Step 3) and the Test-Case Approval gate (Step 8). Neither may be self-granted.
+
+> **Scope change 2026-08-09 — coverage is defined here, not after development.** Test-case generation,
+> its review gate and the BrowserStack import moved from Workflow 2 into this workflow. Everything a
+> complete suite needs — the AC map, the design, the impact analysis, the clarifications, and the
+> optional exploratory analysis — exists **before** implementation; deferring case design until after
+> it only means the cases are written under delivery pressure, against the build rather than the
+> requirement. Workflow 2 now **reconciles and maintains** this baseline instead of regenerating it.
+> ADR-001 §3.1 amendment · contract §1–2.
 
 > **Execution model:** run each read-heavy phase skill as a **subagent** that writes its artifact file
 > and returns a **compact summary** (artifact path + key facts), NOT the full content. The orchestrator
@@ -80,18 +89,101 @@ Creates the story folder (with standard subfolders per `CLAUDE.md` STEP 0) + a `
        --derive-artifacts requirements,figma-analysis
   ```
 
-### 5 · HLS  → `hls`  (+ publish to Jira)
-- Run the **`test-design`** skill (subagent, HLS phase). Generate ≤ 20 HLS, write `hls/hls.md`, and **publish them to Jira as a separate checklist** (never modify the original AC).
+### 5 · Exploratory Analysis  ⟵ **conditional**  → `exploratory-notes`
+- Run the **`exploratory-testing`** skill (inline, **Mode A**) **when it will change the test cases** —
+  ambiguous requirements or Figma states, undocumented existing flows, dependency/reachability questions,
+  suspected edge cases, colliding upcoming scope, or an impacted area nobody has looked at. Full trigger
+  list + skip rule: [`../skills/exploratory-testing/SKILL.md`](../skills/exploratory-testing/SKILL.md).
+- It explores the **current** build for observability, produces no verdicts, and files no defects.
+- **If skipped, record the decision** — a machine-readable one, so "decided against" never looks like
+  "never considered":
+  ```
+  node qa-workflow/bin/qa-cli.js skip "<storyDir>" exploratory-notes --by "<operator>" --reason "<why>"
+  ```
+  `exploratory-notes` is a *conditional* artifact: reconcile includes it only once a record exists, so
+  skipping never leaves a permanently-stale key.
+- Record (only if it ran):
+  ```
+  node qa-workflow/bin/qa-cli.js record "<storyDir>" exploratory-notes \
+       --path evidence/exploratory-notes.md --generator exploratory-testing@2.0 \
+       --derive-artifacts requirements,figma-analysis,impact
+  ```
+
+### 6 · HLS  → `hls`  (+ publish to Jira)
+- Run the **`test-design`** skill (subagent, **Phase A**). Generate ≤ 20 HLS, write `hls/hls.md`, and **publish them to Jira as a separate checklist** (never modify the original AC).
+- **The Jira post is HLS-ONLY** (operator instruction 2026-08-10): no open questions, no clarification
+  list, no analysis or risk commentary, no planning asides. Questions belong in
+  `clarification/clarifications.md` and gaps in `testcases/coverage-notes.md`. **Only when the operator
+  says an item needs the Product Owner** does it go to Jira, as a **separate** comment holding just those
+  questions. Anything the operator answered at the clarification gate stays internal.
 - Record:
   ```
   node qa-workflow/bin/qa-cli.js record "<storyDir>" hls \
-       --path hls/hls.md --generator test-design@1.0 \
+       --path hls/hls.md --generator test-design@2.0 \
        --derive-artifacts requirements,figma-analysis,impact --domains <domains>
   ```
 
+### 7 · Test Case Generation  → `testcases`
+- Run the **`test-design`** skill (subagent, **Phase B**). Expand every HLS into granular cases in the
+  canonical standard (every step its own Expected Result), covering **ACs · functional requirements ·
+  edge cases · validation rules · error states · empty states · in-scope localization · permissions and
+  state transitions · the regression coverage from `impact` · the exploratory findings**.
+- **Tag every case** `ac:AC-<n>` (≥ 1, mandatory) + `screen:<screenId>` in the Tags column
+  ([browserstack-process](../../docs/ai/browserstack-process.md) §10.2a), and set its
+  **automatable / not-automatable** Automation Status.
+- Write `testcases/testcases.csv` + `testcases/coverage-notes.md` (AC → case map).
+- Record:
+  ```
+  node qa-workflow/bin/qa-cli.js record "<storyDir>" testcases \
+       --path testcases/testcases.csv --generator test-design@2.0 \
+       --derive-artifacts hls,requirements,impact --domains <domains>
+  ```
+- **Do not import yet.** Go to Step 8.
+
+### 8 · Test Case Review + Approval  ⟵ **gate (WILL STOP)**  → `testcase-review`
+- Run the **`testcase-review`** skill (subagent). It first runs the **mechanical** checks —
+  ```
+  node qa-workflow/bin/qa-cli.js testcase-lint "<storyDir>" \
+       --acs-from "<storyDir>/requirements-analysis/requirements.md" --require-screens
+  ```
+  which **exits 1** on duplicate titles/step-sequences, a step with no Expected Result, a format or
+  vocabulary violation, a case citing no AC, or **an AC with no case** — then the nine-check review
+  (unrelated cases · correct expected results · granularity · categorization · automatable
+  classification · justified regression coverage). It **revises and re-runs until all nine pass**, and
+  writes `testcases/review.md`.
+- Record the review, then **present the counts, the AC-coverage table and every revision to the operator
+  and STOP.** Approval is theirs:
+  ```
+  node qa-workflow/bin/qa-cli.js record "<storyDir>" testcase-review \
+       --path testcases/review.md --generator testcase-review@1.0 --derive-artifacts testcases
+  node qa-workflow/bin/qa-cli.js approve "<storyDir>" testcases --by "<operator>" [--note "<note>"]
+  ```
+- `approve` snapshots the approved CSV (`testcases/testcases.approved.csv`) + its checksum, so nothing
+  downstream can overwrite the approved baseline unnoticed.
+- **Reviewing is yours; approving is not.** Recording the review does not open the gate — Step 9 dies
+  without `approvals.testcases`. The only alternative is a recorded deferral with the operator's name:
+  `qa-cli.js defer "<storyDir>" testcase-review --by "<operator>" --reason "<why>"`.
+
+### 9 · BrowserStack Import  → `browserstack-import`
+- Run the **`browserstack-mgmt`** skill (inline, **Mode A**) — approved cases only. Upload, **verify the
+  import** (folder count, no nested folder, granular steps render), and write the `TC-xxxx` map back into
+  `testcases/testcases.csv` so `@TmsLink` binding exists before automation.
+- Record:
+  ```
+  node qa-workflow/bin/qa-cli.js record "<storyDir>" browserstack-import \
+       --path browserstack/import-report.md --generator browserstack-mgmt@2.0 \
+       --derive-artifacts testcase-review
+  ```
+
 ## Completion
-- `node qa-workflow/bin/qa-cli.js show "<storyDir>"` — confirm all five baseline artifacts are `complete` and `qa-state.json` validates.
-- Report the baseline summary. These artifacts are the **reusable input** to Workflow 2 (`qa-implementation-validation`), which reconciles rather than regenerates them.
+```
+node qa-workflow/bin/qa-cli.js status         "<storyDir>" --profile shift-left   # where things stand
+node qa-workflow/bin/qa-cli.js complete-check "<storyDir>" --profile shift-left   # the gate
+```
+**Exits 1** while any of the eight baseline artifacts is missing or not `complete` without a recorded
+operator deferral. `show` is **not** a gate — it always exits 0. Report the baseline summary; these
+artifacts are the **reusable input** to Workflow 2, which reconciles rather than regenerates them.
 
 ## Outputs (the reusable baseline)
-`requirements` · `figma-analysis` · `clarifications` · `impact` · `hls` — under `<storyDir>/`, each recorded in `qa-state.json`.
+`requirements` · `figma-analysis` · `clarifications` · `impact` · *(`exploratory-notes`)* · `hls` ·
+`testcases` · `testcase-review` · `browserstack-import` — under `<storyDir>/`, each recorded in `qa-state.json`.

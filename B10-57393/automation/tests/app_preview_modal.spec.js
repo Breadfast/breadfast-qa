@@ -7,10 +7,11 @@
  * name with no hand-maintained lookup — the same contract the Java suite honours via @TmsLink.
  * Verify offline with `node ../check_test_name_parity.js` before running.
  *
- * Assertions target the SPEC (the acceptance criteria), so a failure is a reportable defect. The two
- * assertions tagged [DEFECT-EXPECTED] cover filed defects and fail until those are fixed:
+ * Assertions target the SPEC (the acceptance criteria), so a failure is a reportable defect. The
+ * assertion tagged [DEFECT-EXPECTED] covers a filed defect and fails until it is fixed:
  *   B10-58251 — detail sections are not collapsible
- *   B10-58252 — device frame is not 375x812
+ * (B10-58252 — device frame not 375x812 — was FIXED and verified on retest 2026-08-03; its marker
+ * is gone and the frame assertion now guards against regression.)
  *
  * The Create perk form is PROGRESSIVE and its fill ORDER is load-bearing — see
  * PerksPage.fillCompleteMerchantCashbackPerk. Each test builds its own form from a fresh login,
@@ -76,8 +77,8 @@ test.describe('B10-57393 — App preview modal', () => {
     const { modal } = await openPreviewFor(page);
     const m = await modal.measureFrame(0);
 
-    // [DEFECT-EXPECTED B10-58252] bezel is 375x840 and the inner screen 347x812, so NO element is
-    // 375x812, and an ancestor scales the whole mockup to 0.8 (rendered 300x672).
+    // Regression guard for B10-58252 (fixed 2026-08-03): the inner screen was 347x812 inside a
+    // 375x840 bezel, with an ancestor scaling the whole mockup to 0.8 (rendered 300x672).
     expect(
       [m.bezelLayout, m.screenLayout],
       `AC requires a 375x812 device frame. Measured bezel ${m.bezelLayout}, inner screen `

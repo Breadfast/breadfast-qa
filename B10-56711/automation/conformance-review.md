@@ -97,17 +97,31 @@ produced **false results** rather than compile errors.
 
 | # | Deviation | Reason |
 |---|---|---|
-| D1 | **iOS locators mirrored, not observed** | The card backend went to `502` mid-run. Recorded in three places rather than hidden; the alternative was to invent iOS-specific guesses, which would be worse. Must be confirmed when the environment returns. |
+| D1 | ~~**iOS locators mirrored, not observed**~~ — **CLOSED 2026-08-02** | The card backend went to `502` mid-run, so the ids were mirrored from Android. Now confirmed against a live iOS session (iPhone 14 / iOS 18, `breadfast.ipa` 2026.31.0, `bs://fde72038…`): **all nine ids resolve**, and on iOS they resolve by `id`, `accessibility id` **and** `//*[@name='…']` — unlike Android, where only the `resource-id` XPath works. No longer a deviation. |
 | D2 | **6 of 23 cases not automated** | Each is a *visual* or *out-of-app* assertion, declared with a reason in the class header and enforced by `check_test_name_parity.js` (`PARITY OK`, 17 automated / 6 declared manual). Not silent truncation. |
 | D3 | **English only; AR (TC-54264) manual** | Same scope decision as B10-56652 and B10-56717 — RTL mirroring and per-locale artwork are visual comparisons. |
-| D4 | `getCardIdsInOrder()` returns ids in *definition* order filtered by presence, resolved twice (before and after scroll), rather than by measured `y` | Android clips bounds to the viewport, so a `y`-sort across a scrolling container is unreliable. The test still detects a genuine reorder, because a card appearing out of sequence changes the filtered list. Geometric ordering is measurable on iOS and is left to visual testing. |
+| ~~D4~~ | ~~`getCardIdsInOrder()` returns ids in *definition* order filtered by presence rather than by measured `y`~~ — **WITHDRAWN AND FIXED 2026-08-02** | **This was not a defensible deviation, it was a second vacuous pass, and the reason given for accepting it was false.** The claim *"the test still detects a genuine reorder, because a card appearing out of sequence changes the filtered list"* is wrong: walking `CARD_IDS_IN_MANDATED_ORDER` and keeping the ids that are present returns the mandated order **by construction**, whatever the app renders. `assertEquals(actual, expected)` against a dashboard-derived `expected` therefore only ever tested *which* cards render, never *their order* — so **TC-54248 and TC-54249 could not fail on their own subject**, on either platform, including in the Android run reported as 17/17. Fixed on both platforms: `getCardIdsInOrder()` now sorts each viewport's cards by their own `y` (`appendCardsSortedByPosition`) before appending, so the returned order is measured, not assumed. Android's misreported container *heights* do not affect this — the cards are one vertical column and only their `y` is read. |
 
 ## 5. Not verified by this gate
 
-- **No test has been executed.** This gate is static: compile, shape, locator provenance, assertion
-  quality. Execution is blocked by the `502` card backend and is recorded as pending, **not** as passed.
-- iOS locator resolution (D1) — and after C5 this is a sharper risk than it first looked: if the iOS build
-  exposes its test ids the way Android does, `//*[@name='…']` may resolve nothing there either. The iOS
-  page object must be probed the same way (`probe-locators.js`) before its results mean anything.
-- Whether the Android `swipeGesture` percentages scroll the details body at a sensible rate — first real
-  run will show it.
+*(Written while execution was blocked by the `502` card backend. Kept for the record, with what
+execution later established.)*
+
+- ~~**No test has been executed.**~~ Android ran 17/17 and iOS now runs. **This section is the whole
+  lesson of the story: a static gate cannot certify automation.** Everything below was later found to be
+  wrong or unrunnable in exactly the way "pending, not passed" was meant to flag — and it was still
+  reported as a completed phase.
+- ~~iOS locator resolution (D1)~~ — settled, see D1. Nine of nine resolve.
+- ~~Android `swipeGesture` rate~~ — settled by execution; the Android details body scrolls correctly.
+
+## 6. What execution found that the gate could not (2026-08-02)
+
+| Found | Why the static gate missed it |
+|---|---|
+| `By.id` resolves **0 of 9** ids on the Android Compose surface — every Android test was unrunnable at the moment the phase was reported complete | The gate checked that the ids appeared in a page-source dump. **Seeing an id in XML is not verifying a locator.** Verifying a locator means issuing a find and getting an element back — which is what `probe-locators.js` now does, per platform. |
+| `getCardIdsInOrder()` was vacuous on both platforms (D4) | The gate reviewed assertion *quality* and accepted a written rationale instead of tracing what the method could return. |
+| iOS `isPageDisplayed()` used XCUITest `visible`, which a full-screen container reports as `false` while the screen is plainly rendered — this alone failed every iOS test | Not a compile, shape, or locator property. Only a run shows it. |
+| iOS scrolling used `mobile: swipe`, a momentum flick of unpredictable travel | Same. |
+
+The gate is still worth running — it caught the vacuous `retainAll` (C2) before any device time. It is
+**not** evidence that automation works, and must never again be recorded as if it were.

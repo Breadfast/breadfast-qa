@@ -22,11 +22,32 @@ const { bsReq } = require('../../../bs_helper.js');
 const STORY = 'B10-56711';
 const SESSION_DIR = path.resolve(__dirname, '..', '..', 'evidence', 'sessions');
 
-// Supplied by the operator 2026-07-29; byte-identical to the ids verified live on B10-56652.
-const APPS = {
+// The app ids come from the JAVA FRAMEWORK'S browserStackConfigs.properties, not from a copy here, so this
+// harness always probes the SAME build the Java suite runs. They drifted once already: the operator loaded
+// newer builds into that file (iOS 2026.31.0 / Android 2026.32.0) while these constants still held the ids
+// supplied on 2026-07-29, so a "verified on a live session" locator result would have been taken from a
+// build the tests never touch. The literals below are only a fallback for when the framework path does not
+// resolve.
+const FALLBACK_APPS = {
   ios: 'bs://30248a9811450c98323ef9860d13a287231109ac',
   android: 'bs://12bf2be529be6c73bc0dff9d208d139a3aaacebf',
 };
+
+function readFrameworkApps() {
+  try {
+    const { environmentsFile } = require('../../../automation/config/framework.js');
+    const text = fs.readFileSync(environmentsFile('browserStackConfigs.properties'), 'utf8');
+    const value = (key) => (text.match(new RegExp(`^${key}=(.+)$`, 'm')) || [])[1];
+    const ios = value('bStackIosCustomerAppNativeApp');
+    const android = value('bStackAndroidCustomerAppNativeApp');
+    if (!ios || !android) return FALLBACK_APPS;
+    return { ios: ios.trim(), android: android.trim() };
+  } catch (e) {
+    return FALLBACK_APPS;
+  }
+}
+
+const APPS = readFrameworkApps();
 
 const DEVICE = {
   ios: { deviceName: 'iPhone 14', platformVersion: '18', automationName: 'XCUITest', appiumVersion: '2.15.0' },

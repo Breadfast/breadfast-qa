@@ -57,10 +57,17 @@ function baseState(overrides = {}) {
       clarifications: rec('clarifications', { jira: HJ }),
       impact: rec('impact', { requirements: cs('requirements'), 'figma-analysis': cs('figma-analysis') }),
       hls: rec('hls', { requirements: cs('requirements') }),
+      // Shift-left now also owns coverage definition (2026-08-09): cases → review gate → import.
+      testcases: rec('testcases', { hls: cs('hls'), requirements: cs('requirements'), impact: cs('impact') }),
+      'testcase-review': rec('testcase-review', { testcases: cs('testcases') }),
+      'browserstack-import': rec('browserstack-import', { 'testcase-review': cs('testcase-review') }),
+      ...(overrides.artifacts || {}),
     },
   };
   return { state, HJ, FF, figma, cs };
 }
+/** The full baseline size reconcile() defaults to. */
+const BASELINE_SIZE = 8;
 function ioFor(state, ov = {}) {
   const byPath = (rel) => Object.keys(state.artifacts).find((k) => state.artifacts[k].path === rel);
   return {
@@ -76,7 +83,52 @@ test('all fresh → reuse all, nothing stale', () => {
   const r = reconcile(b.state, liveFresh(b), ioFor(b.state));
   assert.deepEqual(r.stale, []);
   assert.equal(r.conflicts.length, 0);
-  assert.equal(r.reuse.length, 5);
+  assert.equal(r.reuse.length, BASELINE_SIZE);
+});
+
+test('the shift-left baseline covers coverage definition: cases, review gate, import', () => {
+  const b = baseState();
+  const r = reconcile(b.state, liveFresh(b), ioFor(b.state));
+  for (const k of ['testcases', 'testcase-review', 'browserstack-import']) assert.ok(r.reuse.includes(k), k);
+});
+
+test('a changed AC cascades all the way through the approved suite to the import', () => {
+  // The point of moving test cases into the baseline: Workflow 2 must RECONCILE them, and a real
+  // requirement change has to reach the imported suite instead of stopping at the HLS.
+  const b = baseState();
+  const live = { jira: { hash: sha256('jira-v2') }, figma: b.figma, domains: {} };
+  const r = reconcile(b.state, live, ioFor(b.state));
+  for (const k of ['requirements', 'impact', 'hls', 'testcases', 'testcase-review', 'browserstack-import']) {
+    assert.ok(r.stale.includes(k), k + ' must be stale');
+  }
+  assert.ok(r.stale.indexOf('testcases') < r.stale.indexOf('testcase-review'));   // topo
+  assert.ok(r.stale.indexOf('testcase-review') < r.stale.indexOf('browserstack-import'));
+});
+
+test('exploratory-notes is conditional: absent → not reconciled; present → reconciled', () => {
+  const absent = baseState();
+  assert.ok(!reconcile(absent.state, liveFresh(absent), ioFor(absent.state)).stale.includes('exploratory-notes'));
+  assert.equal(reconcile(absent.state, liveFresh(absent), ioFor(absent.state)).reuse.length, BASELINE_SIZE);
+
+  const b = baseState();
+  b.state.artifacts['exploratory-notes'] = {
+    path: 'exploratory-notes.md', status: 'complete', generator: 'exploratory-testing@2.0',
+    derivedFrom: { requirements: b.cs('requirements') }, checksum: b.cs('exploratory-notes'),
+  };
+  const r = reconcile(b.state, liveFresh(b), ioFor(b.state));
+  assert.ok(r.reuse.includes('exploratory-notes'));
+  assert.equal(r.reuse.length, BASELINE_SIZE + 1);
+});
+
+test('exploratory-notes is context for testcases — it informs them, it does not invalidate them', () => {
+  const b = baseState();
+  b.state.artifacts['exploratory-notes'] = {
+    path: 'exploratory-notes.md', status: 'partial', generator: 'exploratory-testing@2.0',
+    derivedFrom: {}, checksum: b.cs('exploratory-notes'),
+  };
+  const r = reconcile(b.state, liveFresh(b), ioFor(b.state));
+  assert.ok(r.stale.includes('exploratory-notes'));
+  assert.ok(r.reuse.includes('testcases'), 'an approved suite must not be torn up by a re-explored charter');
 });
 
 test('jira changed → requirements + cascade stale; figma-analysis reused', () => {

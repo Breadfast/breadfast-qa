@@ -59,12 +59,14 @@ test('reconcile: fresh reuses all; changed jira cascades', () => {
     run(['record', dir, key, '--path', rel, '--generator', key.replace('-analysis', '') + '@1.0', '--derive-sources', src]);
   }
   fs.writeFileSync(path.join(dir, 'i.md'), 'i'); run(['record', dir, 'impact', '--path', 'i.md', '--generator', 'impact-analysis@1.0', '--derive-artifacts', 'requirements,figma-analysis']);
-  fs.writeFileSync(path.join(dir, 'h.md'), 'h'); run(['record', dir, 'hls', '--path', 'h.md', '--generator', 'test-design@1.0', '--derive-artifacts', 'requirements,figma-analysis,impact']);
+  // test-design@2.0 = the CURRENT methodology; @1.0 here would (correctly) reconcile as stale by rule (d).
+  fs.writeFileSync(path.join(dir, 'h.md'), 'h'); run(['record', dir, 'hls', '--path', 'h.md', '--generator', 'test-design@2.0', '--derive-artifacts', 'requirements,figma-analysis,impact']);
 
-  // No stdin, no figma flags → nothing changed → reuse all 5
+  // No stdin, no figma flags → nothing changed. The 5 recorded keys reuse; the three coverage-
+  // definition keys this fixture never produced (testcases/review/import) are legitimately stale.
   const fresh = JSON.parse(run(['reconcile', dir]));
   assert.equal(fresh.reuse.length, 5);
-  assert.equal(fresh.stale.length, 0);
+  assert.deepEqual(fresh.stale, ['testcases', 'testcase-review', 'browserstack-import']);
 
   // Changed jira → requirements + impact + hls stale (+ clarifications, material by default)
   const changed = JSON.parse(run(['reconcile', dir], JSON.stringify({ ...issue, ac: 'a-CHANGED' })));
@@ -110,6 +112,8 @@ const rec = (dir, key, extra = []) =>
 const fails = (args) => {
   try { run(args); return null; } catch (e) { return String(e.stderr || e.message); }
 };
+const validateState = (dir) =>
+  require('../lib/schema/validate').validateQaState(JSON.parse(run(['show', dir]))).valid;
 
 test('recording execution is BLOCKED while automation is missing or partial', () => {
   const dir = tmp();
@@ -148,11 +152,18 @@ test('an operator-approved deferral is the only way past the phase dependency', 
   assert.ok(fails(['defer', dir, 'visual-findings', '--reason', 'x']));
 });
 
+/** Record the full shift-left baseline, review gate included, through the approval gate. */
+const seedBaseline = (dir) => {
+  for (const k of ['requirements', 'figma-analysis', 'clarifications', 'impact', 'hls',
+    'testcases', 'testcase-review']) rec(dir, k);
+  run(['approve', dir, 'testcases', '--by', 'Operator']);
+  rec(dir, 'browserstack-import');
+};
+
 test('complete-check exits non-zero on a partial artifact, unlike show', () => {
   const dir = tmp();
   seed(dir, 'B10-56717');
-  for (const k of ['requirements', 'figma-analysis', 'clarifications', 'impact', 'hls',
-    'testcases', 'browserstack-import']) rec(dir, k);
+  seedBaseline(dir);
   rec(dir, 'automation', ['--status', 'partial']);
 
   const failed = fails(['complete-check', dir]);
@@ -172,8 +183,7 @@ test('complete-check exits non-zero on a partial artifact, unlike show', () => {
 test('complete-check honours a recorded deferral but still reports it', () => {
   const dir = tmp();
   seed(dir, 'B10-56717');
-  for (const k of ['requirements', 'figma-analysis', 'clarifications', 'impact', 'hls',
-    'testcases', 'browserstack-import']) rec(dir, k);
+  seedBaseline(dir);
   run(['defer', dir, 'automation', '--by', 'Operator', '--reason', 'scheduled follow-up']);
   for (const k of ['execution', 'visual-findings', 'defects', 'qa-summary']) rec(dir, k);
 
@@ -182,6 +192,218 @@ test('complete-check honours a recorded deferral but still reports it', () => {
   assert.equal(out.deferred.length, 1);
   assert.equal(out.deferred[0].key, 'automation');
   assert.equal(out.deferred[0].approvedBy, 'Operator');  // the deferral stays visible in the record
+});
+
+// --- Test-case review + approval gate (added 2026-08-09 with the shift-left test-case move) ------
+// Test cases are now generated pre-development, and only REVIEWED + OPERATOR-APPROVED cases reach
+// BrowserStack. Both halves are mechanical: a review artifact the agent produces, and an approval
+// only an operator can record.
+
+test('recording browserstack-import is BLOCKED until the cases are reviewed', () => {
+  const dir = tmp();
+  seed(dir, 'B10-57771');
+  rec(dir, 'testcases');
+
+  const unreviewed = fails(['record', dir, 'browserstack-import', '--path', 'a.md', '--generator', 'bs@1.0']);
+  assert.ok(unreviewed, 'un-reviewed cases must not reach the test-management system');
+  assert.match(unreviewed, /testcase-review.*has not been recorded/);
+
+  rec(dir, 'testcase-review', ['--status', 'partial']);
+  assert.match(fails(['record', dir, 'browserstack-import', '--path', 'a.md', '--generator', 'bs@1.0']),
+    /is "partial", not "complete"/);
+});
+
+test('review alone is not enough — the operator must approve before import', () => {
+  const dir = tmp();
+  seed(dir, 'B10-57771');
+  rec(dir, 'testcases');
+  rec(dir, 'testcase-review');   // the agent reviewed them...
+
+  const unapproved = fails(['record', dir, 'browserstack-import', '--path', 'a.md', '--generator', 'bs@1.0']);
+  assert.ok(unapproved, 'reviewing must not double as approving');
+  assert.match(unapproved, /have not been approved by an operator/);
+
+  const ap = JSON.parse(run(['approve', dir, 'testcases', '--by', 'Ahmed Essam', '--note', 'AC coverage verified']));
+  assert.equal(ap.approvedBy, 'Ahmed Essam');
+  assert.match(ap.checksum, /^[a-f0-9]{64}$/);
+  assert.ok(fs.existsSync(path.join(dir, ap.snapshot)), 'approval must snapshot the approved content');
+
+  assert.equal(JSON.parse(rec(dir, 'browserstack-import')).status, 'complete');
+  assert.equal(JSON.parse(run(['show', dir])).approvals.testcases.approvedBy, 'Ahmed Essam');
+});
+
+test('approve requires --by, and a deferral of the gate is the only other way past it', () => {
+  const dir = tmp();
+  seed(dir, 'B10-57771');
+  rec(dir, 'testcases');
+  assert.ok(fails(['approve', dir, 'testcases']));                      // no --by → no anonymous approval
+  assert.ok(fails(['approve', dir, 'nothing-here', '--by', 'Operator'])); // cannot approve an unrecorded artifact
+
+  run(['defer', dir, 'testcase-review', '--by', 'Operator', '--reason', 'cases pre-approved in grooming']);
+  assert.equal(JSON.parse(rec(dir, 'browserstack-import')).status, 'complete');
+});
+
+test('changing approved test cases without a reconciliation log fails complete-check', () => {
+  // Workflow 2 may add/update/remove cases — but never silently over the approved baseline.
+  const dir = tmp();
+  seed(dir, 'B10-57771');
+  seedBaseline(dir);
+  for (const k of ['automation', 'execution', 'visual-findings', 'defects', 'qa-summary']) rec(dir, k);
+  assert.equal(JSON.parse(run(['complete-check', dir])).ok, true);
+
+  fs.writeFileSync(path.join(dir, 'a.md'), 'body + 3 cases added during validation');
+  for (const k of ['requirements', 'figma-analysis', 'clarifications', 'impact', 'hls', 'testcases',
+    'testcase-review', 'browserstack-import', 'automation', 'execution', 'visual-findings',
+    'defects', 'qa-summary']) rec(dir, k);   // re-record against the edited file
+
+  const drifted = fails(['complete-check', dir]);
+  assert.ok(drifted, 'an approved suite that changed with no recorded reconciliation must fail');
+  assert.match(drifted, /changed after approval/);
+
+  rec(dir, 'testcase-reconciliation');
+  assert.equal(JSON.parse(run(['complete-check', dir])).ok, true);
+});
+
+test('complete-check --profile shift-left gates the pre-development run on its own artifact set', () => {
+  const dir = tmp();
+  seed(dir, 'B10-57771');
+  for (const k of ['requirements', 'figma-analysis', 'clarifications', 'impact', 'hls']) rec(dir, k);
+
+  // The old 5-key baseline is no longer a complete shift-left run: coverage is not defined yet.
+  const partial = fails(['complete-check', dir, '--profile', 'shift-left']);
+  assert.ok(partial);
+  assert.match(partial, /testcases: missing/);
+
+  rec(dir, 'testcases'); rec(dir, 'testcase-review');
+  run(['approve', dir, 'testcases', '--by', 'Operator']);
+  rec(dir, 'browserstack-import');
+
+  const out = JSON.parse(run(['complete-check', dir, '--profile', 'shift-left']));
+  assert.equal(out.ok, true);
+  assert.equal(out.required, 8);
+  assert.equal(out.approved[0].key, 'testcases');
+
+  // ...and the same state is NOT a complete validation run.
+  assert.ok(fails(['complete-check', dir, '--profile', 'validate']));
+  assert.ok(fails(['complete-check', dir, '--profile', 'bogus']));
+});
+
+// --- The lock seam, wired (added 2026-08-09) -----------------------------------------------------
+// Rules (d) and (e) of the freshness contract were implemented and tested in reconcile.js but never
+// supplied with inputs by this CLI, so a skill `version:` bump and a business-rule change both
+// invalidated nothing. These assert the wiring, not the rules.
+
+test('record writes the top-level domains map that rule (e) compares against', () => {
+  const dir = tmp();
+  seed(dir, 'B10-1');
+  rec(dir, 'requirements', ['--domains', 'card,payment']);
+  const state = JSON.parse(run(['show', dir]));
+  assert.deepEqual(Object.keys(state.domains).sort(), ['card', 'payment']);
+  assert.match(state.domains.card.checksum, /^[a-f0-9]{64}$/);
+  assert.deepEqual(state.artifacts.requirements.domains, ['card', 'payment']);
+  // A typo'd domain is refused rather than recorded as an un-comparable fingerprint.
+  assert.match(fails(['record', dir, 'impact', '--path', 'a.md', '--generator', 'g@1.0', '--domains', 'fintech']),
+    /unknown domain\(s\): fintech/);
+});
+
+test('an artifact generated by a superseded skill version reconciles as stale', () => {
+  const dir = tmp();
+  seed(dir, 'B10-1');
+  rec(dir, 'requirements', ['--derive-sources', 'jira']);
+  // hls stamped with the pre-2026-08-09 methodology, when test cases were NOT a shift-left output.
+  run(['record', dir, 'hls', '--path', 'a.md', '--generator', 'test-design@1.0', '--derive-artifacts', 'requirements']);
+
+  const plan = JSON.parse(run(['reconcile', dir, '--expected', 'requirements,hls']));
+  assert.ok(plan.stale.includes('hls'), 'a 1.0 HLS must not be reused under the 2.0 methodology');
+  assert.ok(plan.reasons.hls.includes('generator-version'));
+  assert.equal(plan.lock.generators.hls, 'test-design@2.0');
+
+  // --ignore-lock is the deliberate carry-forward, and says so in the plan.
+  const ignored = JSON.parse(run(['reconcile', dir, '--ignore-lock', '--expected', 'requirements,hls']));
+  assert.ok(ignored.reuse.includes('hls'));
+  assert.equal(ignored.lock, 'ignored');
+});
+
+// --- status, skip, testcase-lint, approval history -----------------------------------------------
+
+test('status reports where the story is, what is next, and what blocks it', () => {
+  const dir = tmp();
+  seed(dir, 'B10-57771');
+  for (const k of ['requirements', 'figma-analysis', 'clarifications', 'impact', 'hls', 'testcases']) rec(dir, k);
+  rec(dir, 'testcase-review');
+
+  const s = JSON.parse(run(['status', dir, '--profile', 'shift-left', '--json']));
+  assert.equal(s.next, 'browserstack-import');
+  assert.ok(s.blockers.some((b) => /awaiting operator approval/.test(b)));
+  assert.equal(s.rows.find((r) => r.key === 'testcases').status, 'complete');
+
+  run(['approve', dir, 'testcases', '--by', 'Operator']);
+  rec(dir, 'browserstack-import');
+  const done = JSON.parse(run(['status', dir, '--profile', 'shift-left', '--json']));
+  assert.equal(done.next, null);
+  assert.equal(done.blockers.length, 0);
+  assert.equal(done.rows.find((r) => r.key === 'testcases').approvedBy, 'Operator');
+  // status reports, it never gates — even mid-run it exits 0, unlike complete-check.
+  assert.doesNotThrow(() => run(['status', dir, '--profile', 'validate']));
+});
+
+test('status surfaces artifacts whose generator predates the current methodology', () => {
+  const dir = tmp();
+  seed(dir, 'B10-1');
+  run(['record', dir, 'hls', '--path', 'a.md', '--generator', 'test-design@1.0']);
+  const s = JSON.parse(run(['status', dir, '--json']));
+  assert.equal(s.methodologyOutdated.length, 1);
+  assert.match(s.methodologyOutdated[0], /hls: test-design@1\.0 → test-design@2\.0/);
+});
+
+test('skip records a conditional phase as a decision; non-conditional phases must be deferred', () => {
+  const dir = tmp();
+  seed(dir, 'B10-1');
+  const out = JSON.parse(run(['skip', dir, 'exploratory-notes', '--by', 'Operator', '--reason', 'isolated change']));
+  assert.equal(out.skipped, 'exploratory-notes');
+  assert.equal(out.decidedBy, 'Operator');
+
+  assert.ok(fails(['skip', dir, 'exploratory-notes', '--by', 'Operator']));          // reason required
+  assert.match(fails(['skip', dir, 'automation', '--by', 'Operator', '--reason', 'x']),
+    /not a conditional artifact/);                                                    // no skipping owed work
+
+  assert.equal(JSON.parse(run(['status', dir, '--json'])).conditional
+    .find((c) => c.key === 'exploratory-notes').status, 'skipped');
+});
+
+test('re-approval keeps the original approver in history', () => {
+  const dir = tmp();
+  seed(dir, 'B10-1');
+  rec(dir, 'testcases');
+  run(['approve', dir, 'testcases', '--by', 'First Operator', '--note', 'original suite']);
+  fs.writeFileSync(path.join(dir, 'a.md'), 'body + validation deltas');
+  rec(dir, 'testcases');
+  const second = JSON.parse(run(['approve', dir, 'testcases', '--by', 'Second Operator', '--note', '3 cases added']));
+  assert.equal(second.approvedBy, 'Second Operator');
+  assert.equal(second.history.length, 1);
+  assert.equal(second.history[0].approvedBy, 'First Operator');
+  assert.equal(second.history[0].note, 'original suite');
+  assert.equal(validateState(dir), true);
+});
+
+test('testcase-lint is a gate: it exits 1 on an error and 0 on a clean suite', () => {
+  const dir = tmp();
+  const HEADER = require('../lib/testcases/parse').COLUMNS.join(',');
+  const row = (title, tags, expected) => `,"${title}",48895703,"F>P",Active,Fintech,High,Functional,Not Automated,"D","P",Steps,"Log in","${expected}",B10-1,"${tags}",,,,,,,BCard Squad,`;
+  fs.mkdirSync(path.join(dir, 'testcases'), { recursive: true });
+  const write = (...rows) => fs.writeFileSync(path.join(dir, 'testcases/testcases.csv'), [HEADER, ...rows].join('\n') + '\n');
+
+  write(row('Verify one', 'ac:AC-1', ''));   // step with no expected result
+  const broken = fails(['testcase-lint', dir, '--acs', 'AC-1']);
+  assert.ok(broken, 'a suite with errors must fail the command');
+
+  write(row('Verify one', 'ac:AC-1', 'Dashboard is displayed'), row('Verify two', 'ac:AC-2', 'The list is displayed'));
+  const ok = JSON.parse(run(['testcase-lint', dir, '--acs', 'AC-1,AC-2', '--json']));
+  assert.equal(ok.errors, 0);
+  assert.equal(ok.summary.cases, 2);
+
+  // ...and an uncovered AC is an error, so "no missing AC coverage" stops being a self-assessment.
+  assert.ok(fails(['testcase-lint', dir, '--acs', 'AC-1,AC-2,AC-3']));
 });
 
 test('branch-check fails when a repo is not on the story branch', () => {

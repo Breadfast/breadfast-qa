@@ -6,7 +6,7 @@
  * Pure function over a qa-state object + live source fingerprints; no I/O of its own
  * (file checks are injected via `io`), so it is fully unit-testable.
  */
-const { DAG, BASELINE, topoOrder } = require('./dag');
+const { DAG, baselineFor, topoOrder } = require('./dag');
 const { fingerprintFigma } = require('./fingerprint');
 
 function splitGen(g) {
@@ -34,7 +34,8 @@ function reconcile(qaState, live, io, opts = {}) {
   qaState = qaState || {};
   live = live || {};
   const artifacts = qaState.artifacts || {};
-  const expected = opts.expected || BASELINE;
+  // Default = the required baseline + whichever conditional artifacts this story produced.
+  const expected = opts.expected || baselineFor(artifacts);
   const generators = opts.generators || {};
   const materiality = opts.materiality;
 

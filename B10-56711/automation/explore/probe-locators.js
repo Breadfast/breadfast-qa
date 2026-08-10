@@ -39,15 +39,44 @@ const PLATFORM = process.argv[2] || 'android';
   const find = async () => (await rows(sid)).find((r) => (r.name || r.id || r.desc || '').includes(`perk-card-${perkId}`));
   let card = await find();
   for (let i = 0; !card && i < 12; i++) { await D.swipeUp(sid, PLATFORM); card = await find(); }
+
+  // The safe tap band must come from the DEVICE, not from a constant. This previously hardcoded
+  // Android's 300..2000 px onto iOS's 844-POINT viewport, which accepts y=800 — underneath the bottom
+  // tab bar, so the tap opens "More" instead of the perk and the details screen never appears. The tab
+  // bar overlays roughly the last 110 pt/px on both platforms (pay-appium-compose-traps).
+  const rect = await bsReq('GET', `/wd/hub/session/${sid}/window/rect`);
+  const screenH = (rect && rect.value && rect.value.height) || 844;
+  const top = Math.round(screenH * 0.15);
+  const bottom = screenH - 110;
   let c = centre(card.bounds);
-  for (let i = 0; i < 40 && (c.y < 300 || c.y > 2000); i++) { await D.swipeUp(sid, PLATFORM); const f = await find(); if (!f) break; card = f; c = centre(card.bounds); }
+  console.log(`[probe] screen height ${screenH}; safe tap band ${top}..${bottom}; card centre y=${c.y}`);
+  for (let i = 0; i < 40 && (c.y < top || c.y > bottom); i++) {
+    await D.swipeUp(sid, PLATFORM);
+    const f = await find();
+    if (!f) break;
+    card = f;
+    c = centre(card.bounds);
+  }
+  console.log(`[probe] tapping perk-card-${perkId} @ ${c.x},${c.y}`);
   await tap(sid, c.x, c.y);
   await sleep(6500);
   if (PLATFORM === 'android') await bsReq('POST', `/wd/hub/session/${sid}/appium/settings`, { settings: { allowInvisibleElements: true, ignoreUnimportantViews: false } }).catch(() => {});
   await sleep(1500);
 
-  const src = await getSource(sid);
-  console.log(`\n[probe] on ${perkId} details. Legend: inSource = the id appears in the page source.\n`);
+  // Accumulate the source across the WHOLE scroll, not just the first viewport. Reading it once at the
+  // top is what produced the false "iOS does not render the Coupon code or Branches cards" finding
+  // (defects.md C5): both cards are below the fold and lazy-render, so the top-of-screen dump is
+  // evidence of nothing. A negative here has to survive a scroll to the end.
+  let src = await getSource(sid);
+  let previous = '';
+  for (let i = 0; i < 8 && src !== previous; i++) {
+    previous = src;
+    await D.swipeUp(sid, PLATFORM);
+    await sleep(1200);
+    src += await getSource(sid);
+  }
+  console.log(`\n[probe] on ${perkId} details, source accumulated over a full scroll.`);
+  console.log('Legend: inSource = the id appears anywhere in the scrolled page source.\n');
   console.log(PLATFORM === 'ios'
     ? 'id                          inSource  by:id   by:accessibility id  xpath@name         xpath@label'
     : 'id                          inSource  by:id   by:accessibility id  xpath@resource-id  xpath@content-desc');

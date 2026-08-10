@@ -3,7 +3,7 @@ name: framework-conformance
 description: Framework-conformance gate for generated automation (QA_PROCESS Phase 4, post-generation). Reviews the code THIS story authored inside the Breadfast Java framework against the framework's real conventions — the checks compile + checkstyle cannot make. Runs as a subagent, after automation-gen writes code and before the `automation` artifact is recorded.
 metadata:
   type: task
-  version: 1.0
+  version: 1.1
   phase: Automation Generation (gate)
   workflow: [qa-implementation-validation, qa-full]
   runsAs: subagent
@@ -24,6 +24,19 @@ metadata:
 > model type under `modals/`. **No build gate can catch any of those.** `mvn test-compile` proves the
 > code is valid Java; it says nothing about whether it looks like code the framework's engineers
 > wrote. That is this gate's only job. (Recorded in memory `java-framework-style`.)
+>
+> **v1.1 (2026-08-09) — why the gate itself needed widening.** A story ran this gate, was reported
+> CONFORMING, and its suite passed end to end. A second review still found tests that were
+> *structurally incapable of failing*, assertions satisfied by an empty read, a page-object method
+> duplicating an existing one, a case whose BrowserStack title promised a check it never made, and a
+> method family named after the story rather than the control. **Compiling, conforming and passing are
+> three different things from being a test.** The additions are §B (per-method reuse, no story
+> vocabulary), §E (every assertion can go red, title-to-assertion coverage, no route strings in tests),
+> §F (fixture discovery over pinned ids) and §I (first-reading comprehension, formatting matches the
+> file). Contract unchanged — still no artifact, still `automation/conformance-review.md`. The worked
+> examples behind each rule live in
+> [automation-generation.md](../../../docs/ai/automation/automation-generation.md) §9.13–9.15; this file
+> stays rules-only.
 
 **Produces no new artifact.** It writes `automation/conformance-review.md` into the story folder and
 its blocking violations must be fixed **before** `automation` is recorded. The `automation` artifact
@@ -92,6 +105,14 @@ ACs never raised.
       enablement block (mobile: per [mobile-native-framework.md](../../../docs/ai/automation/mobile-native-framework.md)).
 - [ ] Composite flows live in the page object as plain methods taking `String` args — not in the test.
       (memory `java-framework-style` item 2)
+- [ ] **Per-METHOD reuse check, not just per-class.** For every method added to an **existing** page
+      object, the grep proving that class has no method already touching the same control is recorded in
+      `framework-reference.md`. The class-level check above cannot see this — it passes whenever no new
+      *class* was created, which is exactly when a duplicate reader gets added beside an existing one.
+      (§9.13)
+- [ ] **No story vocabulary in a shared page object.** Method, constant and locator-field names describe
+      the control and the operation, never the scenario that prompted them. Tell: a name a *later* test
+      would have to read against its own meaning. (§9.13)
 - [ ] **No new method that merely wraps an already-implemented flow.** The framework's standard entry
       sequence is composed **inline in the test** from the existing helpers/screens
       (`registerUsingApi` → `countriesSelectionScreen.selectCountryAndProceed` →
@@ -144,8 +165,25 @@ ACs never raised.
       `[DEFECT-EXPECTED]` assertions are ordered **last** in the test. (§9.8)
 - [ ] **Vacuous-pass guard:** a collection's completeness is asserted **before** its order or
       contents. A loop over a short list that never executes is a pass that proves nothing. (§9.8)
+- [ ] **Every assertion can go red — answer it in writing, per test.** For each `Assert` in the story
+      class, state *what change in the product would fail this*. No answer ⇒ it is not a test.
+      Three shapes to hunt specifically (§9.14):
+      - **before/after on a value that cannot change** — a paged, capped, filtered or truncated read
+        returns the same number either way. When the question is "does it exist / how many are there",
+        ask the **system** (an API count); keep the screen for "is it rendered correctly".
+      - **a negative assertion on a subject that may not exist** — `assertNotEquals(x, source)` and
+        `assertFalse(list.contains(x))` are both satisfied by an empty read. Assert the subject was
+        found first.
+      - **a `!isEmpty()` standing in for a value comparison** — a smoke check wearing the title of a
+        correctness one; it passes on the *wrong* value.
+- [ ] **Title-to-assertion coverage: every noun in the BrowserStack case title has an assertion.**
+      Walk the title word by word against the test body; a value the title says is *copied from* a
+      source has that source's stored value as its oracle, not a non-empty check. (§9.14)
 - [ ] Assertions read back through POM getters rather than restating input literals, so input and
       expectation cannot drift. (§9.9)
+- [ ] **No route/URL strings, `substring`/date slicing, collection algebra or index arithmetic in the
+      test class** — those are page-object concerns, exposed to the test as a named predicate or
+      reader. Read the module's existing page object for the idiom it already uses. (§9.13)
 
 ### F. Data, config, re-runnability
 - [ ] No hardcoded environment values, URLs, credentials or absolute paths. Config lives in
@@ -154,7 +192,15 @@ ACs never raised.
 - [ ] Uniqueness comes from `testExecutionHelper.get().generateRandom7DigitNumber()` — not
       `System.currentTimeMillis()`.
 - [ ] Uniqueness is applied to **every** locale field, not only English — a duplicate rule that
-      matches on either name makes the suite pass once and fail forever. (§9.6)
+      matches on either name makes the suite pass once and fail forever. (§9.6) — **and to every
+      business key on a record the environment cannot delete**, not only the name: several tests
+      writing one shared literal spread it across records nothing can clean up. (§9.15)
+- [ ] **Fixture selection: discovered by the property the assertion depends on, not pinned by id.**
+      Use the module's existing finder idiom in its API client, and require *every* property the
+      assertion reads. A hardcoded id is acceptable **only** when the record's *content* is the point,
+      and then `framework-reference.md` states what makes it curated. **Never** pin a state-gated test
+      to an id — a record whose state is derived from time changes state on its own and silently
+      inverts the test. (§9.15, memory `shape-finder-must-require-assertion-property`)
 - [ ] Fixture data is data the product could really receive: real-reading copy, internally consistent
       with the numbers the form enters, exact character count preserved for max-length cases. (§9.9)
 - [ ] Binary fixtures are emitted by a checked-in generator script and resolved through a model
@@ -180,10 +226,19 @@ ACs never raised.
 - [ ] Every open Jira **bug subtask** on the story maps to a test, or is explicitly declared
       visual-only / not-automated. Cross-check against Jira, not against your own notes. (§9.8)
 
-### I. The last question
+### I. The last two questions
 - [ ] **Read the nearest sibling class end-to-end and answer in writing:** would a framework engineer
       reading this diff be able to tell it was machine-generated? Name whatever gives it away.
-      Comment banners already in use: `// ══…` for story blocks, `// ── name ──…` for method groups.
+- [ ] **Would a QA engineer who has never seen this story understand every method on first reading?**
+      Name each one that fails, and move the mechanics behind a well-named page-object method. Nested
+      `if`s, nested loops, streams, index arithmetic and duplicate fallback paths in a test body are
+      the usual offenders. Genuine complexity is allowed — but it lives on the page object, **once**,
+      with a comment saying what forced it. (§9.13)
+- [ ] **Formatting matches the file being edited**, not a style brought in with the generator: its
+      import block (no fully-qualified inline types when the file imports at the top), blank-line
+      rhythm, comment density and separator comments. **Do not invent a banner or separator style**, and
+      do not call one conventional without the grep that proves it — a convention found only in
+      previously generated code is self-referential, not the framework's. (§9.13)
 
 ---
 

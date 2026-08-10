@@ -12,6 +12,8 @@ parity guard, the conformance review, the reuse map, and the exploration driver.
 | [`cases.js`](cases.js) | **Canonical test cases** — 23 cases / 281 steps. Single source of truth for the uploader *and* the traceability table below. |
 | [`upload_browserstack.js`](upload_browserstack.js) | Uploads them via Test Management **API v2** into `PR-5` / folder `53434687`. `--dry` first. |
 | [`check_test_name_parity.js`](check_test_name_parity.js) | **Offline guard** — every case name must appear verbatim as an automated test title, or be declared manual. Runs with no device and no backend. |
+| [`create_browserstack_run.js`](create_browserstack_run.js) | **Superseded** — kept as this story's audit trail of what was actually run on 2026-08-03. Use the shared [`automation/browserstack_test_run.js`](../../automation/browserstack_test_run.js) for all new work. |
+| [`push_browserstack_results.js`](push_browserstack_results.js) | **Superseded**, same reason. The shared tool does strictly more (folder-link input, `automation_status`, platform-scoped build discovery, read-back verification). |
 | [`conformance-review.md`](conformance-review.md) | Phase 4b gate. Verdict **PASS** after four self-caught corrections. |
 | [`framework-reference.md`](framework-reference.md) | Reuse map: what was reused, what was added, and why. |
 | [`explore/`](explore/) | Session driver used for exploration and the manual AC sweep. |
@@ -25,6 +27,12 @@ node automation/check_test_name_parity.js
 # test-case upload (idempotency is NOT guaranteed — check the folder count first)
 node automation/upload_browserstack.js --dry
 node automation/upload_browserstack.js
+
+# TMS runs + automation_status — the STANDARD step, from the repo root (docs/ai/browserstack-process.md §10.8)
+# --run-map is REQUIRED for this story: TR-6742/6743 were created by hand before the canonical run naming
+# existed, and a test run CANNOT be renamed (PATCH /test-runs/{id} returns 404). Without the map the tool
+# would create a second pair of runs under the derived name. New stories need no map.
+node automation/browserstack_test_run.js   --folder-url "https://test-management.browserstack.com/projects/2407303/folder/53434687/test-cases"   --story B10-56711 --run-map ios=TR-6742,android=TR-6743 --since 2026-08-02T00:00:00 --dry
 
 # automation, from the framework root D:\projects
 mvn -o test-compile                                        # static gate
@@ -58,8 +66,10 @@ NODE_PATH=D:/breadfast-qa/node_modules node to-perk-details.js ios ar
 `perk-details-usage-card` · `branches-card` · `branches-toggle-btn` · `perk-details-cashback-card` ·
 `perk-details-expiry-card`
 
-⚠ **iOS ids are mirrored from Android, not yet observed** — the card backend returned `502` before an iOS
-session could be captured. Confirm against a live iOS session before treating an iOS failure as a defect.
+✅ **iOS ids confirmed on a live session** — all nine resolve by `name` on iPhone 13 / iOS 18 (they were
+originally mirrored from Android while the card backend was returning `502`). Note the platform contrast: on
+Android the same ids are in the page source but `By.id` returns nothing and only the resource-id XPath works;
+on iOS id, accessibility id and the `name` XPath all resolve.
 
 ⚠ **Android requires `allowInvisibleElements: true` + `ignoreUnimportantViews: false`**, re-asserted **after**
 navigation. The Pay area is Jetpack Compose and its node tree populates non-deterministically — identical
@@ -107,8 +117,9 @@ suite survives someone editing any individual perk:
 |---|---|
 | online coupon code | `findActivePerkWithCouponType(jwt, "online")` |
 | physical coupon code | `findActivePerkWithCouponType(jwt, "physical")` |
-| > 3 branch lines | `findActivePerkWithMoreThanThreeBranchLines(jwt, "en")` |
-| exactly 3 branch lines | `getAuthoredBranchLineCount(...) == 3` over the active set |
+| > 3 branch lines (card present only) | `findActivePerkWithMoreThanThreeBranchLines(jwt, "en")` |
+| > 3 branch lines, **all distinct** — the AC12 line-COUNT cases | `findActivePerkWithMoreThanThreeDistinctBranchLines(jwt, "en")` |
+| **exactly 3** distinct branch lines — AC12 boundary | `findActivePerkWithExactlyThreeDistinctBranchLines(jwt, "en")` |
 | card must be hidden | `findActivePerkWithoutAttribute(jwt, "<field>_en")` |
 
 The environment's current fixtures (2026-07-30 snapshot, [`../evidence/perks-baseline.json`](../evidence/perks-baseline.json)):
@@ -123,4 +134,22 @@ The environment's current fixtures (2026-07-30 snapshot, [`../evidence/perks-bas
 | Page objects + test classes | ✅ generated, `mvn -o test-compile` **BUILD SUCCESS** |
 | Conformance gate | ✅ **PASS** (4 corrections, see the review) |
 | Name parity | ✅ **PARITY OK** |
-| **Execution** | ⛔ **not run** — the testing card backend returns `502` (`card-panel-testing.breadfast.tech`, sustained across 4 probes; the app's Pay tab shows *"Something went wrong"*). Awaiting environment restore. |
+| **Execution — iOS** | ✅ **17/17 pass**, 2026-08-03, iPhone 13 / iOS 18, app build 1088 (`bs://fde72038…`), 1 h 46 m. 0 product defects. `TC-54260` failed first, passed after a **test** fix — see below. |
+| **Execution — Android** | ✅ **17/17 pass**, 2026-08-02, BrowserStack build `11169`, Samsung Galaxy S22 Ultra / Android 12 — one full-suite run plus targeted re-runs until every test name passed (`verifyBranchesTruncate…` needed 9 attempts, `…ExactlyThree…` 4, `verifySeeLess…` 3 — the same three the fixture contract below now protects). **Not re-run since that fix.** |
+| BrowserStack TMS runs | ✅ **`TR-6742`** (iOS) · **`TR-6743`** (Android) — 23 cases each, **17 passed / 6 untested**, back-filled from App Automate builds `1088` / `11169` and verified via `latest_status`. Live posting now wired (`PR-5`, `targetRunId=TR-6742`) and the framework's payload shape verified against the endpoint. |
+
+### Fixture contract — AC12's line-count cases need DISTINCT branch lines
+
+`TC-54259` / `TC-54260` / `TC-54261` discover their perk with
+`findActivePerkWithMoreThanThreeDistinctBranchLines` / `findActivePerkWithExactlyThreeDistinctBranchLines`,
+not the plain `…MoreThanThreeBranchLines` the other tests use. Counting rendered lines is done by matching
+the dashboard's values against the strings on screen, and that **cannot distinguish 3 rendered lines from 9
+when the authored list repeats itself**. On 2026-08-03 the plain finder's first match became `DC_24
+"freedelivery2"` — the placeholder `List / of / valid / branches / (if any)` three times over — and
+`TC-54260` failed `expected [3] but found [9]` while the screen was correctly showing 3 lines. The perk had
+been edited **mid-run**, which is also why `TC-54259` passed 70 minutes earlier on "the same" fixture.
+Evidence: [`explore/probe-ios-seeless.js`](explore/probe-ios-seeless.js) and
+[`../execution-reports/visual-findings.md`](../execution-reports/visual-findings.md) §8a.
+
+> The dashboard is a **live** oracle. A shape-discovered fixture can change between two tests of one suite,
+> so wherever an assertion depends on a data property, the finder must require that property.

@@ -41,10 +41,16 @@ skills:
   - { id: story-analysis,      runsAs: subagent, workflow: qa-shift-left }
   - { id: figma-analysis,      runsAs: subagent, workflow: qa-shift-left }
   - { id: impact-analysis,     runsAs: subagent, workflow: qa-shift-left }
+  # test-design: Phase A (HLS) + Phase B (test cases) are shift-left; Phase C (reconciliation) is validation.
   - { id: test-design,         runsAs: subagent, workflow: [qa-shift-left, qa-implementation-validation] }
-  - { id: exploratory-testing, runsAs: inline,   workflow: qa-implementation-validation }
+  # the mandatory review gate between generating cases and importing them (2026-08-09)
+  - { id: testcase-review,     runsAs: subagent, workflow: qa-shift-left }
+  # Mode A = pre-development exploratory ANALYSIS (conditional); Mode B = post-development exploratory TESTING
+  - { id: exploratory-testing, runsAs: inline,   workflow: [qa-shift-left, qa-implementation-validation] }
   - { id: visual-testing,      runsAs: subagent, workflow: qa-implementation-validation }
-  - { id: browserstack-mgmt,   runsAs: inline,   workflow: qa-implementation-validation }
+  # Mode A = import the approved cases (shift-left); Mode B = sync validation-time deltas
+  - { id: browserstack-mgmt,   runsAs: inline,   workflow: [qa-shift-left, qa-implementation-validation] }
   - { id: automation-gen,      runsAs: subagent, workflow: qa-implementation-validation }
+  - { id: framework-conformance, runsAs: subagent, workflow: qa-implementation-validation }
   - { id: defect-reporting,    runsAs: inline,   workflow: qa-implementation-validation }
   # clarification is the existing grill-me skill (inline, interactive) — not re-authored here

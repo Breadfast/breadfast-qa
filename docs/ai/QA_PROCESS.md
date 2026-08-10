@@ -29,8 +29,11 @@ Each story produces this set of artifacts (folder names are conventions; the *ar
 | Exported design frames | 2 | the expected visual reference |
 | Structured design extraction | 2 | expected components (bounds/styles/text) per frame |
 | Screen Registry entries | 2 | stable `screenId` → design frame + expected components + validation profile |
+| Exploratory analysis notes *(conditional)* | 3 | observed behaviour of the current app that grounds the cases |
 | High-Level Scenarios (HLS) | 3 | risk-ranked coverage outline |
 | Functional test cases (+ edge + negative) | 3 | executable, step-by-step, each with an expected result |
+| Test-case review record + approval | 3 | the gate: checklist verdicts, revisions, AC coverage — only approved cases are imported |
+| Test-management import record | 3 | destination, counts, verification, case-id map |
 | Execution results (per combo) | 4 | pass/fail/blocked + evidence per API/Web/Mobile |
 | Evidence Manifest | 5 | one row per captured screen (identity + screenshot + structured dump) |
 | Structured dumps | 5 | machine-readable structure of each actual screen |
@@ -49,9 +52,12 @@ flowchart TD
   P4 --> P5[5 · Visual Testing]
   P5 --> P6[6 · QA Summary]
   P1 -. gate .-> G1{scope locked?}
-  P3 -. gate .-> G3{coverage complete?}
+  P3 -. gate .-> G3{coverage complete<br/>reviewed & approved?}
   P5 -. gate .-> G5{visual evidence produced?}
 ```
+
+Phases 1–3 are **pre-development** (the shift-left workflow) and Phases 4–6 **post-development**; Phase 3's
+artifacts are reconciled (§3.6) rather than regenerated on the post-development pass.
 
 Each phase has an **exit gate**. Do not enter the next phase until the current gate passes.
 
@@ -159,30 +165,65 @@ each "have" backed by the call that proved it.
 
 # Phase 3 — Test Design
 
-**Purpose:** design coverage that is complete, risk-ranked, and executable.
+**Purpose:** design coverage that is complete, risk-ranked, and executable — and **agree it before
+development**, not after.
+
+> **Phase 3 runs pre-development (clarified 2026-08-09).** Its inputs (AC map, screens, impact,
+> clarifications) all exist before implementation, so the whole phase — including case generation, the
+> review gate and the import into test management — belongs to the shift-left workflow. Post-development,
+> Phase 3's artifacts are **reconciled against what was built** (3.6), never regenerated from scratch.
 
 ### Inputs
 - The AC map + constraints (Phase 1).
 - The screens + expected components (Phase 2).
+- *(When it ran)* the **Exploratory Analysis** notes (3.0).
+
+### 3.0 Exploratory Analysis (conditional, before design)
+Explore the **current** application when doing so will change the cases: ambiguous requirements or design
+states, undocumented existing flows, dependency/reachability questions, suspected edge cases, colliding
+upcoming scope, or an impacted area nobody has looked at. It improves **observability of the upcoming
+change**; it produces no verdicts and files no defects (nothing has been delivered to be wrong). Its
+output feeds case generation. **Skipping is a stated decision with a reason — never a silent omission.**
 
 ### Activities
 1. **High-Level Scenarios (HLS)** — enumerate the highest-risk coverage as a concise, risk-ranked outline: happy paths, negatives, edge cases, state transitions, validations, navigation, permissions, localization, error handling, and regression risks. Consolidate — do not pad.
-2. **Functional test cases** — expand HLS into granular, step-by-step cases. **Every step has its own expected result.** Never combine actions; navigation/validation/verification are explicit steps.
+2. **Functional test cases** — expand HLS into granular, step-by-step cases. **Every step has its own expected result.** Never combine actions; navigation/validation/verification are explicit steps. Cover the ACs, functional requirements, validation rules, error states, empty states, in-scope localization, permissions/state transitions, the **regression coverage identified in Phase 1's impact note**, and whatever the exploratory analysis surfaced.
 3. **Edge cases** — boundary values, empty/maximum states, slow/interrupted flows, locale-specific rendering (RTL), and derived-field logic.
 4. **Negative cases** — invalid input, unauthorized access, missing prerequisites, failure/error states, and cancellation paths.
-5. **Map cases to screens** — tag each case with the `screenId`(s) it exercises, so visual validation and functional execution share identity.
+5. **Map cases to screens** — tag each case with the `screenId`(s) it exercises, so visual validation and functional execution share identity. Classify each case **automatable / not-automatable**.
+6. **Review the cases (mandatory gate)** — before anything is committed to test management, verify: no
+   duplicates · no unrelated cases · no missing AC coverage · correct expected results · correct
+   granularity · correct categorization · correct automatable classification · justified regression
+   coverage · format conformance. **Revise and re-review until every check passes, then obtain explicit
+   approval.** Only approved cases are imported.
+7. **Import the approved cases** into test management and verify the import.
+
+### 3.6 Reconciliation (post-development)
+When execution, exploratory testing or the delivered implementation shows the approved suite must change,
+**reconcile** it: add missing cases, update existing ones, remove obsolete ones, split/merge, mark
+obsolete, adjust expected results, add newly-discovered regression cases. Every delta carries an
+**authority** (an AC, a design element, or a recorded clarification) and evidence, is **logged**, and goes
+back through the review + approval gate before the test-management system is synced. *"The application
+does X"* is not an authority — that is a defect candidate (Phase 4's defect-grounding rule).
 
 ### Outputs / Artifacts
+- *(Conditional)* Exploratory analysis notes.
 - HLS (risk-ranked).
 - Functional test cases (granular, expected-result-per-step).
 - Edge-case and negative-case sets.
-- Case → `screenId` mapping.
+- Case → `screenId` mapping; automatable/manual classification.
+- **Test-case review record** (checklist verdicts, revisions, AC-coverage table) + the approval.
+- Test-management import record.
+- *(Post-development)* the reconciliation log.
 
 ### Exit gate ✅
 - [ ] Every AC is covered by at least one case.
 - [ ] Happy, edge, and negative paths are represented.
 - [ ] Each case is executable and has expected results per step.
-- [ ] Cases are mapped to `screenId`s.
+- [ ] Cases are mapped to `screenId`s and classified automatable/manual.
+- [ ] **The review checklist passes on every item, and the cases are explicitly approved.**
+- [ ] **Only approved cases are imported, and the import is verified.**
+- [ ] *(Post-development)* every suite change is justified, logged, re-approved, and synced.
 
 ---
 
@@ -321,7 +362,7 @@ The **artifacts are the interface** between phases — not any specific tool. A 
 
 - [ ] Requirements understood; scope locked (Phase 1 gate).
 - [ ] Screens registered with expected components + profile (Phase 2 gate).
-- [ ] Coverage designed: HLS + cases + edge + negative, mapped to screens (Phase 3 gate).
+- [ ] Coverage designed: HLS + cases + edge + negative, mapped to screens — **reviewed, approved, imported** (Phase 3 gate).
 - [ ] Executed across all applicable combos with evidence (Phase 4 gate).
 - [ ] Visual validation run deterministic-first with a report; residual AI only where required (Phase 5 gate).
 - [ ] QA Summary produced — Story Health/Review Confidence rolled up, with a clear recommendation (Phase 6 gate).

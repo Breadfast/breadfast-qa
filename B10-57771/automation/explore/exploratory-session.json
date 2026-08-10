@@ -1,0 +1,186 @@
+[
+  {
+    "source": {
+      "id": "DC_29",
+      "title": "demo perk",
+      "logo": "/media/bcard-testing-card-perks/logo/en/79a19f15-8b9e-4104-8d60-95c5a33c33c7.png",
+      "cover": "/media/bcard-testing-card-perks/cover/en/5fcaeb99-e4ea-4d1b-8f95-b56882b9122e.png",
+      "coupon": "demo123"
+    }
+  },
+  {
+    "C1_menu_by_state": {
+      "DC_29": {
+        "rowState": "\tDC_29\tdemo section\tDiscount/coupon\tdemo perk\tget 10% off\tActive\t",
+        "items": [
+          {
+            "text": "View",
+            "disabled": false
+          },
+          {
+            "text": "Duplicate",
+            "disabled": false
+          },
+          {
+            "text": "Delete",
+            "disabled": true
+          }
+        ]
+      },
+      "DC_30": {
+        "rowState": "\tDC_30\tdemo section\tDiscount/coupon\tQA57771 Planned\tB10-57771 duplicate-action source fixture\tPlanned\t",
+        "items": [
+          {
+            "text": "View",
+            "disabled": false
+          },
+          {
+            "text": "Duplicate",
+            "disabled": false
+          },
+          {
+            "text": "Delete",
+            "disabled": false
+          }
+        ]
+      },
+      "DC_31": {
+        "rowState": "\tDC_31\tdemo section\tDiscount/coupon\tQA57771 Expired\tB10-57771 duplicate-action source fixture\tExpired\t",
+        "items": [
+          {
+            "text": "View",
+            "disabled": false
+          },
+          {
+            "text": "Duplicate",
+            "disabled": false
+          },
+          {
+            "text": "Delete",
+            "disabled": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "C2_coupon_prefill": {
+      "value": "",
+      "visible": true
+    }
+  },
+  {
+    "C2_save_without_coupon": {
+      "urlStillOnForm": true,
+      "errors": [
+        "*",
+        "*",
+        "*",
+        "*",
+        "*",
+        "*",
+        "",
+        "*",
+        "",
+        "*",
+        "",
+        "*",
+        "",
+        "This field is required.",
+        "*",
+        "*",
+        "*",
+        "*",
+        "*"
+      ]
+    }
+  },
+  {
+    "C2_after_first_save_click": {
+      "url": "https://card-panel-testing.breadfast.tech/#/perks/duplicate/DC_29",
+      "buttons": [
+        "Preview & save",
+        "close",
+        "close",
+        "close",
+        "close",
+        "close",
+        "close",
+        "close",
+        "Preview & save",
+        "close",
+        "arrow_back_ios",
+        "",
+        "View",
+        "Save",
+        "Cancel"
+      ]
+    }
+  },
+  {
+    "C2_confirmed": {
+      "url": "https://card-panel-testing.breadfast.tech/#/perks?section_id=145"
+    }
+  },
+  {
+    "C2_create_payload_shape": [
+      {
+        "keys": [
+          "status",
+          "start_date",
+          "end_date",
+          "type",
+          "title_en",
+          "title_ar",
+          "logo",
+          "logo_ar",
+          "description_en",
+          "description_ar",
+          "logo_media_id",
+          "logo_ar_media_id",
+          "cover_photo_media_id",
+          "cover_photo_ar_media_id",
+          "section_id",
+          "display_order",
+          "createdAt",
+          "updatedAt",
+          "deletedAt",
+          "section",
+          "perk_attributes"
+        ],
+        "logoType": "object",
+        "logoSample": "{\"base64\":\"iVBORw0KGgoAAAANSUhEUgAAAPAAAAC0CAIAAAAl/ja/AAAQAElEQVR4nOydd1wURxvHlyK9FwEpCiogCoooKiAiYosaS9QYk2iMMSbGFk190",
+        "coverType": "object",
+        "hasId": false,
+        "start": "2026-08-09 09:33:59",
+        "end": "2026-09-05 23:59:59",
+        "coupon": "DUPCODE01"
+      }
+    ]
+  },
+  {
+    "C3_duplicate_record": {
+      "id": "DC_32",
+      "status": "active",
+      "title": "QA57771 Dup A",
+      "title_ar": "ديمو بيرك",
+      "logo": "/media/bcard-testing-card-perks/logo/en/5002c827-d95c-4186-9862-4dd4e8ee190a.png",
+      "cover": "/media/bcard-testing-card-perks/cover/en/85b1e41a-7217-4674-8c4f-c4ace1a0be0e.png",
+      "coupon": "DUPCODE01",
+      "start": "2026-08-09 09:33:59",
+      "end": "2026-09-05 23:59:59",
+      "section_id": 145
+    }
+  },
+  {
+    "C3_independence": {
+      "newId": true,
+      "logoUrlDiffers": true,
+      "coverUrlDiffers": true,
+      "logoAccessible": 200,
+      "coverAccessible": 200,
+      "datesCopiedFromSource": true,
+      "sourceUnchanged": true
+    }
+  }
+]

@@ -1,0 +1,82 @@
+{
+  "chunks": [
+    "https://card-panel-testing.breadfast.tech/appconfig.js",
+    "https://card-panel-testing.breadfast.tech/assets/js/jquery.min.js",
+    "https://card-panel-testing.breadfast.tech/runtime-es2018.3778fe5ac9e38d61f1da.js",
+    "https://card-panel-testing.breadfast.tech/polyfills-es2018.04fc1048ce3eac07f651.js",
+    "https://card-panel-testing.breadfast.tech/assets/js/ywxi_1.js",
+    "https://card-panel-testing.breadfast.tech/scripts.e98a36d88aa8a0b6ebeb.js",
+    "https://card-panel-testing.breadfast.tech/main-es2018.01c3a346c46bd2a78fa4.js",
+    "https://card-panel-testing.breadfast.tech/416-es2018.2f06466acaafa8e2f97c.js",
+    "https://card-panel-testing.breadfast.tech/common-es2018.433f0ae633618a369945.js",
+    "https://card-panel-testing.breadfast.tech/849-es2018.ee19d97f59034381b520.js",
+    "https://card-panel-testing.breadfast.tech/490-es2018.0d3c74420d5cfd9fa17f.js",
+    "https://card-panel-testing.breadfast.tech/28-es2018.6c1d5725b98bf99c2aeb.js"
+  ],
+  "apiCalls": [
+    {
+      "method": "POST",
+      "url": "/api/v1/web/user/login",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "url": "/api/v1/web/requests/requestPendingLength",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "url": "/api/v1/web/card/perks/section/list",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "url": "/api/v1/web/card/perks/list",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "url": "/api/v1/web/card/perks/list",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "url": "/api/v1/web/card/perks/category/list",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "url": "/api/v1/web/card/perks/merchant/list",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "url": "/api/v1/web/card/perks/section/list",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "url": "/api/v1/web/card/perks/get",
+      "status": 200
+    }
+  ],
+  "featuredIn": {
+    "28-es2018.6c1d5725b98bf99c2aeb.js": {
+      "count": 4,
+      "ctx": [
+        ".id,delete b.perk.numericID,delete b.perk.numeric_id_by_type,delete b.perk.old,\"featured\"in b.perk&&(b.perk.featured=!1),b.perk.perk_attributes&&\"featured\"in b.perk.perk_attributes&&(b.per"
+      ]
+    }
+  },
+  "duplicateIn": {
+    "28-es2018.6c1d5725b98bf99c2aeb.js": {
+      "count": 5,
+      "ctx": [
+        "275restoreView(M);const z=c.\\u0275\\u0275nextContext().$implicit;return c.\\u0275\\u0275nextContext(3).duplicatePerk(b,z)}),c.\\u0275\\u0275element(1,\"i\",55),c.\\u0275\\u0275text(2),c.\\u0275\\u0275pipe(3,\"translate\"),c.\\u0275\\u0275elementEnd()}2&M&&(c.\\u0275\\u0275advance(2),c.\\u02",
+        "rk(M){this.router.navigateByUrl(`/perks/${M}`)}addPerk(){this.router.navigateByUrl(\"/perks/create\")}duplicatePerk(M,b){M.stopPropagation(),this.router.navigateByUrl(`/perks/duplicate/${b.id}`)}get hasDeletePermission(){return this.constants.getActions([\"delete_perk\"])}isPl",
+        "EM.kI.maxLength(50)]]}),this.sectionForm.valueChanges.subscribe(()=>this.clearDuplicateError())}get isDuplicate(){var M;return null===(M=this.sectionForm)||void 0===M?void 0:M.get(\"name_en\").hasError(\"duplicate\")}setDuplicateError(){this.nameControls.forEach(M=>{const b=",
+        "(\"required\",!0)(\"formGroup\",b.sectionForm),c.\\u0275\\u0275advance(1),c.\\u0275\\u0275property(\"ngIf\",b.isDuplicate),c.\\u0275\\u0275advance(3),c.\\u0275\\u0275textInterpolate1(\" \",c.\\u0275\\u0275pipeBind1(16,18,\"Section name AR\"),\" \"),c.\\u0275\\u0275advance(4),c.\\u0275\\u0275prope"
+      ]
+    }
+  }
+}

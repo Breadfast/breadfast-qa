@@ -1,0 +1,117 @@
+[
+  {
+    "title": "Verify the Featured column renders between Status and Actions in a category-filtered perks list",
+    "id": "TC-54893",
+    "status": "existing"
+  },
+  {
+    "title": "Verify the Featured column renders in the unfiltered All perks view",
+    "id": "TC-54894",
+    "status": "existing"
+  },
+  {
+    "title": "Verify every perk in a category is unfeatured before any perk is featured",
+    "id": "TC-54895",
+    "status": "existing"
+  },
+  {
+    "title": "Verify checking the Featured box marks an Active perk as featured for its category",
+    "id": "TC-54896",
+    "status": "existing"
+  },
+  {
+    "title": "Verify a featured perk remains featured after the perks list is reloaded and re-filtered",
+    "id": "TC-54897",
+    "status": "existing"
+  },
+  {
+    "title": "Verify the featured state of a perk is returned by the perks API consumed by the mobile app",
+    "id": "TC-54898",
+    "status": "existing"
+  },
+  {
+    "title": "Verify featuring a second Active perk in the same category is blocked and the perk is not featured",
+    "id": "TC-54899",
+    "status": "existing"
+  },
+  {
+    "title": "Verify the blocked attempt displays the one-featured-perk-per-category error message",
+    "id": "TC-54900",
+    "status": "existing"
+  },
+  {
+    "title": "Verify the originally featured perk keeps its featured state after a blocked attempt",
+    "id": "TC-54901",
+    "status": "existing"
+  },
+  {
+    "title": "Verify unchecking the Featured box removes the featured state from a perk",
+    "id": "TC-54902",
+    "status": "existing"
+  },
+  {
+    "title": "Verify the featured perk of a category can be changed by unfeaturing the current perk first",
+    "id": "TC-54903",
+    "status": "existing"
+  },
+  {
+    "title": "Verify featuring a perk in one category does not affect the featured perk of another category",
+    "id": "TC-54904",
+    "status": "existing"
+  },
+  {
+    "title": "Verify the Featured checkboxes are not interactive when the list is not filtered by a category",
+    "id": "TC-54905",
+    "status": "existing"
+  },
+  {
+    "title": "Verify the Featured checkboxes become interactive after a category is selected and Search is applied",
+    "id": "TC-54906",
+    "status": "existing"
+  },
+  {
+    "title": "Verify applying only the Type or Status filter does not make the Featured checkboxes interactive",
+    "id": "TC-54907",
+    "status": "existing"
+  },
+  {
+    "title": "Verify a perk that belongs to no category cannot be featured",
+    "id": "TC-54908",
+    "status": "existing"
+  },
+  {
+    "title": "Verify a featured perk remains ticked as featured after it becomes Expired",
+    "id": "TC-54909",
+    "status": "existing"
+  },
+  {
+    "title": "Verify featuring a new perk in a category whose featured perk is Expired succeeds and displaces it",
+    "id": "TC-54910",
+    "status": "existing"
+  },
+  {
+    "title": "Verify the one-featured-perk-per-category rule is enforced by the API and not only by the admin screen",
+    "id": "TC-54911",
+    "status": "existing"
+  },
+  {
+    "title": "Verify the perks table column set, row actions and filters still work after the Featured column is added",
+    "id": "TC-54912",
+    "status": "existing"
+  },
+  {
+    "title": "Verify opening a perk from the perks list still works after the Featured column is added",
+    "id": "TC-54913",
+    "status": "existing"
+  },
+  {
+    "title": "Verify the filtered empty state still renders when no perk matches the applied filters",
+    "id": "TC-54914",
+    "status": "existing"
+  },
+  {
+    "title": "Verify a duplicated perk defaults to unfeatured regardless of the source perk featured state",
+    "id": "TC-54915",
+    "status": "existing"
+  }
+]

@@ -1,6 +1,6 @@
 ---
 name: qa-full
-version: 1.0
+version: 2.0
 type: workflow
 description: Full QA lifecycle (the original end-to-end process) — Pre-Development baseline then Post-Development validation in one run.
 purpose: Run Workflow 1 then Workflow 2 back-to-back for a story with no usable baseline, producing the complete artifact set (requirements → qa-summary).
@@ -19,11 +19,16 @@ inputs: { ticket: required, figmaUrl: optional-override, appUrl: optional, mobil
 > two workflow files. If a step here and its source workflow ever diverge, **the source workflow wins**.
 
 **Discipline (hybrid, per `CLAUDE.md` §2 resolved policy):**
-- **Phase A (analysis/design) is clarify-first** — the Clarification gate MAY STOP and ask. It is the
-  *only* planned stop in the run.
-- **Phase B (execution) is auto-run** — after the gate, run end-to-end without stopping, pausing only
-  for a genuine blocker (unknown OTP/BCID, required backend status change, content not found) or a
-  handoff conflict (Step 6).
+- **Phase A (analysis/design) is clarify-first** — it holds the run's **two** planned stops: the
+  **Clarification gate** (A3) and the **Test-Case Approval gate** (A8).
+- **Phase B (execution) is auto-run** — after Gate A, run end-to-end without stopping, pausing only
+  for a genuine blocker (unknown OTP/BCID, required backend status change, content not found), a
+  handoff conflict (Step 6), or a **re-approval** of test cases Phase B changed (B2–B3).
+
+> **Two planned stops, not one (changed 2026-08-09).** Test-case generation moved into Phase A, and its
+> approval gate is an operator decision. Invoking `qa-full` authorizes the *run*; it does not
+> pre-approve the coverage the run designs. Approving your own test cases because "the operator asked
+> for the whole workflow" is exactly the self-exemption pattern that produced B10-56717.
 
 ## When to use which workflow
 
@@ -80,7 +85,7 @@ every quality gate met. One second at Step 0 replaces that.
 
 ## Phase A — Pre-Development baseline (Workflow 1)
 
-Execute [`qa-shift-left.md`](qa-shift-left.md) **Steps 0–5 exactly as written**, in order:
+Execute [`qa-shift-left.md`](qa-shift-left.md) **Steps 0–9 exactly as written**, in order:
 
 | Step | Skill (runsAs) | Artifact key |
 |---|---|---|
@@ -89,17 +94,26 @@ Execute [`qa-shift-left.md`](qa-shift-left.md) **Steps 0–5 exactly as written*
 | 2 · Figma Analysis | `figma-analysis` (subagent) | `figma-analysis` |
 | 3 · Clarification ⟵ **GATE, may STOP** | `grill-me` (inline, interactive) | `clarifications` |
 | 4 · Impact Analysis | `impact-analysis` (subagent) | `impact` |
-| 5 · HLS (+ publish checklist to Jira) | `test-design` (subagent, HLS phase) | `hls` |
+| 5 · Exploratory Analysis ⟵ **conditional** | `exploratory-testing` (inline, Mode A) | `exploratory-notes` |
+| 6 · HLS (+ publish checklist to Jira) | `test-design` (subagent, Phase A) | `hls` |
+| 7 · Test Case Generation | `test-design` (subagent, Phase B) | `testcases` |
+| 8 · Test Case Review ⟵ **GATE, WILL STOP for approval** | `testcase-review` (subagent → inline stop) | `testcase-review` |
+| 9 · BrowserStack Import (approved cases only) | `browserstack-mgmt` (inline, Mode A) | `browserstack-import` |
 
 Fingerprint + `record` each artifact with the commands given in `qa-shift-left.md` — **use the same
 per-skill `--generator` values** (`story-analysis@1.0`, `figma-analysis@1.0`, `clarification@1.0`,
-`impact-analysis@1.0`, `test-design@1.0`). Do **not** stamp artifacts with `qa-full@1.0`: generators are
+`impact-analysis@1.0`, `exploratory-testing@2.0`, `test-design@2.0`, `testcase-review@1.0`,
+`browserstack-mgmt@2.0`). Do **not** stamp artifacts with `qa-full@2.0`: generators are
 skill-scoped so `version:` bumps invalidate the right artifacts and a later reconcile behaves identically
 regardless of which workflow produced the baseline. Only the state-level `generatedBy` records the
-orchestrating workflow (`qa-full@1.0`).
+orchestrating workflow (`qa-full@2.0`).
 
-**Gate A (QA_PROCESS Phase 1 + 3-analysis exit):** scope locked, all five baseline artifacts `complete`,
-`qa-state.json` validates. Do not enter Phase B until Gate A passes.
+**Gate A (QA_PROCESS Phase 1–3 exit):** scope locked, test cases reviewed **and operator-approved**,
+imported and verified — `complete-check --profile shift-left` passes and `qa-state.json` validates.
+Do not enter Phase B until Gate A passes.
+```
+node qa-workflow/bin/qa-cli.js complete-check "<storyDir>" --profile shift-left
+```
 
 ---
 
@@ -116,7 +130,8 @@ minutes ago, so the same machinery runs as an **assertion**, not a reuse plan:
    echo '<current-jira-issue-json>' | node qa-workflow/bin/qa-cli.js reconcile "<storyDir>" \
         --figma-file <key> --figma-nodes <ids> --figma-version <v>
    ```
-3. **Expected result: all five baseline keys in `reuse`, `stale`/`conflicts` empty.** Proceed.
+3. **Expected result: all eight baseline keys in `reuse`** (nine with `exploratory-notes`),
+   **`stale`/`conflicts` empty.** Proceed.
 4. **If anything is `stale`** — the story or design changed *during* the run. Do not ignore it: regenerate
    the stale set (+ cascade) per [`qa-implementation-validation.md`](qa-implementation-validation.md) §0.3,
    re-record, then re-run this check. Report the mid-run drift in the QA Summary.
@@ -129,20 +144,25 @@ minutes ago, so the same machinery runs as an **assertion**, not a reuse plan:
 
 ## Phase B — Post-Development validation (Workflow 2)
 
-Execute [`qa-implementation-validation.md`](qa-implementation-validation.md) **Execution phases 1–8 exactly
+Execute [`qa-implementation-validation.md`](qa-implementation-validation.md) **Execution phases 1–9 exactly
 as written** — skipping only its Step 0 (satisfied by Step 6 above):
 
 | # | Skill (runsAs) | Artifact key |
 |---|---|---|
-| 1 | `exploratory-testing` (inline) | — (feeds test design) |
-| 2 | `test-design` Phase B (subagent) | `testcases` |
-| 3 | `browserstack-mgmt` (inline) | `browserstack-import` |
-| 4 | `automation-gen` (subagent) | `automation` |
-| 4b | `framework-conformance` (subagent) — gate, runs before 4 is recorded | — (`automation/conformance-review.md`) |
-| 5 | Execution — 4 combos (iOS/Android × en/US + ar/EG) | `execution` |
-| 6 | `visual-testing` (subagent) | `visual-findings` |
-| 7 | `defect-reporting` (inline) | `defects` |
-| 8 | QA Summary | `qa-summary` |
+| 1 | `exploratory-testing` (inline, Mode B — the delivered build) | `exploratory-notes` (appended) |
+| 2 | `test-design` Phase C (subagent) — **only if the approved suite must change** | `testcase-reconciliation` (+ re-record `testcases`) |
+| 3 | `testcase-review` over the deltas ⟵ **GATE, stops for re-approval** — only if 2 ran | `testcase-review` (re-recorded) |
+| 4 | `browserstack-mgmt` (inline, Mode B — **sync**, by `TC-xxxx` id) — only if 2 ran | `browserstack-import` (re-recorded) |
+| 5 | `automation-gen` (subagent) | `automation` |
+| 5b | `framework-conformance` (subagent) — gate, runs before 5 is recorded | — (`automation/conformance-review.md`) |
+| 6 | Execution — 4 combos (iOS/Android × en/US + ar/EG) | `execution` |
+| 7 | `visual-testing` (subagent) | `visual-findings` |
+| 8 | `defect-reporting` (inline) | `defects` |
+| 9 | QA Summary | `qa-summary` |
+
+Phases 2–4 are **conditional**: in a `qa-full` run the suite was designed minutes ago against the same
+implementation, so it will often need no deltas at all. Record nothing and say so — an empty
+reconciliation is a result, not a skipped phase.
 
 Record each artifact (`qa-cli.js record ... --derive-artifacts <upstream>`) and validate `qa-state.json`.
 
@@ -165,10 +185,11 @@ There is no `qa-full`-only state, so nothing is stranded by resuming through a d
 
 ## Completion
 - ```
-  node qa-workflow/bin/qa-cli.js complete-check "<storyDir>"
+  node qa-workflow/bin/qa-cli.js complete-check "<storyDir>" --profile full
   ```
-  **Exits 1** while any of the twelve required artifacts is missing or not `complete` and has no recorded
-  operator deferral. **This is the completion gate — `show` is not**, because `show` prints state and
+  **Exits 1** while any of the thirteen required artifacts is missing or not `complete` and has no recorded
+  operator deferral — and while an **approved** test-case suite has drifted with no recorded
+  `testcase-reconciliation`. **This is the completion gate — `show` is not**, because `show` prints state and
   always exits 0, which is how a `partial` **automation** artifact sat beside eleven `complete` ones on
   B10-56717 and never contradicted the QA summary. Run `show` for detail, `complete-check` to pass.
 - A phase may only be skipped with an **operator-approved, recorded** deferral:
@@ -182,6 +203,7 @@ There is no `qa-full`-only state, so nothing is stranded by resuming through a d
 - Report: baseline summary + QA Summary + defects filed + coverage/risks + recommendation.
 
 ## Outputs (the full artifact set)
-`requirements` · `figma-analysis` · `clarifications` · `impact` · `hls` · `testcases` ·
-`browserstack-import` · `automation` · `execution` · `visual-findings` · `defects` · `qa-summary`
-— under `<storyDir>/`, each recorded in `qa-state.json` (`generatedBy: qa-full@1.0`).
+`requirements` · `figma-analysis` · `clarifications` · `impact` · *(`exploratory-notes`)* · `hls` ·
+`testcases` · `testcase-review` · `browserstack-import` · *(`testcase-reconciliation`)* · `automation` ·
+`execution` · `visual-findings` · `defects` · `qa-summary`
+— under `<storyDir>/`, each recorded in `qa-state.json` (`generatedBy: qa-full@2.0`).

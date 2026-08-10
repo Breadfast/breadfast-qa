@@ -42,8 +42,20 @@ Governing principle: **structural isomorphism + dependency inversion.**
 
 ### 3.1 Two workflows (the split) — and one composed full run
 
-- **Workflow 1 — Pre-Development (shift-left):** Requirements Analysis → Figma Analysis → Clarification → Impact Analysis → HLS → publish HLS checklist to Jira. Outputs are **reusable story artifacts**.
-- **Workflow 2 — Post-Development (implementation-validation):** **Reconcile** (reuse Pre-Dev artifacts unless invalid) → Exploratory → Test Case Generation → BrowserStack Import → Automation → Execution → Functional + Design Bug Reporting → QA Summary.
+> **Amendment 2026-08-09 — coverage definition moved into Workflow 1.** Test Case Generation, a new
+> mandatory **Test Case Review/Approval gate**, and the BrowserStack Import are now W1 phases; a
+> **conditional Exploratory Analysis** was added before test design. W2 keeps the same artifacts but
+> **reconciles** them (add/update/remove/split/merge/obsolete, each justified and logged) instead of
+> generating them. **Shift left = establish the coverage baseline · Validate = reconcile and maintain it.**
+> Rationale: every input a complete suite needs exists before implementation, so designing cases after
+> delivery writes them against the build rather than the requirement, and under delivery pressure. The
+> reuse contract absorbs this without a new mechanism — the baseline simply grows 5 → 8 keys and the
+> existing cascade carries a changed AC all the way to the imported suite. Cost: `qa-full` now has **two**
+> planned stops (clarification + test-case approval) rather than one; approval is an operator decision by
+> construction (`APPROVAL_DEPS`), never a self-exemption.
+
+- **Workflow 1 — Pre-Development (shift-left):** Requirements Analysis → Figma Analysis → Clarification → Impact Analysis → *(conditional)* Exploratory Analysis → HLS (published to Jira) → **Test Case Generation → Test Case Review/Approval gate → BrowserStack Import**. Outputs are **reusable story artifacts** — analysis *and* the approved coverage baseline.
+- **Workflow 2 — Post-Development (implementation-validation):** **Reconcile** (reuse Pre-Dev artifacts unless invalid) → Exploratory Testing → **Test Case Reconciliation** (+ re-review, re-approve, BrowserStack **sync**) → Automation → Execution → Functional + Design Bug Reporting → QA Summary.
 - **Workflow 3 — Full lifecycle (`qa-full`, amendment 2026-07-26):** W1 → continuity check → W2, in one run. It is a **composition, not a third methodology**: it owns no phase logic, and its only structural difference is replacing W2's *Reconcile* with a **continuity assertion** (the baseline was produced minutes earlier, so the reconcile plan must come back all-`reuse`; stale ⇒ mid-run drift, conflict ⇒ stop). Artifacts stay stamped with their **producing skill's** generator, so a W3 run is contract-indistinguishable from a W1+W2 pair and a later `qa-validate` reconciles it identically. Rationale: the split optimizes for the shift-left case, but a story delivered with **no baseline** (or one predating the split) still needs the original end-to-end pass — previously the operator had to chain two entrypoints and manually suppress the redundant Reconcile.
 
 **The split remains the primary model.** W3 exists so the two-workflow decision costs nothing in the no-baseline case; it must never accumulate phase logic of its own — if a phase needs changing, it changes in W1/W2 or the phase skill, and W3 inherits it.
@@ -73,14 +85,14 @@ Runnable Claude Code entrypoints register under `.claude/` and point into this t
 |---|---|---|
 | `workflows/`, task `skills/`, `domains/`, `registry/domains.yaml`, `lib/schema`, `templates/` | ✅ Build | direct 1:1 migration targets |
 | `lib/freshness` (the **drift** engine core) | ✅ Build | drift-shaped; plugin `drift` absorbs it later |
-| `commands/status` | ✅ Build (light) | coverage/lock-state report |
+| `commands/status` | ✅ Build (light) — **built 2026-08-09** as `qa-cli.js status` | per-artifact state, approvals, conditional phases, the next phase + its blockers, and lock-state (artifacts whose generator predates the current methodology) |
 | `commands/ onboard · onboard-domain · lock · setup-mcp` | ❌ Skip | plugin-authoring lifecycle; no standalone value |
 | `adapters/host-emitter` | ❌ Skip → **seam** | keep CLAUDE.md **thin**; knowledge lives in skills/domains → emitter generates it later |
 | `adapters/reanchor-hook` | ❌ Skip | existing memory + session-continuity covers it |
 | `lib/scan` | ❌ Skip | not needed for QA runtime |
 
 Two seams keep coupling at zero:
-- **`lock` → a `version:` field** in each skill's frontmatter. Bumping it forces targeted artifact regeneration (contract §freshness rule *e*). The plugin's `lock` later formalizes the same field.
+- **`lock` → a `version:` field** in each skill's frontmatter. Bumping it forces targeted artifact regeneration (contract §freshness rules *d* and *e*). The plugin's `lock` later formalizes the same field. **Wired 2026-08-09** via [`lib/freshness/generators.js`](../../../qa-workflow/lib/freshness/generators.js) — until then the field existed, the rules were implemented and unit-tested, and nothing ever supplied their inputs, so bumping a version invalidated nothing.
 - **`host-emitter` → thin CLAUDE.md.** Authored by hand today but orchestration-only; regenerated from skills/domains later. The swap is small because CLAUDE.md carries no detail.
 
 ### 3.4 Execution model (plugin-agnostic, kept from prior design)

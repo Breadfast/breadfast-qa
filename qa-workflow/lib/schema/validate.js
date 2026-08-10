@@ -64,6 +64,38 @@ function validateQaState(s) {
     }
   }
 
+  // deferrals / approvals (optional) — operator decisions, always with a name attached
+  if (s.deferrals != null) {
+    if (!isObj(s.deferrals)) err('deferrals', 'must be an object');
+    else for (const [key, d] of Object.entries(s.deferrals)) {
+      if (!KEY.test(key)) err(`deferrals.${key}`, 'key must match ' + KEY);
+      if (!isObj(d) || typeof d.approvedBy !== 'string' || !d.approvedBy) err(`deferrals.${key}.approvedBy`, 'required string');
+      if (!isObj(d) || typeof d.reason !== 'string' || !d.reason) err(`deferrals.${key}.reason`, 'required string');
+    }
+  }
+  if (s.approvals != null) {
+    if (!isObj(s.approvals)) err('approvals', 'must be an object');
+    else for (const [key, a] of Object.entries(s.approvals)) {
+      if (!KEY.test(key)) err(`approvals.${key}`, 'key must match ' + KEY);
+      if (!isObj(a) || typeof a.approvedBy !== 'string' || !a.approvedBy) err(`approvals.${key}.approvedBy`, 'required string');
+      if (isObj(a) && a.checksum != null && !SHA256.test(String(a.checksum))) err(`approvals.${key}.checksum`, 'must be sha256');
+      if (isObj(a) && a.history != null) {
+        if (!Array.isArray(a.history)) err(`approvals.${key}.history`, 'must be an array');
+        else a.history.forEach((h, i) => {
+          if (!isObj(h) || typeof h.approvedBy !== 'string' || !h.approvedBy) err(`approvals.${key}.history[${i}].approvedBy`, 'required string');
+        });
+      }
+    }
+  }
+  if (s.skips != null) {
+    if (!isObj(s.skips)) err('skips', 'must be an object');
+    else for (const [key, k] of Object.entries(s.skips)) {
+      if (!KEY.test(key)) err(`skips.${key}`, 'key must match ' + KEY);
+      if (!isObj(k) || typeof k.decidedBy !== 'string' || !k.decidedBy) err(`skips.${key}.decidedBy`, 'required string');
+      if (!isObj(k) || typeof k.reason !== 'string' || !k.reason) err(`skips.${key}.reason`, 'required string');
+    }
+  }
+
   // artifacts
   if (!isObj(s.artifacts)) err('artifacts', 'required object');
   else for (const [key, r] of Object.entries(s.artifacts)) {

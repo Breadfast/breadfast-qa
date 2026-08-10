@@ -148,6 +148,56 @@ this false conclusion produced was captured on a 1080x2340 device, and silently 
 15s later on an unrelated-looking wait. Locators are device-independent; coordinates are not. Reach for a
 coordinate tap only after re-reading the page source **with the settings applied**.
 
+### 2.1 Reported geometry does not bound reported content (durable finding, 2026-08-02)
+
+**Never build an assertion on "which nodes fall inside this container's rect".** On the Compose surfaces
+these apps use, a container's reported rect and the nodes it visually contains are *different sets*.
+Measured on the B10-56711 Perk-Details screen, Samsung Galaxy S23 / Android 13:
+
+| Symptom | Measurement |
+|---|---|
+| `branches-card` rect ends **above its own last line** | card bottom `y=2196`, its 3rd branch line renders at `y=2226` |
+| A card's content is **not its descendant** | `branches-card` has **0** descendant text nodes; the lines are siblings |
+| A node's `@text` sits far from the label the user reads | the node carrying `"Cashback processing"` is **130 px below** the visible label (which carries it as `content-desc`) |
+| Bounds come back **inverted** once content grows | toggle reported `[313,2940][442,2196]` — bottom above top — after expanding pushed it below the fold |
+| Bounds are in **content space, not viewport space** | `y=7402` returned on a 2340 px-tall screen |
+
+Three successive attempts to bound the branches region by position each produced a *different wrong
+answer* — bounding by the card lost a real line (counted 2), bounding by the next label swept two foreign
+lines in (counted 5) — while the app was rendering 3 the whole time. **The fix that worked used no geometry
+at all:** ask the oracle what is authored, ask the tree what strings are on screen, and intersect the two
+(`countRenderedAuthoredBranchLines`). That states the AC directly — *how many authored lines are visible* —
+and cannot be defeated by a misreported rect.
+
+**Positional reading is still allowed where nothing else works** (`getCardTextLines` selects by vertical
+centre because the cards genuinely do not parent their content) — but it is a *reader of last resort*, and
+any count it produces must be corroborated before a failure built on it is believed.
+
+**This does not contradict "measure geometry on iOS, not Android"** (B10-56717: Android clips `bounds` to
+the viewport, iOS reports true frames). That rule is about an **element's own** frame, which iOS does
+report honestly — it is why the card-grid arithmetic there was sound. This one is about the relationship
+between a **container's** frame and the content inside it, which neither platform reports reliably on a
+Compose surface. Measure an element; never infer membership from a parent's rect.
+
+### 2.2 Diagnose before you fix: capture the rendered state first
+
+**When a count or content assertion disagrees with expectation, capture what the screen is actually
+rendering and compare it against the oracle — before changing any code.** Adjusting the reader and
+re-running tests a guess; it cannot distinguish *"my reader is wrong"* from *"the product is wrong"*, which
+is the only question that matters. A dump of the on-screen strings answers it in one pass.
+
+This is the automation-side twin of the defect rule in
+[bug-reporting.md](../bug-reporting.md) §1.1 (*look at the screenshot of the moment the failure supposedly
+happened*), and it generalises the one already learned for interactions — **the correct default for a
+failed interaction is "my tap did not land", not "the product is broken"** — to *readers*: the correct
+default for a surprising count is **"my reader is miscounting"**, not "the product renders the wrong
+number".
+
+Cost of ignoring it, measured: three device round-trips at ~8 minutes each on one assertion, versus one
+probe that printed every text node with its `y` and settled it immediately. **Write the probe.** Keep it
+next to the story's automation (`<story>/automation/explore/probe-*.js`) — it is also the evidence that
+disproves the false defect the failure would otherwise have produced.
+
 ---
 
 ## 3. Synchronization / wait strategy

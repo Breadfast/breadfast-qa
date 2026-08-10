@@ -45,9 +45,27 @@
     },
     "artifacts": {
       "type": "object",
-      "description": "One record per artifact, keyed by artifact key (requirements, figma-analysis, clarifications, impact, hls, and optional Workflow-2 outputs).",
+      "description": "One record per artifact, keyed by artifact key (the shift-left baseline: requirements, figma-analysis, clarifications, impact, hls, testcases, testcase-review, browserstack-import — plus optional/conditional and Workflow-2 outputs).",
       "propertyNames": { "$ref": "#/$defs/artifactKey" },
       "additionalProperties": { "$ref": "#/$defs/artifactRecord" }
+    },
+    "deferrals": {
+      "type": "object",
+      "description": "Operator-approved phase deferrals, keyed by artifact key. The only way past PHASE_DEPS, APPROVAL_DEPS and complete-check. A deferral always carries a name and a reason.",
+      "propertyNames": { "$ref": "#/$defs/artifactKey" },
+      "additionalProperties": { "$ref": "#/$defs/deferralRecord" }
+    },
+    "approvals": {
+      "type": "object",
+      "description": "Operator approvals, keyed by artifact key. `testcases` must be approved before browserstack-import may be recorded — reviewing is the agent's job, approving is the operator's.",
+      "propertyNames": { "$ref": "#/$defs/artifactKey" },
+      "additionalProperties": { "$ref": "#/$defs/approvalRecord" }
+    },
+    "skips": {
+      "type": "object",
+      "description": "Conditional phases (optional DAG members) deliberately not run, keyed by artifact key. Distinct from a deferral: a deferral postpones something owed, a skip states it was not needed. Both carry a name, so 'decided against' never looks like 'never considered'.",
+      "propertyNames": { "$ref": "#/$defs/artifactKey" },
+      "additionalProperties": { "$ref": "#/$defs/skipRecord" }
     }
   },
   "$defs": {
@@ -59,7 +77,45 @@
     "artifactKey": {
       "type": "string",
       "pattern": "^[a-z][a-z0-9-]*$",
-      "description": "Baseline: requirements | figma-analysis | clarifications | impact | hls. Optional WF2: testcases | browserstack-import | automation | execution | visual-findings | defects | qa-summary. Pattern allows forward-compatible additions."
+      "description": "Shift-left baseline: requirements | figma-analysis | clarifications | impact | hls | testcases | testcase-review | browserstack-import. Conditional: exploratory-notes | testcase-reconciliation. WF2: automation | execution | visual-findings | defects | qa-summary. Pattern allows forward-compatible additions."
+    },
+    "deferralRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["approvedBy", "reason", "at"],
+      "properties": {
+        "approvedBy": { "type": "string", "description": "The operator who approved skipping this phase." },
+        "reason": { "type": "string", "description": "Why it was skipped." },
+        "at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "skipRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decidedBy", "reason", "at"],
+      "properties": {
+        "decidedBy": { "type": "string", "description": "Who decided the conditional phase was not needed." },
+        "reason": { "type": "string", "description": "Why it was not needed." },
+        "at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "approvalRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["approvedBy", "at"],
+      "properties": {
+        "approvedBy": { "type": "string", "description": "The operator who approved the artifact." },
+        "at": { "type": "string", "format": "date-time" },
+        "artifact": { "type": "string", "description": "Artifact path approved, relative to the story folder." },
+        "snapshot": { "type": "string", "description": "Immutable copy of the approved content (<name>.approved<ext>), so later edits can never overwrite the approved baseline." },
+        "checksum": { "$ref": "#/$defs/sha256", "description": "sha256 of the content at approval time; a later mismatch requires a recorded testcase-reconciliation." },
+        "note": { "type": "string" },
+        "history": {
+          "type": "array",
+          "description": "Prior approvals of the same artifact, oldest first. A re-approval (e.g. after a post-development reconciliation) never erases who signed off the original.",
+          "items": { "$ref": "#/$defs/approvalRecord" }
+        }
+      }
     },
     "domainId": {
       "type": "string",

@@ -44,6 +44,9 @@ For **web** stories: if no URL is provided, ask for it. Explore navigation, exis
 | AR registration not submitted | Looks for `إنشاء الحساب` | Actual label `إنشاء حساب` (no ال) |
 | "Got it" modal not found | RN custom view, no a11y attrs | Coordinate tap (195, 810) |
 | Activation OTP after passcode | Phone verify step | Last 4 digits of phone |
+| **Count assertion off by 1–2** (lines, cards, rows) | Reader bounded by a container rect that doesn't bound its content | **Dump the on-screen strings + the oracle and diff them — do NOT adjust the boundary and re-run.** Count by matching authored values, not geometry. [mobile-native-framework.md](automation/mobile-native-framework.md) §2.1 |
+| Element "missing" after an expand/scroll | Bounds returned **inverted** or in content space once content grows | Scroll the control into view before asserting; distrust any rect whose bottom < top |
+| Container reports **zero children** | Compose flattens the tree — content is a *sibling*, not a descendant | Read by position or by value, never by tree descent |
 
 ---
 
