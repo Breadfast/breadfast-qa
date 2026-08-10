@@ -17,7 +17,8 @@
  *
  * Runs against the LIVE testing card service. API steps (provision/editKyc/claimCardFromPool)
  * are reliable; DB teardown goes over the SSH bastion and can time out — callers treat it best-effort.
- * Deps (mysql2/ssh2/properties-reader) resolve via NODE_PATH set to b55168_pom/node_modules.
+ * Deps (mysql2/ssh2) are repo dependencies (package.json) and resolve from the repo's own
+ * node_modules — no NODE_PATH and no folder outside the repo is needed.
  */
 const CardUserFactory = require('./helpers/CardUserFactory');
 

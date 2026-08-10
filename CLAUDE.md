@@ -42,6 +42,7 @@ CLAUDE.md orchestrates; `docs/ai/` holds the detail. Routing:
 | **Claude Code ↔ QA Platform process parity (mismatches + resolved decisions)** | [docs/ai/process-parity-audit.md](docs/ai/process-parity-audit.md) |
 | **QA workflow architecture (Pre-Dev/Post-Dev split, artifact reuse contract, plugin-alignment)** | [docs/ai/architecture/adr-001-qa-workflow-independent-plugin-aligned.md](docs/ai/architecture/adr-001-qa-workflow-independent-plugin-aligned.md) · [contract](docs/ai/architecture/qa-artifact-contract.md) · [schema](docs/ai/architecture/qa-state.schema.json) · scaffold [qa-workflow/](qa-workflow/) |
 | **Which workflow to run** (pre-dev only · post-dev only · full lifecycle) | [qa-shift-left](qa-workflow/workflows/qa-shift-left.md) · [qa-implementation-validation](qa-workflow/workflows/qa-implementation-validation.md) · [qa-full](qa-workflow/workflows/qa-full.md) |
+| **Test-case review/approval gate — the checklist that must pass before ANY import** | [testcase-review](qa-workflow/skills/testcase-review/SKILL.md) · [QA_PROCESS](docs/ai/QA_PROCESS.md) Phase 3 §6 |
 | **Execution engine requirements (session/browser lifecycle for Claude Code as executor)** | [docs/ai/execution-engine.md](docs/ai/execution-engine.md) |
 | Methodology, test design, **Figma visual comparison**, screenshot strategy | [docs/ai/testing-process.md](docs/ai/testing-process.md) |
 | Mobile sessions, Appium caps, tap/OTP/keypad patterns, **CSV import**, quirks | [docs/ai/browserstack-process.md](docs/ai/browserstack-process.md) |
@@ -53,7 +54,7 @@ CLAUDE.md orchestrates; `docs/ai/` holds the detail. Routing:
 | **Automation Generation (canonical contract)** — web→**Java/Selenium**, mobile→**Java/Appium**, framework discovery (configurable path), mandatory learning, story test classes, BrowserStack `@TmsLink` mapping | [docs/ai/automation/automation-generation.md](docs/ai/automation/automation-generation.md) |
 | **Canonical Java/Appium/Maven framework** (`D:\projects`): page-object modals, API clients, models, suites, config | [docs/ai/automation/java-framework.md](docs/ai/automation/java-framework.md) |
 | **Mobile native automation** (`androidNative`/`iosNative` — canonical reference for ALL new mobile automation generation: base-class contracts, locator/method conventions, reusable workflows, wiring steps) | [docs/ai/automation/mobile-native-framework.md](docs/ai/automation/mobile-native-framework.md) |
-| Other automation: Playwright (`b55168_pom`), `bs_helper.js` mobile layer, coding standards, **page objects / helpers / fixtures / API clients / reusable components** | [docs/ai/automation/](docs/ai/automation/) |
+| Other automation: Playwright (in-repo [`automation/`](automation/) + [`automation/legacy/`](automation/legacy/)), `bs_helper.js` mobile layer, coding standards, **page objects / helpers / fixtures / API clients / reusable components** | [docs/ai/automation/](docs/ai/automation/) |
 | Imported reference docs (Appium MCP setup, tech spec, suites, example CSV) | [docs/ai/reference/](docs/ai/reference/) |
 | Modules: customer-app, card-service, control-room, chatbot | [docs/ai/modules/](docs/ai/modules/) |
 
@@ -83,7 +84,7 @@ own wrong URL / API version / path* until the vendor's current API reference say
 At the very start, create the story's own folder **directly under the repo root** — `D:\breadfast-qa\<JIRA_TICKET_ID>\` — with the standard subfolders if it doesn't exist (`requirements-analysis/ figma-analysis/ hls/ browserstack/ testcases/ automation/ execution-reports/ screenshots/ defects/ evidence/`). **All** outputs for the story go here and are reused on any retest/update. (The QA Platform derives this via `storyDir(jiraKey)` = companion/repo root; runtime data — SQLite DB, logs, browser sessions — stays in the separate workspace, never in the story folder.)
 
 - The story's `automation/` holds **story-specific only**: `framework-reference.md` (reuse map) + README (run commands + BrowserStack traceability table) + generators. **Generated automation code (Java test class `B10_<id>_<Feature>Tests`, page objects, helpers, story suite XML) lives inside the Java framework** — single source, never copied into the story folder. ([automation-generation.md](docs/ai/automation/automation-generation.md) §8.)
-- **Legacy Playwright stories only:** shared JS page objects/helpers/config live once at **`D:\breadfast-qa\automation\`** (`pages/ helpers/ config/`), mirrored to the runnable **`D:\Playwright\b55168_pom`**; a legacy story's `automation/tests/` holds its specs. Applies to maintaining existing suites or explicit-request Playwright — not to new generation.
+- **Legacy Playwright stories only:** shared JS page objects/helpers/config live once at **`<repo root>\automation\`** (`pages/ helpers/ config/`) and are **runnable in place**; a legacy story's `automation/tests/` holds its specs, and the imported cross-story suite lives at [`automation/legacy/`](automation/legacy/). **There is no mirror.** The external `D:\Playwright\b55168_pom` was imported into the repo on 2026-08-10 — it was never a git repository, so it was never pushed and every reference to it broke for anyone who cloned this repo. Do not re-create an out-of-repo copy. Applies to maintaining existing suites or explicit-request Playwright — not to new generation.
 
 Full standard + rules: [docs/ai/release-validation.md](docs/ai/release-validation.md) §6. Generation contract + reuse-before-build: [docs/ai/automation/automation-generation.md](docs/ai/automation/automation-generation.md) · [docs/ai/automation/coding-standards.md](docs/ai/automation/coding-standards.md).
 
@@ -99,8 +100,22 @@ Use the **grill-me** skill. Ask every question needed to fully understand busine
 ### STEP 4 — Impact Analysis
 Produce: **Impacted Areas**, **Regression Areas**, **Smoke Coverage**, **Automation Impact**. ([docs/ai/regression-strategy.md](docs/ai/regression-strategy.md) §1.)
 
+### STEP 4b — Exploratory Analysis  ⟵ *conditional; run it when it will change the test cases*
+Explore the **current** application before designing cases when understanding is missing: ambiguous requirements or Figma states, undocumented existing flows, dependency/reachability questions, suspected edge cases, colliding upcoming scope, or an impacted area nobody has looked at. It buys **observability of the upcoming change** — it produces no verdicts and files no defects (nothing has been delivered to be wrong). Feed it into STEP 6. **Skipping is a stated decision with a reason, never a silent omission.** ([skill](qa-workflow/skills/exploratory-testing/SKILL.md) Mode A · [docs/ai/exploratory-testing.md](docs/ai/exploratory-testing.md).)
+
 ### STEP 5 — High Level Scenarios (HLS)
-Generate HLS and **add them to Jira as a separate checklist section — never modify the original AC**. **Cap: ≤ 20 scenarios** — consolidate and prioritize the highest-risk coverage; do not pad. (Default 20; per-story override via execution instructions "no more than N HLS" → `directives.maxHls`, or globally via Settings `hls.maxScenarios` / env `QA_HLS_MAX`. The QA Platform enforces this in the prompt and hard-truncates as a backstop.) Format:
+Generate HLS and **add them to Jira as a separate checklist section — never modify the original AC**.
+
+> **The Jira post contains the HLS and NOTHING ELSE (operator instruction 2026-08-10).** No open
+> questions, no clarification list, no analysis notes, no risk commentary, no "for planning" asides.
+> Clarification questions live in `clarification/clarifications.md`; gaps live in
+> `testcases/coverage-notes.md`. **A question reaches Jira only when the operator says it needs the
+> Product Owner** — then, and only then, post it as a **separate** comment containing just those
+> questions. Questions raised at the clarification gate and answered by the operator are **internal**
+> and never published. *(On B10-57764 nine questions were appended to the HLS comment unasked; four of
+> them the operator had already answered directly.)*
+
+**Cap: ≤ 20 scenarios** — consolidate and prioritize the highest-risk coverage; do not pad. (Default 20; per-story override via execution instructions "no more than N HLS" → `directives.maxHls`, or globally via Settings `hls.maxScenarios` / env `QA_HLS_MAX`. The QA Platform enforces this in the prompt and hard-truncates as a backstop.) Format:
 ```
 HLS || <Story Name>
 1- Verify ...
@@ -108,13 +123,40 @@ HLS || <Story Name>
 ```
 Cover happy paths, negatives, edge cases, state transitions, validations, navigation, permissions, localization, error handling, regression risks.
 
-### STEP 6 — Test Case Generation
-Generate detailed test cases in the **canonical project standard**: granular user-action steps (Login → Navigate → Search → Open Details → Edit → Action → Verify), **every step with its own Expected Result**, never combining actions, with navigation/validation/verification as explicit steps. The **approved BrowserStack test cases are the source of truth** (folder `48895703` / `test_cases_BCard Squad (1).csv`). ([docs/ai/testing-process.md](docs/ai/testing-process.md) §3.7, [docs/ai/browserstack-process.md](docs/ai/browserstack-process.md) §10.0.)
+### STEP 6 — Test Case Generation  ⟵ *pre-development (shift-left), before implementation*
+Generate detailed test cases in the **canonical project standard**: granular user-action steps (Login → Navigate → Search → Open Details → Edit → Action → Verify), **every step with its own Expected Result**, never combining actions, with navigation/validation/verification as explicit steps. Cover ACs, functional requirements, edge cases, validation rules, error/empty states, in-scope localization, permissions/state transitions, the **regression coverage from STEP 4**, and anything the (conditional) exploratory analysis surfaced. The **approved BrowserStack test cases are the source of truth** (folder `48895703` / `test_cases_BCard Squad (1).csv`). ([docs/ai/testing-process.md](docs/ai/testing-process.md) §3.7, [docs/ai/browserstack-process.md](docs/ai/browserstack-process.md) §10.0.)
+
+> **Coverage is defined before development, then maintained (changed 2026-08-09).** STEPS 6–7 belong to
+> `qa-shift-left`; `qa-validate` **reconciles** the approved suite against what was built (add / update /
+> remove / split / merge / obsolete — each with an authority and a logged justification) rather than
+> regenerating it. [qa-artifact-contract](docs/ai/architecture/qa-artifact-contract.md) §1–2 · ADR-001 §3.1.
+
+### STEP 6b — Test Case Review + Approval  ⟵ **MANDATORY GATE, will STOP**
+Nothing is imported before it passes. Review the generated cases against nine checks — **no duplicates · no unrelated cases · no missing AC coverage · correct expected results · correct granularity · correct categorization · correct automatable classification · justified regression coverage · format conformance** — **revise and re-review until all nine pass**, then **present the counts, the AC-coverage table and every revision to the operator and STOP for approval**:
+```
+node qa-workflow/bin/qa-cli.js approve "<storyDir>" testcases --by "<operator>"
+```
+**Reviewing is yours; approving is not.** `record browserstack-import` dies without `approvals.testcases` (`APPROVAL_DEPS` in `qa-cli.js`) — and inside `qa-full` too: invoking the full workflow authorizes the run, not the coverage it designs. The only alternative is a recorded deferral with the operator's name (`defer … testcase-review`). ([skill](qa-workflow/skills/testcase-review/SKILL.md).)
+
+**Half the checklist is mechanical — run it first, it is an exit code:**
+```
+node qa-workflow/bin/qa-cli.js testcase-lint "<storyDir>" --acs-from "<storyDir>/requirements-analysis/requirements.md" --require-screens
+```
+Exits 1 on duplicate titles/step-sequences, a step with no Expected Result, a format or vocabulary violation, a case citing no AC, or **an AC with no case**. That last one is why every generated case carries `ac:AC-<n>` (+ `screen:<id>`) in the Tags column ([browserstack-process](docs/ai/browserstack-process.md) §10.2a): AC coverage is **computed**, not asserted — in the review *and* in the QA Summary.
 
 ### STEP 7 — BrowserStack Test Management (standing workflow)
-Generate test cases → generate the BrowserStack-compatible CSV → **credentials + project/folder destination are settled in Phase 0, not here** (loader: `automation/config/credentials.js`; if anything is missing the gate already asked) → upload via the **Test Management REST API v2** (`/api/v2`, Basic `username:access_key` — **not** v1, which 401s with a misleading SSO redirect) → **verify the import succeeded** (folder count matches, cases land directly with no nested folder, granular steps render). Runs automatically every story. ([docs/ai/browserstack-process.md](docs/ai/browserstack-process.md) §10.5–10.6.)
+Take the **approved** cases → generate the BrowserStack-compatible CSV → **credentials + project/folder destination are settled in Phase 0, not here** (loader: `automation/config/credentials.js`; if anything is missing the gate already asked) → upload via the **Test Management REST API v2** (`/api/v2`, Basic `username:access_key` — **not** v1, which 401s with a misleading SSO redirect) → **verify the import succeeded** (folder count matches, cases land directly with no nested folder, granular steps render) → write the `TC-xxxx` map back into the CSV so `@TmsLink` binding exists before automation. Runs automatically every story. ([docs/ai/browserstack-process.md](docs/ai/browserstack-process.md) §10.5–10.6.)
 
-> **Clarify-first vs auto-run (resolved policy):** Steps 1–7 (analysis → test-case design) are **clarify-first** — stop and grill until scope is locked. **Once scope is locked, the execution sessions below run end-to-end WITHOUT stopping** to ask. During execution, only pause for a genuine blocker: unknown OTP/BCID the system can't derive, a required backend status change, or story content that cannot be found.
+**Post-development, this is a SYNC, not a re-import:** apply the reconciliation deltas to the existing folder by `TC-xxxx` id (create / update / archive). Re-uploading the whole CSV duplicates the folder and orphans every `@TmsLink`.
+
+**Then, once the automation exists and has run — one command, no further instruction needed. A shared test-case folder link IS the trigger:**
+```
+node automation/browserstack_test_run.js --folder-url "<the shared folder link>" --story <TICKET> --dry
+node automation/browserstack_test_run.js --folder-url "<the shared folder link>" --story <TICKET>
+```
+It derives project + folder from the link, sets **`automation_status = automated`** on exactly the cases bound to a test by `@TmsLink`, creates **one run per platform** (mirrored classes share `@TmsLink` ids, so a shared run would have the second platform overwrite the first), attaches the recorded results, and **verifies every write by reading it back** — a `200` from this API is not proof. Record the run ids in the story report. Full contract, result sourcing and the API traps: [docs/ai/browserstack-process.md](docs/ai/browserstack-process.md) §10.8.
+
+> **Clarify-first vs auto-run (resolved policy):** Steps 1–7 (analysis → test-case design → import) are **clarify-first** — stop and grill until scope is locked. They hold the run's **two planned stops**: the **clarification gate** (STEP 3) and the **test-case approval gate** (STEP 6b). **Once the cases are approved, the execution sessions below run end-to-end WITHOUT stopping** to ask. During execution, only pause for a genuine blocker (unknown OTP/BCID the system can't derive, a required backend status change, story content that cannot be found) — or a **re-approval** of test cases that execution itself changed.
 
 ---
 
@@ -138,7 +180,7 @@ Execution detail (capabilities, OTP, taps, keypads, accumulators): [docs/ai/brow
 ---
 
 ## 5. Quality Gates (story not complete until ALL pass)
-✓ **Story branch created in BOTH repos** (`<year>/sprintQ<n>.<n>/<ticket>-<slug>`) · ✓ AC covered · ✓ HLS created (in Jira) · ✓ Test cases created · ✓ BrowserStack import ready · ✓ Exploratory testing done · ✓ Regression areas identified · ✓ **Automation completed** · ✓ Defects reported · ✓ HTML report generated · ✓ Documentation updated. Full criteria + report standard: [docs/ai/release-validation.md](docs/ai/release-validation.md).
+✓ **Story branch created in BOTH repos** (`<year>/sprintQ<n>.<n>/<ticket>-<slug>`) · ✓ AC covered · ✓ HLS created (in Jira) · ✓ Test cases created · ✓ **Test cases reviewed AND operator-approved** · ✓ BrowserStack import verified · ✓ Exploratory testing done · ✓ Regression areas identified · ✓ **Automation completed** · ✓ Defects reported · ✓ HTML report generated · ✓ Documentation updated. Full criteria + report standard: [docs/ai/release-validation.md](docs/ai/release-validation.md).
 
 **Deferral is the operator's call, never yours (changed 2026-07-29, operator-approved).** This gate
 previously read *"Automation completed **(or deferred with reason)**"* — the only self-granted exemption
@@ -153,8 +195,12 @@ Mechanically enforced, so the wording cannot be routed around:
 - `qa-cli.js branch-check <storyDir> <TICKET>` — Step 0 gate, exits 1 unless **both** repos are on the
   story branch. The framework's git hooks only validate the branch **name on push**, so they cannot
   catch "no branch was ever created".
-- `qa-cli.js complete-check <storyDir>` — the completion gate; exits 1 on any artifact that is missing
-  or not `complete` without a recorded deferral. **`show` is not a gate** — it always exits 0.
+- `qa-cli.js complete-check <storyDir> [--profile shift-left|validate|full]` — the completion gate; exits
+  1 on any artifact that is missing or not `complete` without a recorded deferral, and on an **approved**
+  test-case suite that drifted with no recorded `testcase-reconciliation`. **`show` is not a gate** — it
+  always exits 0.
+- Recording `browserstack-import` is **blocked** while `testcase-review` is missing/`partial` or
+  `approvals.testcases` is absent — un-reviewed, unapproved cases cannot reach test management.
 - Recording `execution` is **blocked** while `automation` is missing or `partial` (`PHASE_DEPS`),
   because automation is phase 4 and execution is phase 5; running them out of order is what let
   automation fall off the end of the run.
@@ -178,7 +224,7 @@ Before updating ANY documentation (CLAUDE.md, `docs/ai/**`, memory):
 | App build | `com.breadfast.testing` |
 | Devices | iPhone 14 / iOS 18 (`XCUITest`); Samsung Galaxy S23 / Android 13 (`UiAutomator2`) |
 | Arabic locale caps | `appium:language: ar`, `appium:locale: EG` — **top-level**, never in `bstack:options` |
-| Active session ID | `D:/BreadfastQA/current_session.txt` |
+| Active session ID | `<storyDir>/current_session.txt` — **per story**, written by that story's own session script (e.g. `B10-57806/current_session.txt`). There is no global session file; the old `D:/BreadfastQA/current_session.txt` never existed at that path. |
 | Login OTP | Slack `#testing-otp` (`C04TK0FM329`); enter with `typeDigitsW3C` |
 | Card application OTP (1/3) | last 4 digits of test phone |
 | Card activation OTP | last 4 digits of test phone |
@@ -186,7 +232,7 @@ Before updating ANY documentation (CLAUDE.md, `docs/ai/**`, memory):
 | Pay "Get started" tap | coordinate tap **(195, 540)** — never label-based |
 | Activation "Got it" modal | coordinate tap **(195, 810)** — no a11y label |
 | Arabic registration button | XPath label `إنشاء حساب` (no `ال`) |
-| Report generator | `D:/BreadfastQA/gen_report.js` → `test_report_[STORY_ID].html` |
+| Report generator | [`gen_report.js`](gen_report.js) — **in-repo at the repo root** → `test_report_[STORY_ID].html` |
 | Screenshot accumulators | iOS EN `screenshots_b64.json` · iOS AR `ios_ar_screenshots.json` · And EN `android_en_screenshots.json` · And AR `android_ar_screenshots.json` |
 
 Full coordinate table, keypad maps, API patterns, element/locator reference: [docs/ai/browserstack-process.md](docs/ai/browserstack-process.md).
@@ -199,11 +245,13 @@ Full coordinate table, keypad maps, API patterns, element/locator reference: [do
 - **Slack:** Slack MCP (`#testing-otp` for login OTPs).
 - **Canonical automation framework (generation target for all new automation — web→Selenium, mobile→Appium):** Java/Appium/Selenium/TestNG/Maven, default `D:\projects`, path configurable (`QA_FRAMEWORK_PATH` → `automation/config/framework.js`; unresolved → ask). Run via Maven + BrowserStack / LambdaTest HyperExecute. Config source of truth: `resources/environments/*.properties`. Contract: [docs/ai/automation/automation-generation.md](docs/ai/automation/automation-generation.md) · catalog: [docs/ai/automation/java-framework.md](docs/ai/automation/java-framework.md).
 - **Mobile WebDriver layer (ad-hoc):** BrowserStack App Automate via [bs_helper.js](bs_helper.js).
-- **Web/backend (JS) — LEGACY for new generation:** Playwright framework in [b55168_pom/](b55168_pom/) (reads the Java framework's config). Existing suites maintained; new Playwright only on explicit user request (2026-07-27).
+- **Web/backend (JS) — LEGACY for new generation:** in-repo Playwright framework — shared code [automation/](automation/), imported suite + runners [automation/legacy/](automation/legacy/) (reads the Java framework's config). Runs from the repo root with no external folder: `npx playwright test --config=automation/legacy/playwright.config.js`. Existing suites maintained; new Playwright only on explicit user request (2026-07-27).
 - **Clarification:** `grill-me` skill (Step 3).
 - **Automation ↔ BrowserStack naming:** every automated test's title must be the **exact BrowserStack test-case name** (verbatim), so results map by name and BrowserStack can filter to the automatable set. One test per case. In Java the title lives in `@Test(description = "…")` and the case id in `@TmsLink("TC-xxxx")` (native TMS sync — [automation-generation.md](docs/ai/automation/automation-generation.md) §6); in legacy Playwright it is the spec title. Verify offline with `check_test_name_parity.js` before running a suite. Rule + rationale: [docs/ai/browserstack-process.md](docs/ai/browserstack-process.md) §10.7.
 - **BrowserStack Test Management:** REST **API v2** (`https://test-management.browserstack.com/api/v2`, Basic `username:access_key`). **v1 does not exist and returns a misleading `401` + SSO redirect for valid keys.** Create cases individually via `POST /projects/{PR-x}/folders/{id}/test-cases`; steps go in **`test_case_steps`** (a `steps` payload returns 200 and saves none). Details + traps: [docs/ai/browserstack-process.md](docs/ai/browserstack-process.md) §10.6. Reference impl: `B10-56750/automation/upload_browserstack.js`.
-- **QA workflow entrypoints:** `/qa-shift-left` (pre-dev baseline only) · `/qa-validate` (post-dev only; reconciles + reuses the baseline) · `/qa-full` (both, end-to-end — use when no baseline exists). Definitions: [qa-workflow/workflows/](qa-workflow/workflows/).
+- **BrowserStack test runs + `automation_status` (standard step, any story):** [automation/browserstack_test_run.js](automation/browserstack_test_run.js) — takes the shared **test-case folder link** and does the rest (§10.8). Results are sourced from **App Automate** when the suite ran without `targetRunId`, because `target/surefire-reports` and `logs/test.log` are overwritten by the next run; take the **latest session per test name** and **filter by session `os`**, or the Android leg silently gets filled from an iOS build.
+- **QA workflow entrypoints:** `/qa-shift-left` (pre-dev — analysis **+ the approved, imported coverage baseline**) · `/qa-validate` (post-dev only; reconciles + reuses that baseline, **maintaining** the suite rather than regenerating it) · `/qa-full` (both, end-to-end — use when no baseline exists). Definitions: [qa-workflow/workflows/](qa-workflow/workflows/).
+- **`qa-cli.js` at a glance** — `init` · `fingerprint-jira/-figma` · `record` · **`status`** (where is this story, what is next, what blocks it — always exits 0) · **`testcase-lint`** (the mechanical review checks; exits 1) · `approve` (operator sign-off + snapshot) · `defer` (postpone what is owed) · **`skip`** (a *conditional* phase deliberately not needed) · `reconcile` (`--ignore-lock` to carry a superseded methodology forward) · `branch-check` · `complete-check --profile shift-left|validate|full`. Full usage: the header of [qa-workflow/bin/qa-cli.js](qa-workflow/bin/qa-cli.js).
 
 ---
 
@@ -246,7 +294,7 @@ If a filed bug turns out to be invalid, **retract it explicitly** — comment th
 correct `defects.md`, the QA summary and every report that cited it.
 
 ## 9. Session Continuity
-Resuming: read memory (`MEMORY.md` + session files), verify the BrowserStack session is alive, take a fresh screenshot, read labels to orient, continue from the last known state. Memory dir: `C:/Users/Breadfast/.claude/projects/d--BreadfastQA/memory/`.
+Resuming: read memory (`MEMORY.md` + session files), verify the BrowserStack session is alive, take a fresh screenshot, read labels to orient, continue from the last known state. Memory dir: `~/.claude/projects/d--breadfast-qa/memory/` (per-user, outside the repo — each engineer has their own; the slug follows the repo path). The older `d--BreadfastQA/` directory is the pre-migration one and is **not** written to.
 
 ---
 *Restructured 2026-06-21 from the prior monolithic manual into an orchestration layer + `docs/ai/` knowledge base. Conflict resolutions on record: clarify-first during analysis/design + auto-run during execution; CLAUDE.md slimmed with a quick-ref; AGENTS.md reduced to a pointer; scope expanded to the full lifecycle incl. automation. The prior monolith's detail was migrated in full into `docs/ai/**` — nothing was discarded.*

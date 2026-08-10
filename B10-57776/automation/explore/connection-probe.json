@@ -1,0 +1,312 @@
+{
+  "merchantCount": 27,
+  "isBreadfastTrue": [
+    {
+      "id": 25,
+      "name_en": "Just Breadfast",
+      "name_ar": "dsc",
+      "branches": 1
+    },
+    {
+      "id": 26,
+      "name_en": "Breadfast sdfg",
+      "name_ar": "sdef",
+      "branches": 1
+    },
+    {
+      "id": 5,
+      "name_en": "Breadfast App",
+      "name_ar": "بريد فاست آب",
+      "branches": 15
+    },
+    {
+      "id": 4,
+      "name_en": "Breadfast Coffee",
+      "name_ar": "بريدفاست كوفي",
+      "branches": 16
+    },
+    {
+      "id": 23,
+      "name_en": "breadfast market",
+      "name_ar": "ماركت بريدفاست",
+      "branches": 4
+    }
+  ],
+  "isBreadfastFalseButNamedBreadfast": [],
+  "legacyMerchantIdColumn": {
+    "nonNull": 0,
+    "sample": []
+  },
+  "duplicateNameEn": [],
+  "branchTotals": {
+    "branches": 296,
+    "distinctMids": 296
+  },
+  "perkCount": 195,
+  "exclusionPath": {
+    "distinctExcludedMids": 239,
+    "excludedMidsMatchingAKnownBranch": 239,
+    "connectedMerchantIds": [
+      5,
+      4,
+      23,
+      12,
+      8,
+      21,
+      11,
+      16,
+      13,
+      14
+    ],
+    "connectedMerchants": [
+      {
+        "id": 5,
+        "name_en": "Breadfast App"
+      },
+      {
+        "id": 4,
+        "name_en": "Breadfast Coffee"
+      },
+      {
+        "id": 23,
+        "name_en": "breadfast market"
+      },
+      {
+        "id": 12,
+        "name_en": "elaraby"
+      },
+      {
+        "id": 8,
+        "name_en": "asd"
+      },
+      {
+        "id": 21,
+        "name_en": "asdf123"
+      },
+      {
+        "id": 11,
+        "name_en": "Merchant1"
+      },
+      {
+        "id": 16,
+        "name_en": "Global Innovation and Technology Future Vision St"
+      },
+      {
+        "id": 13,
+        "name_en": "asdd"
+      },
+      {
+        "id": 14,
+        "name_en": "asdddddddddddddddddddddddddddddddddddddddddddddddd"
+      }
+    ]
+  },
+  "perkAttributeKeys": [
+    "coupon_code",
+    "coupon_type",
+    "cover_photo",
+    "subheader_ar",
+    "subheader_en",
+    "funding_types",
+    "cashback_value",
+    "cover_photo_ar",
+    "cash_back_limit",
+    "consumption_limit",
+    "cashback_value_type",
+    "breadfast_percentage",
+    "consumption_interval",
+    "usage_description_ar",
+    "usage_description_en",
+    "branches_description_ar",
+    "branches_description_en",
+    "consumption_description_ar",
+    "consumption_description_en",
+    "minimum_transaction_amount",
+    "short_duration_description_ar",
+    "short_duration_description_en",
+    "usage_frequency_description_ar",
+    "usage_frequency_description_en",
+    "cashback_processing_description_ar",
+    "cashback_processing_description_en",
+    "excluded_merchants_ids",
+    "excluded_categories_ids",
+    "merchant_id",
+    "merchant_percentage",
+    "short_perk_description_ar",
+    "short_perk_description_en",
+    "category_code",
+    "merchant_code",
+    "merchant_info"
+  ],
+  "merchantCashbackSample": [
+    {
+      "id": "MC_74",
+      "title_en": "not br merchant",
+      "status": "active",
+      "perk_attributes": {
+        "cover_photo": "/media/bcard-testing-card-perks/cover/en/990e4067-6ccd-43f8-b969-e0823fca7378.png",
+        "subheader_ar": "",
+        "subheader_en": "",
+        "funding_types": "co-funded",
+        "cashback_value": 22,
+        "cover_photo_ar": "/media/bcard-testing-card-perks/cover/ar/24a9aac0-e503-4733-8880-09698338baad.png",
+        "cash_back_limit": "",
+        "consumption_limit": "",
+        "cashback_value_type": "percentage",
+        "merchant_percentage": 98,
+        "breadfast_percentage": 2,
+        "consumption_interval": "",
+        "usage_description_ar": "Short usage description *\n",
+        "usage_description_en": "Short usage description *\n",
+        "branches_description_ar": "Short usage description *\n",
+        "branches_description_en": "Short usage description *\n",
+        "consumption_description_ar": "",
+        "consumption_description_en": "",
+        "minimum_transaction_amount": 0,
+        "short_duration_description_ar": "Short usage description *\n",
+        "short_duration_description_en": "Short usage description *\n",
+        "cashback_processing_description_ar": "Short usage description *\n",
+        "cashback_processing_description_en": "Short usage description *\n"
+      }
+    },
+    {
+      "id": "MC_67",
+      "title_en": "10% Back Breadfast",
+      "status": "active",
+      "perk_attributes": {
+        "cover_photo": "/media/bcard-testing-card-perks/cover/en/a2aee3b9-8d24-4938-a0c5-9f459558536c.png",
+        "merchant_id": 5,
+        "subheader_ar": "بقالة ومستلزمات المنزل اليومية",
+        "subheader_en": "Groceries, Fruits & Essentials",
+        "funding_types": "bPay",
+        "cashback_value": 10,
+        "cover_photo_ar": "/media/bcard-testing-card-perks/cover/ar/28f401f3-a218-4375-bf13-e3252340e171.png",
+        "cash_back_limit": 600,
+        "consumption_limit": 600,
+        "cashback_value_type": "percentage",
+        "consumption_interval": "yearly",
+        "usage_description_ar": "يطبق تلقائياً على كل طلب من بريدفاست عند الدفع ببطاقة بريدفاست.",
+        "usage_description_en": "Applies automatically on every Breadfast order paid with your Breadfast card.",
+        "branches_description_ar": "- تطبيق بريدفاست\n- جميع فروع بريدفاست",
+        "branches_description_en": "- Breadfast app\n- All Breadfast stores",
+        "minimum_transaction_amount": 100,
+        "short_duration_description_ar": "صالح حتى 31 مايو 2026",
+        "short_duration_description_en": "This offer expires Dec 31st, 2027.",
+        "cashback_processing_description_ar": "قد يستغرق الكاش باك ١٤ يوماً.",
+        "cashback_processing_description_en": "Cashback may take up to 14 days."
+      }
+    },
+    {
+      "id": "MC_73",
+      "title_en": "merchant  subheader",
+      "status": "expired",
+      "perk_attributes": {
+        "cover_photo": "/media/bcard-testing-card-perks/cover/en/7e5fd3cc-610d-438a-98d7-0c98d10d224c.png",
+        "subheader_ar": "جاهز للاكل الكتير اللي هاكلههه",
+        "subheader_en": "Ready to Eat meat yla bena yla",
+        "funding_types": "bPay",
+        "cashback_value": 12,
+        "cover_photo_ar": "/media/bcard-testing-card-perks/cover/ar/d9920164-c1cb-4025-989f-bfee1de6a4b9.png",
+        "cash_back_limit": "",
+        "consumption_limit": "",
+        "cashback_value_type": "fixed",
+        "breadfast_percentage": "",
+        "consumption_interval": "",
+        "usage_description_ar": "Short usage description *\n",
+        "usage_description_en": "Short usage description *\n",
+        "branches_description_ar": "List of valid branches (if any)\n",
+        "branches_description_en": "List of valid branches (if any)\n",
+        "consumption_description_ar": "",
+        "consumption_description_en": "",
+        "minimum_transaction_amount": 0,
+        "short_duration_description_ar": "Short duration description\n",
+        "short_duration_description_en": "Short duration description\n",
+        "cashback_processing_description_ar": "Short cashback description (if any)\n",
+        "cashback_processing_description_en": "Short cashback description (if any)\n"
+      }
+    },
+    {
+      "id": "MC_72",
+      "title_en": "Get 12% at Breadfast",
+      "status": "active",
+      "perk_attributes": {
+        "cover_photo": "/media/bcard-testing-card-perks/cover/en/2bef44b7-612b-4809-afcc-4eb5a16e0a79.png",
+        "merchant_id": 5,
+        "subheader_ar": "طلبات البقالة الان جديد مكافاة",
+        "subheader_en": "grocery orders Today Exclusive",
+        "funding_types": "bPay",
+        "cashback_value": 12,
+        "cover_photo_ar": "/media/bcard-testing-card-perks/cover/ar/c51b77e5-e68c-4fcd-bdf0-71f0f3325176.png",
+        "cash_back_limit": 700,
+        "consumption_limit": 700,
+        "cashback_value_type": "percentage",
+        "consumption_interval": "yearly",
+        "usage_description_ar": "صالح مرة واحدة سنويا في بريدفاست مع اي عملية دفع ببطاقة بريدفاست. المكافاة بحد اقصى ٧٠٠ جنيه وتضاف الى محفظة بريدفاست باي. راجع التطبيق للتفاصيل. صالح لحاملي البطاقة فقط. ادفع باستخدام بطاقة بريدفاست.",
+        "usage_description_en": "Valid once per year at Breadfast when you pay with your Breadfast card. The reward is capped at EGP 700 and credited to your Breadfast Pay wallet. Free delivery applies. Pay using your Breadfast card.",
+        "branches_description_ar": "كايرو فيستيفال سيتي\nمول مصر\nسيتي ستارز\nبوينت ٩٠\nسيتي سنتر الماظة\nاركان بلازا\nالزمالك\nالمعادي دجلة\nهليوبوليس كوربا\nميفيدا\nمدينتي\nالرحاب\nالشيخ زايد\nمدينة نصر\nالدقي\nالمهندسين\nالقطامية\nالهرم\nالتجمع الخامس",
+        "branches_description_en": "Cairo Festival City\nMall of Egypt\nCity Stars\nPoint 90\nAlmaza City Centre\nArkan Plaza\nZamalek\nMaadi Degla\nHeliopolis Korba\nMivida\nMadinaty\nRehab\nSheikh Zayed\nNasr City\nDokki\nNew Cairo\nTagamoa El Khames",
+        "minimum_transaction_amount": 100,
+        "short_duration_description_ar": "ينتهي هذا العرض في ٣١ ديسمبر ٢٠٢٧. الان.",
+        "short_duration_description_en": "This offer expires on Dec 31st, 2027. Go",
+        "cashback_processing_description_ar": "قد يستغرق الكاش باك ١٤ يوما للظهور. عرض مميز.",
+        "cashback_processing_description_en": "Cashback may take up to 14 days. Fresh daily."
+      }
+    }
+  ],
+  "perkDetail": {
+    "/get": {
+      "status": 200,
+      "sample": "{\"data\":{\"status\":\"active\",\"start_date\":\"2026-08-03 19:13:16\",\"end_date\":\"2026-09-05 23:59:59\",\"id\":\"MC_74\",\"type\":\"merchant-cashback\",\"title_en\":\"not br merchant\",\"title_ar\":\"مش متجر بريدفاست\",\"logo\":\"/media/bcard-testing-card-perks/logo/en/b8f1eac4-b813-4b24-bc45-2d60c45e4a08.png\",\"logo_ar\":\"/media/bcard-testing-card-perks/logo/ar/df87fbbb-d014-4fb6-995a-7baa9fbb8edf.png\",\"description_en\":\"Short perk description *\\n\",\"description_ar\":\"Short perk description *\\n\",\"logo_media_id\":\"b8f1eac4-b813-4b24-bc45-2d60c45e4a08\",\"logo_ar_media_id\":\"df87fbbb-d014-4fb6-995a-7baa9fbb8edf\",\"cover_photo_media_id\":\"990e4067-6ccd-43f8-b969-e0823fca7378\",\"cover_photo_ar_media_id\":\"24a9aac0-e503-4733-8880-09698338baad\",\"section_id\":144,\"display_order\":null,\"numeric_id_by_type\":74,\"createdAt\":\"2026-08-03T16:15:05.000Z\",\"updatedAt\":\"2026-08-03T16:15:05.000Z\",\"deletedAt\":null,\"section\":{\"id\":144,\"name_en\":\"Everyday Spend\",\"name_ar\":\"المصروفات اليومية\",\"is_active\":true,\"display_order\":65,\"createdAt\":\"2026-07-29T14:39:12.000Z\",\"updatedAt\":\"2026-07-29T14:39:12.000Z\",\"deletedAt\":null},\"perk_attributes\":{\"cover_photo\":\"/media/bcard-testing-card-perks/cover/en/990e4067-6ccd-43f8-b969-e0823fca7378.png\",\"subheader_ar\":\"\",\"subheader_en\":\"\",\"funding_types\":\"co-funded\",\"cashback_value\":22,\"cover_photo_ar\":\"/media/bcard-testing-card-perks/cover/ar/24a9aac0-e503-4733-8880-09698338baad.png\",\"cash_back_limit\":\"\",\"consumption_limit\":\"\",\"cashback_value_type\":\"percentage\",\"merchant_percentage\":98,\"breadfast_percenta"
+    }
+  },
+  "fe": {
+    "chunksDiscovered": 43,
+    "chunksFetched": 43,
+    "totalBytes": 5008302,
+    "hits": {
+      "CONTROL_excludedMerchants": 0,
+      "CONTROL_perkWord": 0,
+      "CONTROL_merchantWordAnywhere": 2,
+      "CONTROL_perkMerchantUrl": 2,
+      "AC11_inlineAddMerchantCopy": 0,
+      "AC11_createMerchantDialog": 0,
+      "NEW_emptyStateCopy": 0,
+      "NEW_merchantsRoute": 0,
+      "NEW_perms": 2,
+      "NEW_dupError": 0,
+      "NEW_addedToast": 0,
+      "NEW_delToast": 0,
+      "NEW_confirmCopy": 0,
+      "NEW_logoUpload": 0,
+      "NEW_addedToPerk": 0,
+      "NEW_branchesCount": 0
+    },
+    "where": {
+      "CONTROL_excludedMerchants": [],
+      "CONTROL_perkWord": [],
+      "CONTROL_merchantWordAnywhere": [
+        "main-es2018.01c3a346c46bd2a78fa4.js",
+        "main-es5.01c3a346c46bd2a78fa4.js"
+      ],
+      "CONTROL_perkMerchantUrl": [
+        "main-es2018.01c3a346c46bd2a78fa4.js",
+        "main-es5.01c3a346c46bd2a78fa4.js"
+      ],
+      "AC11_inlineAddMerchantCopy": [],
+      "AC11_createMerchantDialog": [],
+      "NEW_emptyStateCopy": [],
+      "NEW_merchantsRoute": [],
+      "NEW_perms": [
+        "main-es2018.01c3a346c46bd2a78fa4.js",
+        "main-es5.01c3a346c46bd2a78fa4.js"
+      ],
+      "NEW_dupError": [],
+      "NEW_addedToast": [],
+      "NEW_delToast": [],
+      "NEW_confirmCopy": [],
+      "NEW_logoUpload": [],
+      "NEW_addedToPerk": [],
+      "NEW_branchesCount": []
+    }
+  }
+}

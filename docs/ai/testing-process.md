@@ -49,6 +49,14 @@ This work now spans the **full QA lifecycle**, including authoring and running a
 
 ## 3. Test Case Design Rules
 
+> **When cases are designed (2026-08-09):** **pre-development**, in `qa-shift-left`, from the AC map +
+> design + impact analysis + clarifications (+ the conditional exploratory analysis). They then pass a
+> **mandatory review + operator-approval gate** before any import — checklist and gate mechanics:
+> [`qa-workflow/skills/testcase-review/SKILL.md`](../../qa-workflow/skills/testcase-review/SKILL.md),
+> [`QA_PROCESS.md`](QA_PROCESS.md) Phase 3. Post-development, the approved suite is **reconciled**
+> (add/update/remove, each justified and logged), never regenerated. The rules below are unchanged and
+> apply in both places.
+
 ### 3.1 Coverage priority
 1. Golden path iOS EN (baseline, 100% before expanding) → 2. iOS AR → 3. Android EN → 4. Android AR → 5. Error paths → 6. Boundary conditions → 7. Recovery flows → 8. Navigation integrity.
 
@@ -84,7 +92,7 @@ All generated test cases — for every story, every platform — MUST follow the
 3. **Do NOT combine multiple actions into one step.** "Fill the fields and click Confirm" is two steps. Each navigation, each field entry of interest, each click, each verification is its own step.
 4. **Navigation, validations, and verifications are explicit steps** — never implied or folded into another step.
 5. **Match the approved CSV exactly** — column structure, field mapping, naming convention (descriptive `Verify …` titles), writing style, Priority/Type vocabulary, and Preconditions style. Full spec + import workflow: [browserstack-process.md](browserstack-process.md) §10.
-6. **Reuse the generator.** `D:\Playwright\b55168_pom\gen_browserstack_csv_b10_56336.js` encodes this structure with reusable step preambles (`OPEN_EDIT`, `OPEN_VIEW_REG`, `OPEN_VIEW_RECEIVED`). Adapt it per story rather than re-deriving the format. Validate before export: 0 steps missing an expected result.
+6. **Reuse the generator.** [`automation/legacy/gen_browserstack_csv_b10_56336.js`](../../automation/legacy/gen_browserstack_csv_b10_56336.js) encodes this structure with reusable step preambles (`OPEN_EDIT`, `OPEN_VIEW_REG`, `OPEN_VIEW_RECEIVED`). Adapt it per story rather than re-deriving the format. Validate before export: 0 steps missing an expected result.
 
 This standard is automatic for every future story — no additional instruction required.
 
@@ -121,8 +129,8 @@ A test case is not complete without a Figma comparison result. Three non-negotia
 `node qa-workflow/bin/figma-connect.js --status` — it reads the saved session `auth/figma-auth.json`
 (repo root; override `FIGMA_AUTH_PATH`) and exits **0 = FRESH**, **3 = MISSING/EXPIRED/INVALID**.
 If not FRESH, **notify the tester and open a browser to reconnect**: run
-`node qa-workflow/bin/figma-connect.js` (cwd `D:\Playwright\b55168_pom` so `@playwright/test`
-resolves) — a headed Chromium opens on Figma login, the tester signs in with Google, and the script
+`node qa-workflow/bin/figma-connect.js` from the repo root (`@playwright/test` resolves from the
+repo's own `node_modules`) — a headed Chromium opens on Figma login, the tester signs in with Google, and the script
 auto-saves the full `storageState`. Resume once it exits 0. **Never** attempt capture against a
 missing/stale session or silently fall through to REST/spec-only, and **never** mark the phase
 "blocked" — reconnect is a normal prompt. (Fallback when no headed browser can launch: reconnect

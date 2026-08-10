@@ -51,15 +51,40 @@ class DbHelper {
       return this;
     }
 
-    const stream = await this._openSshForward(ssh, db.host, db.port);
-    this.conn = await mysql.createConnection({
-      user: db.user,
-      password: db.password,
-      database: db.database,
-      stream,                       // speak MySQL over the SSH-forwarded socket
-      multipleStatements: false,
-    });
-    return this;
+    // The bastion intermittently drops the SSH handshake ("Timed out while waiting for
+    // handshake" / ECONNRESET); retry transient failures with linear backoff so a single
+    // flaky connect does not fail an otherwise-good test. Tunable via BF_DB_CONNECT_RETRIES.
+    const attempts = Math.max(1, Number(process.env.BF_DB_CONNECT_RETRIES || 3));
+    let lastErr;
+    for (let i = 1; i <= attempts; i++) {
+      try {
+        const stream = await this._openSshForward(ssh, db.host, db.port);
+        this.conn = await mysql.createConnection({
+          user: db.user,
+          password: db.password,
+          database: db.database,
+          stream,                       // speak MySQL over the SSH-forwarded socket
+          multipleStatements: false,
+        });
+        return this;
+      } catch (err) {
+        lastErr = err;
+        try { if (this.ssh) this.ssh.end(); } catch (_) {}
+        this.ssh = null; this.conn = null;
+        if (i < attempts && DbHelper._isTransientConnErr(err)) {
+          await new Promise(r => setTimeout(r, 1000 * i)); // 1s, 2s, …
+          continue;
+        }
+        throw err;
+      }
+    }
+    throw lastErr;
+  }
+
+  /** True for the transient tunnel/network errors that a retry can recover from. */
+  static _isTransientConnErr(err) {
+    return /handshake|timed out|ECONNRESET|ETIMEDOUT|ECONNREFUSED|EPIPE| EHOSTUNREACH/i
+      .test(String((err && err.message) || err));
   }
 
   _openSshForward(ssh, dstHost, dstPort) {
@@ -82,7 +107,8 @@ class DbHelper {
           ...(ssh.password
             ? { password: ssh.password }
             : { privateKey: fs.readFileSync(ssh.keyPath), passphrase: ssh.keyProtected ? ssh.passphrase : undefined }),
-          readyTimeout: 20000,
+          readyTimeout: Number(process.env.BF_SSH_READY_TIMEOUT || 30000),
+          keepaliveInterval: 10000,
         });
     });
   }

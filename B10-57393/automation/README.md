@@ -97,7 +97,7 @@ until DEF-1 / DEF-2 are fixed. They are marked `[DEFECT-EXPECTED]` in the source
 | Core spec (20 cases) | [`tests/app_preview_modal.spec.js`](tests/app_preview_modal.spec.js) | one `test()` per case, title = BrowserStack name verbatim |
 | Save-failure spec (TC-53972) | [`tests/app_preview_save_failure.spec.js`](tests/app_preview_save_failure.spec.js) | own file because it is the case Selenium cannot automate — `page.route` fulfils the perk POST with a `500` |
 | Runner | [`playwright.config.js`](playwright.config.js) | `retries: 1` to match the framework's `RetryAnalyzer`; screenshot on every test, video + trace on failure |
-| Page objects | `../../automation/pages/{PerksPage,AppPreviewModal,LoginPage}.js` | shared across stories, mirrored to `D:\Playwright\b55168_pom\pages\` |
+| Page objects | `../../automation/pages/{PerksPage,AppPreviewModal,LoginPage}.js` | shared across stories; single in-repo copy, no mirror (2026-08-10) |
 | Stack comparison | [`compare_stacks.js`](compare_stacks.js) | joins TestNG XML and the Playwright JSON on the case NAME; `--md` for the table |
 
 ```bash

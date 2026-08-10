@@ -1,0 +1,278 @@
+{
+  "base": "https://card-panel-testing.breadfast.tech",
+  "login": {
+    "status": 200,
+    "ok": true,
+    "roleName": "Agent",
+    "roleId": 12
+  },
+  "actions": {
+    "totalKeys": 103,
+    "perkRelated": [
+      "create_perk",
+      "update_perk",
+      "list_perks",
+      "delete_perk",
+      "list_card_perks"
+    ],
+    "merchantRelated": [],
+    "sectionRelated": [],
+    "categoryRelated": [],
+    "mobileRelated": [],
+    "allKeysSample": [
+      "log_errors",
+      "lock_transactions",
+      "default",
+      "create_users",
+      "create_bulk_users",
+      "edit_users",
+      "search_users",
+      "create_template_role",
+      "create_banks",
+      "edit_banks",
+      "search_banks",
+      "reset_limits",
+      "create_schemes",
+      "edit_schemes",
+      "search_schemes",
+      "delete_schemes",
+      "create_roles",
+      "edit_roles",
+      "search_roles",
+      "disable_roles",
+      "edit_consumer_wallet",
+      "search_consumer_wallets",
+      "disable_consumer_wallet",
+      "create_kyc_profile",
+      "edit_kyc_profile",
+      "search_kyc_profile",
+      "disable_kyc_profile",
+      "view_transaction_report",
+      "search_wallet_audit_trail_report",
+      "settlement_report",
+      "search_audit_trail_report",
+      "bulk_adjustments",
+      "view_action_logs",
+      "reset_users_password",
+      "edit_consumer_wallet_status",
+      "reset_consumer_wallet_mpin",
+      "manage_services",
+      "create_consumer_wallet_with_valify",
+      "search_faqs",
+      "show_faqs",
+      "create_faqs",
+      "edit_faqs",
+      "delete_faqs",
+      "get_card_status",
+      "create_non-personalized_cards_pool",
+      "generate_webview_link_to_activate_the_card",
+      "link_customer_to_card",
+      "search_card_locations",
+      "create_card_locations",
+      "edit_card_locations",
+      "delete_card_locations",
+      "search_card_location_areas",
+      "create_card_location_areas",
+      "edit_card_location_areas",
+      "delete_card_location_areas",
+      "manage_aggregators",
+      "list_static_pages",
+      "show_static_page",
+      "edit_static_page",
+      "create_static_page",
+      "create_cards_pool",
+      "close_card",
+      "get_user_balance",
+      "change_card_status",
+      "replace_card",
+      "reset_passcode_suspension",
+      "card_reset_pin_count",
+      "upload_kyc_file_documents",
+      "delete_kyc_file_documents",
+      "list_kyc_file_documents",
+      "schedule_documents_to_bank",
+      "cancel_scheduled_documents",
+      "view_card_details",
+      "view_transactions",
+      "cards_deducted_report",
+      "single_adjustments",
+      "get_cards_details",
+      "delete_card_user",
+      "edit_customer_details",
+      "edit_pickup_card_location",
+      "create_card_user",
+      "reapply_for_card",
+      "create_perk",
+      "update_perk",
+      "list_perks",
+      "delete_perk",
+      "list_card_perks",
+      "generate_invitation_codes",
+      "view_invitation_codes",
+      "consume_invitation_code",
+      "apply_waitlist",
+      "view_waitlisted_users",
+      "view_customer_details",
+      "view_transaction_status",
+      "sync_mdp_card_status",
+      "sync_shopping_status",
+      "export_kyc_details_report",
+      "export_replacements/closures_report",
+      "change_wallet_user_status",
+      "flag/unflag_user_aml",
+      "batch_consume_invitation_codes",
+      "create_non-personalized_existing_cards_pool",
+      "print_kyc_form"
+    ]
+  },
+  "routes": {
+    "POST perks/list (positive control)": {
+      "status": 200,
+      "count": 1,
+      "total": null
+    },
+    "POST perks/definitelyNotARoute (neg ctrl)": {
+      "status": 404,
+      "count": null,
+      "total": null,
+      "snippet": "Not Found"
+    },
+    "POST perks/section/list": {
+      "status": 200,
+      "count": 12,
+      "total": null
+    },
+    "POST perks/merchant/list": {
+      "status": 200,
+      "count": 10,
+      "total": null
+    },
+    "POST card/merchants/list": {
+      "status": 404,
+      "count": null,
+      "total": null,
+      "snippet": "Not Found"
+    },
+    "POST perks/category/list": {
+      "status": 200,
+      "count": 10,
+      "total": null
+    },
+    "POST perks/mobile-section/list": {
+      "status": 404,
+      "count": null,
+      "total": null,
+      "snippet": "Not Found"
+    },
+    "POST perks/mobileSection/list": {
+      "status": 404,
+      "count": null,
+      "total": null,
+      "snippet": "Not Found"
+    },
+    "POST perks/homepage/list": {
+      "status": 404,
+      "count": null,
+      "total": null,
+      "snippet": "Not Found"
+    }
+  },
+  "fe": {
+    "entryAssets": [
+      "assets/js/jquery.min.js",
+      "appconfig.js",
+      "assets/js/ywxi_1.js",
+      "runtime-es2018.4fc89127615b0c1a9614.js",
+      "runtime-es5.4fc89127615b0c1a9614.js",
+      "polyfills-es5.0e88bc2ffbbc3ba3df64.js",
+      "polyfills-es2018.04fc1048ce3eac07f651.js",
+      "scripts.e98a36d88aa8a0b6ebeb.js",
+      "main-es2018.01c3a346c46bd2a78fa4.js",
+      "main-es5.01c3a346c46bd2a78fa4.js"
+    ],
+    "chunksScanned": 10,
+    "hits": {
+      "Merchants?": [
+        "main-es2018.01c3a346c46bd2a78fa4.js",
+        "main-es5.01c3a346c46bd2a78fa4.js"
+      ],
+      "list_merchants?": [
+        "main-es2018.01c3a346c46bd2a78fa4.js",
+        "main-es5.01c3a346c46bd2a78fa4.js"
+      ],
+      "perks\\/merchants?": [
+        "main-es2018.01c3a346c46bd2a78fa4.js",
+        "main-es5.01c3a346c46bd2a78fa4.js"
+      ],
+      "Card\\s*perks": [
+        "main-es2018.01c3a346c46bd2a78fa4.js",
+        "main-es5.01c3a346c46bd2a78fa4.js"
+      ]
+    }
+  },
+  "data": {
+    "perksTotal": null,
+    "sections": [
+      {
+        "id": 1,
+        "name_en": "Breadfast",
+        "is_active": true
+      },
+      {
+        "id": 58,
+        "name_en": "adasd",
+        "is_active": true
+      },
+      {
+        "id": 60,
+        "name_en": "new section",
+        "is_active": true
+      },
+      {
+        "id": 59,
+        "name_en": "section created",
+        "is_active": true
+      },
+      {
+        "id": 57,
+        "name_en": "New section 50 char limit only here no more char p",
+        "is_active": true
+      },
+      {
+        "id": 2,
+        "name_en": "General Purchases",
+        "is_active": true
+      },
+      {
+        "id": 144,
+        "name_en": "Everyday Spend",
+        "is_active": true
+      },
+      {
+        "id": 61,
+        "name_en": "b for book",
+        "is_active": true
+      },
+      {
+        "id": 145,
+        "name_en": "demo section",
+        "is_active": true
+      },
+      {
+        "id": 143,
+        "name_en": "Coffee & Beverages",
+        "is_active": true
+      },
+      {
+        "id": 142,
+        "name_en": "Bakery & Desserts",
+        "is_active": true
+      },
+      {
+        "id": 141,
+        "name_en": "Dining & Restaurants",
+        "is_active": true
+      }
+    ]
+  }
+}

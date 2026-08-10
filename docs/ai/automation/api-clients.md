@@ -2,13 +2,13 @@
 
 > The REST clients that talk to the Card Admin Panel backend. Reuse these for any perk/auth API automation.
 
-## ApiHelper — [helpers/ApiHelper.js](b55168_pom/helpers/ApiHelper.js)
+## ApiHelper — [helpers/ApiHelper.js](../../../automation/helpers/ApiHelper.js)
 
 Thin static wrapper around Playwright's `APIRequestContext`. No extra HTTP dependency needed in tests — pass the `request` fixture.
 
 ### Base URL & auth
 
-- **Base URL:** `ConfigReader.getCardServicesAdminPanelBaseURL()` → `https://card-panel-testing.breadfast.tech` (from [cardServiceConfigs_testing.js](b55168_pom/config/environments/cardServiceConfigs_testing.js)).
+- **Base URL:** `ConfigReader.getCardServicesAdminPanelBaseURL()` → `https://card-panel-testing.breadfast.tech` (from [cardServiceConfigs_testing.js](../../../automation/config/environments/cardServiceConfigs_testing.js)).
 - **Auth:** JWT bearer. `loginAndGetToken()` POSTs admin creds to `/api/v1/web/user/login` and returns `body.token`. Subsequent calls send `Authorization: Bearer <token>`. Passing `token=null` to `createGeneralCashbackPerk` omits the header (used for the 401 test).
 
 ### Endpoints exercised
@@ -47,7 +47,7 @@ The image object is built once by an internal `getSharedImageObj(request)` that 
 
 Method signatures and a usage example are in [helpers.md](helpers.md#apihelper--helpersapihelperjs).
 
-### API observations encoded in the suite ([mid_exclusion_api.spec.js](b55168_pom/tests/mid_exclusion_api.spec.js))
+### API observations encoded in the suite ([mid_exclusion_api.spec.js](../../../automation/legacy/tests/mid_exclusion_api.spec.js))
 
 - Accepts up to **200** excluded merchant IDs (200 OK); **201** → 4xx validation error.
 - `null` `excluded_merchants_ids` → treated as empty (200 OK).
@@ -56,7 +56,7 @@ Method signatures and a usage example are in [helpers.md](helpers.md#apihelper--
 
 ---
 
-## create_perks_api.js (standalone runner) — [create_perks_api.js](b55168_pom/create_perks_api.js)
+## create_perks_api.js (standalone runner) — [create_perks_api.js](../../../automation/legacy/create_perks_api.js)
 
 Not a Playwright spec — a `node` script (`node create_perks_api.js`). Creates its own `APIRequestContext` via `request.newContext()`, logs in, then creates three `general-cashback` perks across the MID-exclusion boundary (199 / 200 / 201 MIDs) and prints AS-EXPECTED / UNEXPECTED verdicts. Uses the same `ApiHelper.createGeneralCashbackPerk` + `buildMerchantIds` as the specs — good template for ad-hoc data seeding via the API.
 
@@ -67,9 +67,9 @@ Not a Playwright spec — a `node` script (`node create_perks_api.js`). Creates 
 | Perk type | API client | Status |
 |-----------|-----------|--------|
 | **General spend cashback** | `ApiHelper.createGeneralCashbackPerk` | ✅ Done (UI + API) |
-| **Merchant cashback** | UI only ([PerksPage.fillMerchantPerk](b55168_pom/pages/PerksPage.js)) | ⚠️ Partial — branch MIDs wired; cashback-value/limit fields not yet. No dedicated API client. |
+| **Merchant cashback** | UI only ([PerksPage.fillMerchantPerk](../../../automation/pages/PerksPage.js)) | ⚠️ Partial — branch MIDs wired; cashback-value/limit fields not yet. No dedicated API client. |
 | **Coupon** | — | ❌ Not captured (PerksPage `fillCouponPerk` throws). |
 | **Category cashback (MCC)** | — | ❌ Not captured (PerksPage `fillCategoryPerk` throws). |
 | **Limits / caps** (daily/weekly/monthly/annual/max) | — | ❌ Not captured (PerksPage `setLimits` throws). |
 
-There is currently **no API helper** for merchant/coupon/category perk creation — only the general-cashback `create` endpoint is wrapped. See open items #8/#10 in [AUTOMATION_B10-55185.md](b55168_pom/AUTOMATION_B10-55185.md).
+There is currently **no API helper** for merchant/coupon/category perk creation — only the general-cashback `create` endpoint is wrapped. See open items #8/#10 in [AUTOMATION_B10-55185.md](../../../automation/legacy/AUTOMATION_B10-55185.md).

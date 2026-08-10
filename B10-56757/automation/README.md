@@ -13,8 +13,9 @@ BrowserStack test cases 1:1 and cover AC-01 through AC-12.
   `helpers/ConfigReader.js`, `helpers/ApiHelper.js`. No parallel page object was
   created (reuse-before-build): the perks-list methods were added to the existing
   `PerksPage` (same `#/perks` route) alongside the create-form methods.
-- **Runnable mirror:** `PerksPage.js` is mirrored to `D:\Playwright\b55168_pom\pages\`
-  for parity; specs themselves run from **this** folder against the shared assets.
+- **No mirror (2026-08-10):** `PerksPage.js` has exactly one copy, `<repo root>/automation/pages/`.
+  The former out-of-repo mirror was imported and retired; specs run from **this** folder against
+  the shared assets.
 - **Dependencies:** installed once at the repo root `D:\breadfast-qa\node_modules`.
 
 ## How to run

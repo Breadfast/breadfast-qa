@@ -4,23 +4,25 @@ Automates the **Create Perk form enhancements** story. Specs mirror the approved
 BrowserStack test cases 1:1 and cover AC1–AC18.
 
 ## Where things live
-- **Specs (artifact copy):** `automation/tests/*.spec.js` (this folder).
-- **Runnable copy:** `D:\Playwright\b55168_pom\tests\` — run from there (it has
-  `playwright.config.js`, `pages/`, `helpers/`, and node_modules).
+- **Specs:** `automation/tests/*.spec.js` (this folder) — runnable in place via the story's
+  own [`playwright.config.js`](playwright.config.js). Shared page objects/helpers come from
+  `<repo root>/automation/`, deps from the repo-root `package.json`. Nothing outside the repo
+  is needed (the old external `D:\Playwright\b55168_pom` copy was imported 2026-08-10).
 - **Page object:** reuses & extends the shared `pages/PerksPage.js` (new "B10-56729"
   method block) — no parallel page object was created (reuse-before-build).
 
 ## How to run
 ```bash
-cd D:\Playwright\b55168_pom
-npx playwright test tests/create_perk_labels_and_title.spec.js          # AC1-3, AC8
-npx playwright test tests/create_perk_basic_details_section.spec.js     # AC6, AC7
-npx playwright test tests/create_perk_new_sections.spec.js              # AC9-11
-npx playwright test tests/create_perk_restructuring_and_coupon.spec.js  # AC12-17
-npx playwright test tests/create_perk_preview.spec.js                   # AC18
-npx playwright test tests/create_perk_image_specs_and_icon.spec.js      # AC4, AC5
+# from the repo root
+CFG=B10-56729/automation/playwright.config.js
+npx playwright test --config=$CFG tests/create_perk_labels_and_title.spec.js          # AC1-3, AC8
+npx playwright test --config=$CFG tests/create_perk_basic_details_section.spec.js     # AC6, AC7
+npx playwright test --config=$CFG tests/create_perk_new_sections.spec.js              # AC9-11
+npx playwright test --config=$CFG tests/create_perk_restructuring_and_coupon.spec.js  # AC12-17
+npx playwright test --config=$CFG tests/create_perk_preview.spec.js                   # AC18
+npx playwright test --config=$CFG tests/create_perk_image_specs_and_icon.spec.js      # AC4, AC5
 # all six:
-npx playwright test tests/create_perk_*.spec.js
+npx playwright test --config=$CFG
 ```
 Login uses `ConfigReader.getAdminUserName()/getAdminPassword()` (admin panel `agent`).
 Specs are **non-destructive** (form inspection only). `create_perk_preview.spec.js`

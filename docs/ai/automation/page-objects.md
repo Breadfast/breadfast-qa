@@ -1,10 +1,10 @@
 # Page Object Catalog
 
-> Every page class in `b55168_pom/pages/`. Reuse these before writing new UI automation. All extend `BasePage` and take a Playwright `Page` in the constructor.
+> Every page class in [`automation/pages/`](../../../automation/pages/). Reuse these before writing new UI automation. All extend `BasePage` and take a Playwright `Page` in the constructor.
 
 ---
 
-## BasePage — [pages/BasePage.js](b55168_pom/pages/BasePage.js)
+## BasePage — [pages/BasePage.js](../../../automation/pages/BasePage.js)
 
 Base class for all page objects. Holds the `page` reference and a `DEFAULT_TIMEOUT = 60000`.
 
@@ -18,7 +18,7 @@ Base class for all page objects. Holds the `page` reference and a `DEFAULT_TIMEO
 
 ---
 
-## LoginPage — [pages/LoginPage.js](b55168_pom/pages/LoginPage.js)
+## LoginPage — [pages/LoginPage.js](../../../automation/pages/LoginPage.js)
 
 Card Admin Panel login form. Locators: `usernameField` (`input[placeholder="Username Name"]`), `passwordField` (`input[type="password"]`), `submitButton` (`button[type="submit"]`).
 
@@ -35,7 +35,7 @@ await loginPage.fillLoginFormAndSubmit(config.getAdminUserName(), config.getAdmi
 
 ---
 
-## PerksPage — [pages/PerksPage.js](b55168_pom/pages/PerksPage.js)
+## PerksPage — [pages/PerksPage.js](../../../automation/pages/PerksPage.js)
 
 Card Admin Panel perks list (`#/perks`) and create form (`#/perks/create`). Selectors verified against the live form 2026-06-09 (see the file header for the full field map and the test-environment merchant MID counts: `elaraby`→190, `Breadfast Coffee`→16, `Breadfast App`→15, `breadfast market`→4).
 
@@ -102,4 +102,4 @@ These exist as placeholders and **throw immediately** until their selectors are 
 | `fillCategoryPerk(...)` | **Throws** — category/MCC picker selectors not confirmed. |
 | `setLimits({ daily, weekly, monthly, annual, maxCashback })` | **Throws** — daily/weekly/monthly/annual/max-cap field selectors not confirmed. |
 
-See [AUTOMATION_B10-55185.md](b55168_pom/AUTOMATION_B10-55185.md) open items #8 and #10.
+See [AUTOMATION_B10-55185.md](../../../automation/legacy/AUTOMATION_B10-55185.md) open items #8 and #10.

@@ -21,7 +21,7 @@
 
 ## 2. HTML Report Standard
 
-Generated via `gen_report.js` → `D:/BreadfastQA/test_report_[STORY_ID].html`. Embed all screenshots as base64 (no external file deps). Expected file size 30–50 MB (4 screenshot sets + Figma refs) — normal.
+Generated via the in-repo [`gen_report.js`](../../gen_report.js) (repo root) → `<storyDir>/execution-reports/test_report_[STORY_ID].html`. Embed all screenshots as base64 (no external file deps). Expected file size 30–50 MB (4 screenshot sets + Figma refs) — normal.
 
 Per story / test-case layout:
 1. **Actual screenshots** — 4 columns: iOS EN | iOS AR | Android EN | Android AR.
@@ -118,7 +118,7 @@ Knowledge routing:
 - Framework intelligence (page objects, helpers, fixtures, API clients) → `docs/ai/automation/**`.
 - Module behavior → `docs/ai/modules/**`.
 - Business rules → `docs/ai/business/**`.
-- Session continuity / credentials / point-in-time state → Claude memory (`C:/Users/Breadfast/.claude/projects/d--BreadfastQA/memory/`).
+- Session continuity / credentials / point-in-time state → Claude memory (`~/.claude/projects/d--breadfast-qa/memory/` — per-user, outside the repo; the slug follows the repo path, so each engineer gets their own automatically).
 
 ---
 
@@ -132,7 +132,10 @@ D:\BreadfastQA\<JIRA_TICKET_ID>\
 ├── figma-analysis/          design frames + design-vs-implementation comparison
 ├── hls/                     High-Level Scenarios (mirror of the Jira checklist)
 ├── browserstack/            CSV import evidence (project/folder, screenshots)
-├── testcases/               the BrowserStack-compatible CSV
+├── testcases/               testcases.csv (BrowserStack-compatible) + coverage-notes.md (AC→case map)
+│                            + review.md (the review-gate record) + testcases.approved.csv (the
+│                            operator-approved snapshot, written by `qa-cli.js approve`)
+│                            + reconciliation.md (post-development deltas, when the suite changed)
 ├── automation/              STORY-SPECIFIC ONLY — framework-reference.md (reuse map) + README (run commands + traceability table) + generators. Generated Java code lives INSIDE the Java framework (automation-generation.md §8); legacy Playwright stories additionally keep tests/ (specs + playwright.config.js).
 ├── execution-reports/       test_report_<STORY_ID>.html
 ├── screenshots/             live UI screenshots
@@ -145,7 +148,7 @@ Rules:
 - **Future updates, retesting, automation changes, and bug investigations reuse the SAME story folder** (do not create a second folder for the same ticket).
 - **Generated automation lives inside the Java framework** (default `D:\projects`, path configurable — [automation-generation.md](automation/automation-generation.md)): story test class `B10_<id>_<Feature>Tests`, new page objects/helpers, story suite XML. The story folder never holds Java copies — its `automation/` carries the traceability README + framework-reference.md + generators, and the run command (`mvn test -DsuiteXmlFile=b10-<id>-tests.xml`).
 - **Legacy Playwright stories:** shared JS code (page objects, helpers, config) is NOT duplicated per story — it lives once at `D:\BreadfastQA\automation\` (`pages/ helpers/ config/`), reused across stories; a story's `automation/` keeps only story-specific files (`playwright.config.js`, its `tests/` specs) and reuses the shared classes (specs `require('../../../automation/pages/…')`).
-- **Runnable Playwright workspace (legacy):** `D:\BreadfastQA` is a Playwright workspace (`package.json` + root `playwright.config.js` + `node_modules`). Playwright reads the config from the **cwd only** (no walk-up), so run from one of: the **workspace root** `D:\BreadfastQA` (`npx playwright test <file>`, all stories) or a **story's `automation/tests/` folder** (per-story `playwright.config.js` with `testDir '.'`, that story only). The original framework `D:\Playwright\b55168_pom` still runs independently.
+- **Runnable Playwright workspace (legacy):** the **repo itself** is the workspace — repo-root [`package.json`](../../package.json) + `node_modules` supply `@playwright/test`, `mysql2`, `ssh2`, `pdf-parse`. Playwright takes its config from `--config`, so run either the imported legacy suite (`npx playwright test --config=automation/legacy/playwright.config.js`) or a story suite (`npx playwright test --config=B10-<key>/automation/playwright.config.js`). **Nothing outside the repo is needed** — the former external framework `D:\Playwright\b55168_pom` was imported into [`automation/legacy/`](../../automation/legacy/) on 2026-08-10 because it was never a git repository and so was never pushed to anyone.
 - Reports must contain links/references to the stored evidence (§2.1).
 - Keep a root `README.md` in the story folder indexing the subfolders, the result, and Jira/artifact links.
 - First implemented for B10-56336.

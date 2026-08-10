@@ -1,19 +1,19 @@
 # Test Fixtures & Setup
 
-> What setup/fixture mechanisms actually exist in `b55168_pom/` today, and where formal fixtures should go when added.
+> What setup/fixture mechanisms actually exist in `automation/` + `automation/legacy/` today, and where formal fixtures should go when added.
 
 ## No custom Playwright fixtures yet
 
 The framework does **not** define any custom Playwright fixtures (no `test.extend(...)`, no `fixtures.js`, no `tests/fixtures/` directory). Tests rely only on Playwright's **built-in** fixtures:
 
-- `{ page }` — used by the UI spec ([mid_exclusion_ui.spec.js](b55168_pom/tests/mid_exclusion_ui.spec.js)).
-- `{ request }` — the `APIRequestContext`, used by the API spec ([mid_exclusion_api.spec.js](b55168_pom/tests/mid_exclusion_api.spec.js)) and the cashback spec ([cashback_processing.spec.js](b55168_pom/tests/cashback_processing.spec.js)).
+- `{ page }` — used by the UI spec ([mid_exclusion_ui.spec.js](../../../automation/legacy/tests/mid_exclusion_ui.spec.js)).
+- `{ request }` — the `APIRequestContext`, used by the API spec ([mid_exclusion_api.spec.js](../../../automation/legacy/tests/mid_exclusion_api.spec.js)) and the cashback spec ([cashback_processing.spec.js](../../../automation/legacy/tests/cashback_processing.spec.js)).
 
 ## Current setup mechanisms
 
 ### 1. Config injection — `ConfigReader` singleton
 
-Configuration is injected by `require`, not by a fixture. [playwright.config.js](b55168_pom/playwright.config.js) imports the [ConfigReader](b55168_pom/helpers/ConfigReader.js) singleton and sets `use.baseURL = config.getCardServicesAdminPanelBaseURL()`. Specs `require('../helpers/ConfigReader')` directly and read getters as needed.
+Configuration is injected by `require`, not by a fixture. [playwright.config.js](../../../automation/legacy/playwright.config.js) imports the [ConfigReader](../../../automation/helpers/ConfigReader.js) singleton and sets `use.baseURL = config.getCardServicesAdminPanelBaseURL()`. Specs `require('../helpers/ConfigReader')` directly and read getters as needed.
 
 ### 2. `beforeEach` — UI login
 
@@ -45,7 +45,7 @@ A local helper `openCreateForm(page)` then composes navigation (`goToPerksPage` 
 
 ### 4. In-spec `SETUP` blocks
 
-The cashback spec carries a top-of-file `SETUP` object (`templateTxId`, `mids`, `mccs`, `perkIds`) that a human fills before running. This is the de-facto fixture for that suite today — see [AUTOMATION_B10-55185.md](b55168_pom/AUTOMATION_B10-55185.md) "One-time setup".
+The cashback spec carries a top-of-file `SETUP` object (`templateTxId`, `mids`, `mccs`, `perkIds`) that a human fills before running. This is the de-facto fixture for that suite today — see [AUTOMATION_B10-55185.md](../../../automation/legacy/AUTOMATION_B10-55185.md) "One-time setup".
 
 ## Where fixtures SHOULD live when added
 

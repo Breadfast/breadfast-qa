@@ -26,7 +26,7 @@
 | Mobile native (customer app `androidNative`/`iosNative`) | **Java + Appium + TestNG** | same framework; screens per the native contracts | [mobile-native-framework.md](mobile-native-framework.md) — **canonical for all new mobile automation** |
 | Mobile RN (legacy build), fleet, mid-mile | **Java + Appium + TestNG** | existing `android`/`ios`/`fleetApp`/`midMileApp` packages | [java-framework.md](java-framework.md) §3–4 |
 | API / backend | **Java + REST-assured** via existing `helpers/apiClients` | `src/test/java/<module>/api/` | [java-framework.md](java-framework.md) §5, [api-clients.md](api-clients.md) |
-| Playwright (JS) | **only when the user explicitly requests it** | `b55168_pom` / shared `automation/` | [playwright-framework.md](playwright-framework.md) (legacy for new generation) |
+| Playwright (JS) | **only when the user explicitly requests it** | in-repo `automation/` + `automation/legacy/` | [playwright-framework.md](playwright-framework.md) (legacy for new generation) |
 
 ## 2. Framework discovery — configurable, never assumed
 
@@ -162,6 +162,16 @@ must pass — compile + checkstyle green. A generation that doesn't compile is n
   was already untracked or modified when you arrived — that is someone's in-flight work. (This
   happened: an untracked `CardAdminPanelPerksApiClient.java` was swept into a commit and had to be
   reverted and un-tracked.)
+- **Commit the story test class and its suite XML on the story branch — an untracked file is not on any
+  branch, so it follows every `checkout` and breaks the build of every other branch it lands on.** The
+  page object it calls *is* tracked, so it stays behind on the story branch while the test class travels;
+  the next branch then reports dozens of `cannot find symbol` errors against a page object that looks
+  untouched, and the errors name a story nobody on that branch is working on. Leaving generated code
+  uncommitted is not a neutral "not finished yet" state.
+- **A sweeping commit puts other stories' work on your branch.** `git add -A` (or an IDE "commit all")
+  on a shared tree collects every in-flight file, so one commit can carry three stories and strand two
+  of them on a branch that will never be merged into theirs. Commit **by path**, and check
+  `git show --stat` afterwards — the file list is the proof.
 - A build can fail for a moment because another session is mid-edit. **Re-run before diagnosing.**
 - **Never recompile while a suite is running** — surefire's forked JVM picks up newly written classes
   lazily and the run's results become meaningless.
@@ -329,8 +339,125 @@ mvn test -Dsurefire.suiteXmlFiles=b10-<id>-tests.xml    # the story suite XML
 - A **Discount/coupon tile shows the merchant name under the title**, where a Merchant-cashback tile
   shows the subheader. Assert per perk type; don't copy the assertion across.
 
+### 9.12 A failing assertion is a question, not a bug report — probe before you patch
+
+**When a count or content assertion disagrees with expectation, capture the rendered state and compare it
+against the oracle BEFORE changing any code.** Adjusting the reader and re-running is a guess: it cannot
+distinguish *"my reader is wrong"* from *"the product is wrong"*, and that is the only question worth
+answering. Ship a throwaway probe that prints what is actually on screen (`<story>/automation/explore/
+probe-*.js`); it costs one run instead of several and doubles as the evidence that either grounds the
+defect or disproves it.
+
+Two defaults, both learned the expensive way:
+
+| Failure | Correct default |
+|---|---|
+| An **interaction** did nothing | *my tap did not land* — not "the product is broken" |
+| A **count or string** is surprising | *my reader is miscounting* — not "the product renders the wrong value" |
+
+Measured cost of skipping this on B10-56711: three device round-trips at ~8 min each on a single
+assertion, each one "fixing" a boundary that was never the problem — the app rendered the correct 3 lines
+throughout. The probe that settled it printed every text node with its `y` in one pass. Platform-specific
+reason this bites hardest on mobile — **container rects do not bound their own content on Compose
+surfaces** — is in [mobile-native-framework.md](mobile-native-framework.md) §2.1, with the measurements.
+
+Related and already in this document: **§9.3** (verify a locator by issuing a find and getting an element
+back — an id appearing in a dump is not verification) and **§9.8** (guard the vacuous pass: assert a list
+is complete *before* asserting on its order — an `expected` derived from `actual` passes on an empty
+screen).
+
+### 9.13 Readability is a conformance requirement, not a preference
+
+> Added 2026-08-09 from the B10-57771 review. The suite compiled, passed the conformance gate and ran
+> 21/21 green — and still read as machine-written on a second pass. **The QA team maintains this code.
+> A method that a QA engineer cannot understand on first reading is a defect, whether or not it passes.**
+
+- **A test method reads as a business flow.** Setup → act → assert, in page-object calls and
+  `Assert.*`. Anything a reader would have to *decode* belongs on the page object: route/URL string
+  handling, `substring`/date-format slicing, collection algebra, index arithmetic. B10-57771 shipped
+  `getCurrentPageUrl().contains("/perks/duplicate/" + id)` in three tests; the framework's own idiom is
+  a predicate on the page object (`createPerkFormIsDisplayed()`), which is why no other test in the
+  module knows a route string.
+- **Prefer the simplest control flow that is still correct.** No nested `if`, no nested loops, no
+  streams, no clever one-liners, no duplicate fallback paths. Where a flow is *genuinely* complex —
+  multi-page search, retry, platform branching — implement it properly, but implement it **once**, on
+  the page object, with a comment saying what forced the complexity.
+- **A method on a shared page object outlives the story that added it, so it must not carry the
+  story's vocabulary.** Name it for the control and the operation, not for the scenario:
+  `getCouponCodeFieldValue()`, not `getPrefilledCouponCode()`. B10-57771's `getPrefilled*` family had
+  to be read by a *later* test that asserts the field is **blank** — where the name says the opposite.
+  Same rule for constants and locator fields.
+- **Before adding a reader or an action to an existing page object, grep that file for one that
+  already touches the same control.** §4's reuse ladder is applied per *class*; this is the per
+  *method* form of it, and it is where duplication actually enters. B10-57771 added
+  `getPrefilledEndDate()` next to a pre-existing `getEndDateValue()` reading the same input through a
+  second locator. Record the grep in `framework-reference.md` beside the method.
+- **Match the file you are editing, not a house style you bring with you** — its import block (no
+  fully-qualified `java.util.ArrayList<>` inline when the file imports its types at the top), its
+  blank-line rhythm, its comment density, its separator comments. If a file has no banner convention,
+  do not invent one.
+
+### 9.14 An oracle has to be able to fail
+
+> Also 2026-08-09, B10-57771. Three tests asserted "this action created no perk" by comparing the
+> perks-table row count before and after. **The list pages at 15 rows**, so the count is 15 either
+> way: the assertion could not go red, and all three passed for a year's worth of runs' worth of
+> reasons that had nothing to do with the product. §9.8's vacuous-pass guard covers a loop that never
+> executes; these are the other three shapes.
+
+- **Before/after comparison: prove the measured value can actually change.** A paged, filtered,
+  capped or truncated read cannot. Ask the *system* — an API count — when the question is "does it
+  exist / how many are there", and reserve the screen for "is it rendered correctly". (The perks
+  finder already had `listPerks`; the count oracle was one method away.)
+- **A negative assertion must first prove its subject exists.** `assertNotEquals(actual, source)` and
+  `assertFalse(...contains(x))` are both satisfied by an empty read, so a lookup that silently returns
+  `""` turns "the duplicate has its own images" into a guaranteed pass. Assert the subject was found,
+  then assert what differs about it.
+- **The BrowserStack case title is the contract: every noun in it needs an assertion.** B10-57771's
+  TC-54749 is titled *"…pre-fills the source perk type, section, merchant **and funding type**"* and
+  never asserts funding type at all — and asserts section and merchant only as *non-empty*, so it
+  passes when the form pre-fills the **wrong** section. A `!isEmpty()` check is a smoke test; if the
+  case says a value is *copied from the source*, the source's stored value is the oracle.
+- **The one question to ask of every assertion you write:** *what change in the product would turn
+  this red?* If there is no concrete answer, it is not a test yet. Put the answer in the assertion
+  message — that is where it is useful when it does go red.
+
+### 9.15 Choosing which record to test against
+
+> B10-57771 again: the suite pinned four perks by id (`DC_29`, `DC_30`, `DC_31`, `GC_63`) seeded by hand.
+
+- **Discover the fixture by the property the assertion depends on, not by id** — the framework's own
+  idiom (`findActivePerkWithCouponType`, `findActivePerkWithMoreThanThreeDistinctBranchLines`). A
+  shape-finder must require *every* property the assertion reads, or it hands back a record that
+  satisfies the search and breaks the check ([[shape-finder-must-require-assertion-property]]).
+- **A fixture whose state is derived from time decays.** A "planned" perk becomes Active the moment
+  its start date passes, silently inverting any test that asserts a state-gated control. **Never pin a
+  lifecycle-state test to a hardcoded id**; resolve the record by its current status at run time.
+- **Keep a pinned id only when the record's *content* is the point** (a curated perk with all four
+  images and full bilingual copy), and say so in `framework-reference.md` with what makes it curated,
+  so the next engineer can rebuild it.
+- **A pinned id is environment data, so it lives where the framework already keeps environment data:**
+  `resources/environments/*.properties` → a `Configs` getter (the live precedent is the card-user
+  fixture block — mobile number, national id, BCID, last four digits — and the perk image paths). It is
+  **never** a `private static final` in the test class: a test-class constant cannot be overridden per
+  environment, which breaks the framework's standing "runs unchanged across QA/Staging/prod"
+  requirement (§9.2), and it is invisible to anyone reseeding fixtures. Adding a key is a framework
+  change — **propose it in the plan gate**, don't add it mid-generation
+  ([coding-standards.md](coding-standards.md) Framework Architecture Standard).
+- **Do not introduce a new data-holder for this.** Reuse the ladder that exists: environment values →
+  `Configs`; form/input data → the page object (§9.9); binary assets → a model such as the artwork
+  resolver; record selection → a finder on the module's API client. A `dataFactories` package exists,
+  but check for live consumers before following it — an unused pattern is not a precedent, and building
+  on one creates the parallel architecture the standard forbids.
+- **Every value that must not collide across permanent records is run-unique — not just the name.**
+  §9.6 says this for locale fields; the same applies to any business key on a record the environment
+  cannot delete. B10-57771's five saving tests all wrote the same coupon code into perks that can
+  never be removed.
+
 *Restructured 2026-07-27 (operator directive): web automation generation re-based from Playwright onto
 the Java framework; mobile unchanged. Supersedes the 2026-06-22 "new web automation goes to
 `b55168_pom`" resolution — see [process-parity-audit.md](../process-parity-audit.md) §E and
 [playwright-framework.md](playwright-framework.md) for the legacy scope. §9 added the same day from
-the B10-56750 migration's five live runs.*
+the B10-56750 migration's five live runs. §9.13–9.15 added 2026-08-09 from a second-pass review of
+B10-57771, which had already passed the conformance gate and run 21/21 green — readability, oracle
+falsifiability and fixture selection are the three dimensions no build gate and no green run can check.*

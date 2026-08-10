@@ -4,9 +4,9 @@
  * Reusable smoke check for dynamic card-user provisioning (replaces test_data_inventory.csv).
  * Provisions a fresh user to "Registered", verifies the DB row, then tears it down.
  *
- * Run from the runnable workspace (where mysql2/ssh2 are installed):
- *   cd D:\Playwright\b55168_pom && node ../../BreadfastQA/automation/provision_check.js
- * or copy alongside the helpers. Requires the testing card backend to be UP
+ * Run from the repo root (mysql2/ssh2 are repo dependencies — see package.json):
+ *   node automation/provision_check.js
+ * Requires the testing card backend to be UP
  * (it returned 502/503 "overload" on 2026-06-22 — retry when healthy).
  */
 

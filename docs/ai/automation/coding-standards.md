@@ -1,6 +1,6 @@
 # Coding Standards & Conventions
 
-> Conventions observed in the real framework code (`b55168_pom/` + `bs_helper.js`). Follow these when extending the suite.
+> Conventions observed in the real framework code (`automation/` + `automation/legacy/` + `bs_helper.js`). Follow these when extending the suite.
 
 ## Framework Architecture Standard (MANDATORY)
 
@@ -16,7 +16,7 @@
 
 **Two sanctioned frameworks (resolved 2026-06-22, amended 2026-07-27):**
 - **The Java framework (`org.breadfast:QA_Framework`, default `D:/projects` — path configurable via `QA_FRAMEWORK_PATH` / `automation/config/framework.js`)** — the canonical source of truth and reference architecture, the **single source of truth for config** (`resources/environments/*.properties`), and since 2026-07-27 the **generation target for ALL new automation**: web → **Selenium**, mobile → **Appium**. Contract: [automation-generation.md](automation-generation.md).
-- **`D:/Playwright/b55168_pom` (Playwright/JS)** — **legacy for new generation** (2026-07-27): existing suites stay maintained and this remains their reference, but new Playwright automation is written **only on explicit user request**. It follows the same POM architecture and **reads the Java framework's config** via `PropertiesReader`.
+- **`automation/` + `automation/legacy/` (Playwright/JS, in-repo)** — **legacy for new generation** (2026-07-27): existing suites stay maintained and this remains their reference, but new Playwright automation is written **only on explicit user request**. It follows the same POM architecture and **reads the Java framework's config** via `PropertiesReader`. (Relocated in-repo 2026-08-10 from the external, un-versioned `D:\Playwright\b55168_pom`.)
 
 These are NOT a license to fork a third architecture. The Architecture Standard above applies **within** each framework: reuse-before-build, extend don't parallel-implement, POM rules, existing naming/structure/style, and approval before restructuring. The Java `cardsAdminPanel` Selenium page objects (`EditCustomerDetailsPage`, `SearchCardsUsers`, `ViewCardUsersDetails`, `CardAdminPanelLoginPage`…) coexist with the Playwright web suite (e.g. B10-56336's `EditCustomerPage.js`/`CollectDialogPage.js`); within Playwright, reuse `BasePage`/`LoginPage`/existing POMs and never duplicate selectors/flows.
 
@@ -28,8 +28,8 @@ Before writing any new automation, **check the existing assets first** — see [
 
 - Every file is CommonJS: `require(...)` + `module.exports`. No ESM `import`/`export`.
 - Every file opens with `'use strict';`.
-- Helpers export a **class with static methods** ([ApiHelper.js](b55168_pom/helpers/ApiHelper.js), [CronHelper.js](b55168_pom/helpers/CronHelper.js)) **or a singleton instance** (`module.exports = new ConfigReader()` in [ConfigReader.js](b55168_pom/helpers/ConfigReader.js)) **or a class to instantiate** (`new DbHelper(...)` in [DbHelper.js](b55168_pom/helpers/DbHelper.js)).
-- Pages export a class extending `BasePage` ([LoginPage.js](b55168_pom/pages/LoginPage.js), [PerksPage.js](b55168_pom/pages/PerksPage.js)).
+- Helpers export a **class with static methods** ([ApiHelper.js](../../../automation/helpers/ApiHelper.js), [CronHelper.js](../../../automation/helpers/CronHelper.js)) **or a singleton instance** (`module.exports = new ConfigReader()` in [ConfigReader.js](../../../automation/helpers/ConfigReader.js)) **or a class to instantiate** (`new DbHelper(...)` in [DbHelper.js](../../../automation/helpers/DbHelper.js)).
+- Pages export a class extending `BasePage` ([LoginPage.js](../../../automation/pages/LoginPage.js), [PerksPage.js](../../../automation/pages/PerksPage.js)).
 - `bs_helper.js` exports a flat object of plain functions.
 
 ## Naming
@@ -58,19 +58,19 @@ Every generated automation suite must be traceable back to the BrowserStack test
 ## Async / await
 
 - All I/O is `async/await`. No raw `.then()` chains in test logic.
-- Standalone runners end with `main().catch(e => { console.error(e); process.exit(1); });` ([create_perks_api.js](b55168_pom/create_perks_api.js), [record_bug_b10_56609.js](b55168_pom/record_bug_b10_56609.js)).
+- Standalone runners end with `main().catch(e => { console.error(e); process.exit(1); });` ([create_perks_api.js](../../../automation/legacy/create_perks_api.js), [record_bug_b10_56609.js](../../../automation/legacy/record_bug_b10_56609.js)).
 - Deliberate waits use `page.waitForTimeout(ms)` (Playwright) or `sleep(ms)` (bs_helper). Network/element waits prefer `waitFor({ state, timeout })` and `waitForURL(...)`.
 
 ## Selectors / locators
 
-- **Playwright:** locators are declared **in the page-object constructor** as fields, then reused by methods ([PerksPage.js](b55168_pom/pages/PerksPage.js) lines 51–93). Prefer role/text locators (`getByRole('combobox', { name })`, `locator("button:has-text('Add Perk')")`) and Angular hooks (`app-bf-input[controlname="title_en"] input`, `textarea[formcontrolname="description_en"]`).
+- **Playwright:** locators are declared **in the page-object constructor** as fields, then reused by methods ([PerksPage.js](../../../automation/pages/PerksPage.js) lines 51–93). Prefer role/text locators (`getByRole('combobox', { name })`, `locator("button:has-text('Add Perk')")`) and Angular hooks (`app-bf-input[controlname="title_en"] input`, `textarea[formcontrolname="description_en"]`).
 - Dynamic Angular fields (inside `*ngIf`) are located only after the triggering action, with an explicit `waitFor({ state: 'visible' })`.
 - Selectors are documented with a dated comment block when verified against the live DOM (see PerksPage header, "verified against live form (2026-06-09)").
 - **Mobile (`bs_helper.js`):** locators are passed inline by strategy (`'xpath'`, `'accessibility id'`, `'class name'`) or by absolute coordinates via `tap(sid, x, y)`.
 
 ## Error handling
 
-- API helpers throw descriptive errors on failure, embedding the HTTP status and body: `throw new Error(`Admin login failed: HTTP ${...} — ${await response.text()}`)` ([ApiHelper.js](b55168_pom/helpers/ApiHelper.js)).
+- API helpers throw descriptive errors on failure, embedding the HTTP status and body: `throw new Error(`Admin login failed: HTTP ${...} — ${await response.text()}`)` ([ApiHelper.js](../../../automation/helpers/ApiHelper.js)).
 - UI flows surface on-screen errors when navigation doesn't happen (`submitPerkExpectSuccess` reads the snackbar/`mat-error` text into the thrown message).
 - Best-effort cleanup/optional steps use `.catch(() => {})` or `.catch(() => null)` to swallow non-fatal failures (overlay-backdrop detach, optional dialog buttons, `db.close()`).
 - Stubs that aren't implemented yet **throw explicitly** rather than silently passing (`fillCouponPerk`/`fillCategoryPerk`/`setLimits` in PerksPage).
@@ -79,7 +79,7 @@ Every generated automation suite must be traceable back to the BrowserStack test
 ## Config & secrets out of the repo
 
 - Non-secret env values live in `config/environments/cardServiceConfigs_<ENV>.js`, selected by `process.env.ENV` (default `testing`).
-- **Secrets (DB password, SSH key) are never committed.** They are read at runtime from the external Java framework's `config_testing.properties` via [PropertiesReader.js](b55168_pom/helpers/PropertiesReader.js), overridable with `BF_PROPERTIES_PATH`.
+- **Secrets (DB password, SSH key) are never committed.** They are read at runtime from the external Java framework's `config_testing.properties` via [PropertiesReader.js](../../../automation/helpers/PropertiesReader.js), overridable with `BF_PROPERTIES_PATH`.
 - Other runtime overrides via env vars: `BF_TX_TABLE` (DB table name), `ENV` (config environment).
 - Note: `bs_helper.js` currently hard-codes BrowserStack credentials — keep new secrets out of source going forward.
 
@@ -87,9 +87,9 @@ Every generated automation suite must be traceable back to the BrowserStack test
 
 - Specs end in `*.spec.js` and live in `tests/`. Standalone `node` runners (not Playwright tests) live at the package root and are run with `node <file>.js`.
 - Shared setup uses `test.beforeAll` (API token, DB connect) or `test.beforeEach` (UI login).
-- Data-driven specs build a `TEST_CASES` array of `{ id, title, run }` and register them in a loop ([mid_exclusion_api.spec.js](b55168_pom/tests/mid_exclusion_api.spec.js)).
-- Known defects are tracked with `test.fail(true, '...')` plus a linked Jira id, not by deleting the test ([mid_exclusion_ui.spec.js](b55168_pom/tests/mid_exclusion_ui.spec.js) TC_UI_021 → B10-56609).
-- Suites that depend on unfilled SETUP auto-skip via `test.skip(condition, reason)` ([cashback_processing.spec.js](b55168_pom/tests/cashback_processing.spec.js)).
+- Data-driven specs build a `TEST_CASES` array of `{ id, title, run }` and register them in a loop ([mid_exclusion_api.spec.js](../../../automation/legacy/tests/mid_exclusion_api.spec.js)).
+- Known defects are tracked with `test.fail(true, '...')` plus a linked Jira id, not by deleting the test ([mid_exclusion_ui.spec.js](../../../automation/legacy/tests/mid_exclusion_ui.spec.js) TC_UI_021 → B10-56609).
+- Suites that depend on unfilled SETUP auto-skip via `test.skip(condition, reason)` ([cashback_processing.spec.js](../../../automation/legacy/tests/cashback_processing.spec.js)).
 
 ## Worker serialization for cron tests
 

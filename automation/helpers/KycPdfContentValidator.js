@@ -3,7 +3,7 @@
 /**
  * KycPdfContentValidator — B10-56337 KYC A4 PDF content assertions.
  *
- * Extends the pdf-parse pattern proven in b55168_pom/tests/kyc_pdf_content.spec.js to the full
+ * Extends the pdf-parse pattern proven in automation/legacy/tests/kyc_pdf_content.spec.js to the full
  * B10-56337 scope: field-mapping coverage, conditional "Other Nationalities" rendering, empty
  * Customer/Employee signatures, Date-of-Collection = generation date, Employee Name/Number from
  * login, and the added-AC line-wrap rule (long free text wraps to 2–3 rows, ≤50 chars per line,

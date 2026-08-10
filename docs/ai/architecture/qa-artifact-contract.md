@@ -20,27 +20,61 @@ All under the per-story folder `D:\breadfast-qa\<TICKET>\`.
 | `figma-analysis` | `figma-analysis/analysis.md` (+ `frames/*.png`, `extract/*.json`) | `figma-analysis` | Figma (frames) | — |
 | `clarifications` | `clarification/clarifications.md` | `clarification` (grill-me) | Jira (AC+comments) | requirements, figma-analysis |
 | `impact` | `impact-analysis/impact.md` | `impact-analysis` | — | requirements, figma-analysis |
-| `hls` | `hls/hls.md` (+ Jira checklist publish record) | `test-design` (HLS phase) | — | requirements, figma-analysis, impact, clarifications |
+| `exploratory-notes` **(conditional)** | `evidence/exploratory-notes.md` | `exploratory-testing` (Mode A) | the running app | requirements, figma-analysis, impact |
+| `hls` | `hls/hls.md` (+ Jira checklist publish record) | `test-design` (Phase A) | — | requirements, figma-analysis, impact, clarifications |
+| `testcases` | `testcases/testcases.csv` (+ `coverage-notes.md`) | `test-design` (Phase B) | — | hls, requirements, impact |
+| `testcase-review` | `testcases/review.md` | `testcase-review` | — | testcases |
+| `browserstack-import` | `browserstack/import-report.md` | `browserstack-mgmt` (Mode A) | — | testcase-review |
 
-Workflow 2 outputs **may** also be tracked (optional, same record shape): `testcases`, `browserstack-import`, `automation`, `execution`, `visual-findings`, `defects`, `qa-summary`. These are not part of the reuse baseline but benefit from the same checksum/staleness bookkeeping.
+> **The baseline grew 5 → 8 on 2026-08-09.** Defining coverage is a **pre-development** act: everything a
+> complete suite needs (AC map, design, impact, clarifications, and the optional exploratory analysis)
+> exists before implementation. So `testcases`, its **review gate**, and the **import** are Workflow 1
+> outputs, and Workflow 2 **reconciles** them (§5) rather than regenerating a suite.
+> **Shift left = establish the coverage baseline · Validate = reconcile and maintain it.**
+
+**Conditional (optional) baseline members** — reconciled only once a record exists, so a story that
+legitimately never needed them never reports a permanently-stale key
+(`BASELINE_OPTIONAL` in [`dag.js`](../../../qa-workflow/lib/freshness/dag.js)):
+`exploratory-notes` (W1 Mode A / W2 Mode B) and `testcase-reconciliation` (W2 only).
+
+Workflow 2 outputs **may** also be tracked (optional, same record shape): `testcase-reconciliation`, `automation`, `execution`, `visual-findings`, `defects`, `qa-summary`. These are not part of the reuse baseline but benefit from the same checksum/staleness bookkeeping.
 
 ## 2. Dependency DAG
 
 ```
         sources.jira ───────► requirements ──────────────┐
                      └──────► clarifications ◄──┐         ├──► impact ──┐
-                                                │         │             ├──► hls
-        sources.figma ─────► figma-analysis ────┴─────────┘─────────────┘
+                                                │         │             ├──► hls ──► testcases
+        sources.figma ─────► figma-analysis ────┴─────────┘─────────────┘      ┌──────────┘
+                                                                               │
+        (exploratory-notes ····context····► testcases)                         ▼
+                                                              testcase-review ──► browserstack-import
+                                                                     └──────────► automation ◄─ testcases
 ```
 - `requirements ← jira`
 - `figma-analysis ← figma`
 - `clarifications ← jira (AC/comments)`  *(requirements + figma-analysis are **context**, not cascade edges — they inform clarification but do not invalidate it; its only staleness trigger is a **material** jira change, so regenerating requirements does not needlessly re-open the interactive gate)*
 - `impact ← requirements, figma-analysis`
+- `exploratory-notes ← requirements, figma-analysis, impact`  *(optional)*
 - `hls ← requirements, figma-analysis, impact, clarifications`
+- `testcases ← hls, requirements, impact`  *(**context:** clarifications, exploratory-notes — an exploratory charter that is re-run must not tear up an approved, imported suite; it informs case design, it does not define it)*
+- `testcase-review ← testcases`
+- `browserstack-import ← testcase-review`  *(**not** `testcases` — nothing reaches the test-management system ahead of the review gate)*
 
-Cascade: a change to `jira` regenerates `requirements` → `impact` → `hls` (and `clarifications` via the materiality gate, §5). A change to `figma` regenerates `figma-analysis` → `impact`, `hls`, and the visual baseline.
+Cascade: a change to `jira` regenerates `requirements` → `impact` → `hls` → `testcases` → `testcase-review` → `browserstack-import` (and `clarifications` via the materiality gate, §5). A change to `figma` regenerates `figma-analysis` → `impact`, `hls`, the suite below it, and the visual baseline. **A changed AC now reaches the imported suite** instead of stopping at the HLS.
 
-**Workflow-2 outputs extend the same DAG** (when tracked): `testcases ← hls, requirements`; `automation ← testcases`; `browserstack-import ← testcases`; `visual-findings ← figma-analysis`; `defects ← execution, visual-findings`; `qa-summary ← execution, visual-findings, defects`. So a regenerated baseline artifact cascades into WF2 outputs exactly as within the baseline.
+**Workflow-2 outputs extend the same DAG** (when tracked): `testcase-reconciliation ← testcases`; `automation ← testcases`; `visual-findings ← figma-analysis`; `defects ← execution, visual-findings`; `qa-summary ← execution, visual-findings, defects`. So a regenerated baseline artifact cascades into WF2 outputs exactly as within the baseline.
+
+### 2.1 The two gates on the coverage path (mechanical, `qa-cli.js`)
+
+| Gate | Mechanism | Escape hatch |
+|---|---|---|
+| **Review** — un-reviewed cases must not be imported | `PHASE_DEPS['browserstack-import'] = 'testcase-review'`: recording the import dies unless the review artifact is `complete` | `defer <dir> testcase-review --by … --reason …` |
+| **Approval** — reviewing is not approving | `APPROVAL_DEPS`: recording the import dies unless `approvals.testcases` exists. `approve <dir> testcases --by "<operator>"` also **snapshots** the approved CSV + checksum | same deferral |
+| **Traceability** — validation may change the suite, never silently | `complete-check` fails when an approved artifact's checksum drifted and no `testcase-reconciliation` is recorded | record the reconciliation (that *is* the fix) |
+
+The reviewing agent must not run `approve` on its own authority. The gate exists because an imported
+suite is read by the squad, by `@TmsLink` and by every later run as the agreed definition of coverage.
 
 **Domain recording:** when an artifact declares `domains: [...]`, each listed domain's fingerprint MUST be present in the top-level `domains` map — that is what rule (e) compares against. An artifact may only consume domains that are recorded.
 
@@ -55,7 +89,21 @@ One state file per story records **current known source fingerprints** and **one
 | **Jira** | issue `updated` timestamp | `sha256(normalize(summary + description + AC field + comments[]))` — `fieldsHashed` records exactly which fields were included |
 | **Figma** | `GET /v1/files/<key>?depth=1` → `lastModified` + `version` (one cheap call, no frame export) | `framesHash` = `sha256` over exported frame PNGs (computed only when frames are (re)exported) |
 | **Domain** | domain skill `version:` | `sha256` of the domain skill content |
+| **Generator** | skill `version:` in `qa-workflow/skills/<name>/SKILL.md` | — (compared by `<skill>@<major.minor>`) |
 | **Artifact** | — | `checksum` = `sha256` of the artifact file (detects on-disk drift/tamper) |
+
+**Both are read live by [`lib/freshness/generators.js`](../../../qa-workflow/lib/freshness/generators.js)**
+(`loadGenerators` maps each skill's `produces.artifacts` → `<name>@<version>`; `loadDomains` fingerprints
+`qa-workflow/domains/<id>/SKILL.md`). `record --domains <ids>` writes the consumed domains into the
+top-level `domains` map, which is what rule (e) compares against. *(Wired 2026-08-09. Until then
+`opts.generators` was never populated and `reconcile` was called with a hardcoded `domains: {}`, so
+rules (d) and (e) — two of the five — were implemented, unit-tested and **inert**: a skill `version:`
+bump and a business-rule change each invalidated nothing.)*
+
+> **The domain fingerprint is of the domain SKILL, not the `docs/ai/business/**` files it wraps** — so
+> editing a business doc invalidates nothing until the domain's `version:` is bumped. **That bump is the
+> lock.** `qa-cli.js status` reports when the wrapped sources moved and the version did not, so the
+> discipline is visible rather than assumed.
 
 Normalization for Jira hashing: trim, collapse whitespace, strip volatile markup, sort comments by id — so cosmetic re-renders don't produce false changes.
 
@@ -63,7 +111,8 @@ Normalization for Jira hashing: trim, collapse whitespace, strip volatile markup
 
 ## 5. Freshness algorithm — `Reconcile(storyDir)`
 
-Workflow 2's first step. Reuses everything valid; regenerates only the stale set.
+Workflow 2's first step. Reuses everything valid; regenerates only the stale set. The default reconciled
+set is the **eight-key baseline** plus any conditional artifact this story produced.
 
 ```
 1. Load qa-state.json (or treat all artifacts as missing if absent).
@@ -105,8 +154,9 @@ Workflow 2's first step. Reuses everything valid; regenerates only the stale set
 | Artifact missing/incomplete | rule (a) |
 | Artifact hand-edited (no source change) | step 3 → status `modified`, **reused** (human edit wins) |
 | Hand-edit **and** source change | step 5 → **conflict**, operator decides (default: keep edits, warn) |
-| *(bonus)* methodology refined | rule (d) via skill `version:` bump |
-| *(bonus)* business rules changed | rule (e) via domain `version:` |
+| *(bonus)* methodology refined | rule (d) via skill `version:` bump — live since 2026-08-09; `--ignore-lock` carries it forward deliberately |
+| *(bonus)* business rules changed | rule (e) via domain `version:` — live since 2026-08-09, and only for artifacts recorded with `--domains` |
+| **Implementation differs from the approved suite** | *not* a freshness rule — the sources did not change. Handled by `test-design` **Phase C** (reconciliation): add/update/remove/split/merge/obsolete, each with an **authority** (AC, design, or a recorded clarification) and evidence, logged in `testcases/reconciliation.md`, then re-reviewed, re-approved and synced. "The app does X" is a defect candidate, never an authority to rewrite an expected result. |
 | Otherwise | reuse |
 
 ### 5.2 Materiality gate (clarifications only)
@@ -137,6 +187,9 @@ A Jira change flags `requirements`/`hls` stale mechanically, but **`clarificatio
 | `artifacts.<key>.checksum` | sha256 | fingerprint of the artifact file content |
 | `artifacts.<key>.domains` | string[] | domains consumed (optional) |
 | `artifacts.<key>.notes` | string | optional |
+| `deferrals.<key>` | `{approvedBy, reason, at}` | operator-approved phase **deferral** — the only way past `PHASE_DEPS`, `APPROVAL_DEPS` and `complete-check` |
+| `approvals.<key>` | `{approvedBy, at, artifact, snapshot, checksum, note?, history[]}` | operator approval + the immutable snapshot of what was approved. Required on `testcases` before `browserstack-import` may be recorded. Re-approval pushes the previous record onto `history`, so the original approver is never erased |
+| `skips.<key>` | `{decidedBy, reason, at}` | a **conditional** phase (an optional DAG member) deliberately not run. Distinct from a deferral: a deferral postpones something owed, a skip states it was not needed — both carry a name, so "decided against" never looks like "never considered" |
 
 ## 7. Migration checklist (independent → plugin)
 
@@ -166,7 +219,7 @@ when the plugin is available").
 |---|---|---|---|
 | R1 | Hard relative `require('../../automation/helpers/FigmaExporter')` — won't resolve once the tree relocates | [`qa-workflow/bin/qa-cli.js`](../../../qa-workflow/bin/qa-cli.js) | Inject/configure the path (env or resolver) **or** vendor `FigmaExporter` into the plugin so it's self-contained. |
 | R2 | No `package.json` in `qa-workflow/` — relies on ambient Node + *external* `node_modules` | `qa-workflow/` | Add a package manifest declaring deps (`@playwright/test`, `FigmaExporter`'s deps) so the plugin package stands alone. |
-| R3 | Absolute machine path `D:\Playwright\b55168_pom` for `@playwright/test` | [`qa-workflow/bin/figma-connect.js`](../../../qa-workflow/bin/figma-connect.js) | Resolve Playwright from the plugin's own deps (follows from R2); drop the machine-specific path. |
+| R3 | ~~Absolute machine path `D:\Playwright\b55168_pom` for `@playwright/test`~~ — **RESOLVED 2026-08-10** | [`qa-workflow/bin/figma-connect.js`](../../../qa-workflow/bin/figma-connect.js) | Done: `@playwright/test` resolves from the repo-root `package.json`; the machine path is gone from code, messages and docs. The external folder was never a git repo, so it could never have been pushed — see [`automation/legacy/README.md`](../../../automation/legacy/README.md). |
 
 **Already seamed (no action needed):** the `docs/ai/screens` registry dir → `QA_SCREEN_REGISTRY_DIR`;
 the Figma session file → `FIGMA_AUTH_PATH`. The plugin only needs to set these env vars. Also note:

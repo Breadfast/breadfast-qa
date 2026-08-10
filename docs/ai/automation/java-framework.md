@@ -2,7 +2,7 @@
 
 > The **primary/native** Breadfast automation framework. Java + Maven + Appium + Selenium + REST-assured + TestNG, run on **BrowserStack** and **LambdaTest HyperExecute**.
 > Maven coordinates: `org.breadfast:QA_Framework:1.0-SNAPSHOT`. Location: `D:\projects`.
-> This is the single source of truth for environment config — the Playwright JS framework (`b55168_pom`) reads this framework's `resources/environments/config_testing.properties` via its `PropertiesReader`. See [reusable-components.md](reusable-components.md).
+> This is the single source of truth for environment config — the in-repo Playwright JS framework (`automation/`) reads this framework's `resources/environments/config_testing.properties` via its `PropertiesReader`. See [reusable-components.md](reusable-components.md).
 
 Counts (real, from the tree): **663 `.java` files**, **30 API client classes**, **50 domain model classes**, **~250 page-object (modal) classes across 10 modules**, **~230 test classes across 21 test packages**, **39 role validators**, **17 TestNG suite XMLs**.
 
@@ -288,7 +288,7 @@ mvn allure:report        # results from ./allure-results
 | Framework | Role |
 |---|---|
 | **This Java framework (`D:\projects`)** | **Primary / native** automation: full mobile (RN + native), web portals, API, DB, stress; runs CI via Maven on BrowserStack + HyperExecute. |
-| `b55168_pom` (Playwright JS) | Card-perk focused JS suite. Its `PropertiesReader` reads **this framework's** `config_testing.properties` (and card DB/SSH config) as the single source of truth — do not duplicate secrets. |
+| `automation/` (Playwright JS, in-repo) | Card-perk focused JS suite. Its `PropertiesReader` reads **this framework's** `config_testing.properties` (and card DB/SSH config) as the single source of truth — do not duplicate secrets. |
 | `bs_helper.js` | Ad-hoc Node mobile WebDriver layer for manual BrowserStack sessions (`bsReq`, `getSource`, `tap`, `findElement`, screenshots). |
 
 See the "Java framework (`D:\projects`)" row-group in [reusable-components.md](reusable-components.md) for the capability→asset shortcuts.

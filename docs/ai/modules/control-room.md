@@ -20,7 +20,7 @@ See [../business/user-roles.md](../business/user-roles.md). Confirmed: Analyst, 
 `(unconfirmed — populate when a Control Room story is tested with the framework)`.
 
 ## Automation entry points
-Playwright framework ([../automation/playwright-framework.md](../automation/playwright-framework.md)); reuse [LoginPage.js](../../b55168_pom/pages/LoginPage.js) and [BasePage.js](../../b55168_pom/pages/BasePage.js) as the starting POM. New Control Room page objects to be created as stories require — search existing assets first ([../automation/reusable-components.md](../automation/reusable-components.md)).
+Playwright framework ([../automation/playwright-framework.md](../automation/playwright-framework.md)); reuse [LoginPage.js](../../../automation/pages/LoginPage.js) and [BasePage.js](../../../automation/pages/BasePage.js) as the starting POM. New Control Room page objects to be created as stories require — search existing assets first ([../automation/reusable-components.md](../automation/reusable-components.md)).
 
 ## Java framework assets (`D:\projects`)
 

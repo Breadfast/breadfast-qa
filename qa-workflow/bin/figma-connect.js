@@ -3,8 +3,9 @@
  * Figma Playwright Session Authenticator (plugin-aligned, qa-platform-free).
  *
  * Relocated out of the deferred qa-platform (was qa-platform/auth/connect-figma.js).
- * Self-contained: imports NO qa-platform code — only @playwright/test, resolved from
- * the runnable Playwright framework (D:\Playwright\b55168_pom).
+ * Self-contained: imports NO qa-platform code — only @playwright/test, which resolves from
+ * the repo's own node_modules (it is a dependency in the repo-root package.json). Nothing
+ * outside this repository is required.
  *
  * Two modes:
  *   --status            Report saved-session freshness and exit. Prints one JSON line.
@@ -13,10 +14,9 @@
  *   (default)           Launch a HEADED Chromium so the user can log in to Figma via Google,
  *                       auto-detect success, capture the full storageState, write figma-auth.json, exit.
  *
- * Usage (cwd must be the Playwright framework so its node_modules resolve @playwright/test):
- *   cd D:\Playwright\b55168_pom && node D:\breadfast-qa\qa-workflow\bin\figma-connect.js
- *   cd D:\Playwright\b55168_pom && node D:\breadfast-qa\qa-workflow\bin\figma-connect.js --status
- *   (or set NODE_PATH=<b55168_pom>\node_modules)
+ * Usage (run from the repo root — no special cwd or NODE_PATH needed):
+ *   node qa-workflow/bin/figma-connect.js
+ *   node qa-workflow/bin/figma-connect.js --status
  *
  * If @playwright/test cannot be loaded (no headed display / missing dep), the script exits 2 with
  * guidance — that is the signal to fall back to the in-session Playwright-MCP reconnect path
@@ -27,9 +27,8 @@
  *                                  (default: <repo root>/auth/figma-auth.json)
  *   FIGMA_SESSION_MAX_AGE_DAYS   — freshness window for --status (default: 25)
  *   FIGMA_CONNECT_TIMEOUT_MS     — max ms to wait for user login (default: 600000 = 10 min)
- *   NODE_PATH                    — <b55168_pom>/node_modules (set by the caller if cwd differs)
  *
- * CommonJS (require) so it works over NODE_PATH, like the shared automation/ scripts.
+ * CommonJS (require), like the shared automation/ scripts.
  */
 
 const path = require('path');
@@ -102,13 +101,13 @@ function isAuthenticatedUrl(url) {
 }
 
 async function runConnect() {
-  // Resolve playwright from NODE_PATH / cwd (b55168_pom/node_modules).
+  // Resolves from the repo's own node_modules (@playwright/test is a repo-root dependency).
   let chromium;
   try {
     ({ chromium } = require('@playwright/test'));
   } catch (e) {
     console.error(`[figma-connect] Could not load @playwright/test: ${e.message}`);
-    console.error(`[figma-connect] Run from the Playwright framework (cwd = D:\\Playwright\\b55168_pom) or set NODE_PATH to its node_modules.`);
+    console.error(`[figma-connect] Run "npm install" at the repo root, then retry.`);
     console.error(`[figma-connect] If no headed browser is available here, fall back to the in-session Playwright-MCP reconnect (SKILL.md session gate).`);
     process.exit(2);
   }
@@ -125,7 +124,7 @@ async function runConnect() {
     }
   } catch (e) {
     console.error(`[figma-connect] Failed to launch a headed browser: ${e.message}`);
-    console.error(`[figma-connect] Run "npx playwright install chromium" in D:\\Playwright\\b55168_pom, or use the in-session Playwright-MCP reconnect fallback.`);
+    console.error(`[figma-connect] Run "npx playwright install chromium" at the repo root, or use the in-session Playwright-MCP reconnect fallback.`);
     process.exit(2);
   }
 

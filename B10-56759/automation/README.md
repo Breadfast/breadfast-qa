@@ -24,9 +24,10 @@ WEB-ONLY story (execution directive `platforms=["web"]`) — no Appium/mobile cl
     delete-confirmation modal.
   - `pages/LoginPage.js`, `helpers/ConfigReader.js`, `helpers/VisualComparisonHelper.js`,
     `helpers/FigmaExporter.js`, `config/figma.js` — reused as-is.
-- **Runnable mirror:** the two files edited for this story
-  (`helpers/ApiHelper.js`, `pages/PerkDetailsPage.js`) are mirrored to
-  `D:\Playwright\b55168_pom` to keep that copy from drifting.
+- **No mirror (2026-08-10):** the two files edited for this story
+  (`helpers/ApiHelper.js`, `pages/PerkDetailsPage.js`) have one copy each under
+  `<repo root>/automation/`. The out-of-repo mirror this line used to require was imported
+  and retired — there is nothing left to keep in sync.
 
 **Reuse-before-build:** no new page object was created. The only shared-code
 changes are:

@@ -52,8 +52,29 @@ class CollectDialogPage extends BasePage {
     await this.page.waitForTimeout(300);
   }
 
+  /** Open the Store Location autocomplete panel if it isn't already showing options (used for
+   *  LISTING the full, unfiltered set). A blind click() toggles it, so this is open-state-aware. */
+  async ensureStoreDropdownOpen() {
+    const anyOption = this.page.getByRole('option').first();
+    if (await anyOption.isVisible().catch(() => false)) return;
+    await this.storeCombobox.click();
+    await anyOption.waitFor({ state: 'visible', timeout: this.DEFAULT_TIMEOUT }).catch(() => {});
+  }
+
+  /**
+   * Select a store in the Store Location field. It is a keystroke-driven autocomplete, not a
+   * plain dropdown, so:
+   *  - fill() is avoided (it sets the value without the key events that open/filter the panel);
+   *  - any PRIOR selection is cleared with real keys first, otherwise the leftover value filters
+   *    the panel and hides the target branch (the failure mode when changing the store);
+   *  - the full list is then opened (open-state-aware) and the exact-name option clicked.
+   */
   async selectStore(name) {
     await this.storeCombobox.click();
+    await this.storeCombobox.press('Control+a').catch(() => {});
+    await this.storeCombobox.press('Delete').catch(() => {});
+    await this.page.waitForTimeout(200);
+    await this.ensureStoreDropdownOpen();
     const opt = this.page.getByRole('option', { name, exact: true }).first();
     await this.waitForVisible(opt);
     await opt.click();
@@ -118,9 +139,14 @@ class CollectDialogPage extends BasePage {
     return { status, body, message };
   }
 
-  /** Inline "This field is required." under Package Number (empty-submit guard). */
+  /** Inline required-package error under Package Number (empty-submit guard). Per the updated
+   *  AC (the "Confirm disabled until entered" line was struck through) and fixed defect
+   *  B10-57363, the message is "Add a Package number to continue"; kept tolerant of wording. */
   async packageRequiredError() {
-    return (await this.page.locator('text=This field is required.').first().textContent().catch(() => '') || '').trim();
+    const loc = this.page
+      .getByText(/Add a Package number to continue|Package number.*(required|continue)|This field is required\./i)
+      .first();
+    return (await loc.textContent().catch(() => '') || '').trim();
   }
 
   // ── Post-collection reprint (header action) ─────────────────────────────────
@@ -165,13 +191,30 @@ class CollectDialogPage extends BasePage {
 
   /** All selectable Store Location option labels (branch reference data). */
   async listStoreOptions() {
-    await this.storeCombobox.click();
+    await this.ensureStoreDropdownOpen();
     const opts = this.page.getByRole('option');
     await opts.first().waitFor({ state: 'visible', timeout: this.DEFAULT_TIMEOUT }).catch(() => {});
     const names = (await opts.allTextContents()).map(s => s.trim()).filter(Boolean);
-    await this.page.keyboard.press('Escape').catch(() => {});
-    await this.page.waitForTimeout(200);
+    // Leave the dropdown open — selectStore()/ensureStoreDropdownOpen() is open-state-aware, so
+    // callers that list then select don't depend on this overlay closing on Escape (it doesn't).
     return names;
+  }
+
+  /**
+   * Store option label that is a real branch, not injected/junk reference data. The testing
+   * store list is polluted with template/formula-injection entries such as "{{7*7}}" and
+   * "=CHAR(49)+55"; a genuine branch name never contains formula/template characters.
+   */
+  static isRealStoreName(name) {
+    if (!name) return false;
+    if (/^\s*select\b/i.test(name)) return false;      // placeholder option
+    if (/[{}<>*=()+]|CHAR\s*\(/i.test(name)) return false; // {{7*7}}, =CHAR(49)+55, etc.
+    return true;
+  }
+
+  /** Real, selectable Store Location branches only (junk/injected entries filtered out). */
+  async listValidStoreOptions() {
+    return (await this.listStoreOptions()).filter(n => CollectDialogPage.isRealStoreName(n));
   }
 
   /** Select a store and return the Branch Code it reveals (for the mapping/update checks). */

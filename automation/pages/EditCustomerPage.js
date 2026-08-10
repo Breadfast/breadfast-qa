@@ -28,8 +28,9 @@
  *     marital_status, religion (select)
  *     is_adib_customer (radio Yes|No)
  *
- *   Date pickers: three inputs share placeholder "DD-MM-YYYY" — index 0 birthdate,
- *   1 national-id expiry, 2 issuing date. .fill() on the input binds the Angular control.
+ *   Date pickers: two inputs share placeholder "DD-MM-YYYY" — index 0 birthdate,
+ *   1 national-id expiry. Issuing date is a separate "MM/YYYY" month picker (changed
+ *   2026-07-08). .fill() on the input binds the Angular control.
  *
  *   VALIDATION IS SERVER-SIDE, ONE FIELD AT A TIME. Each Confirm POSTs
  *   /api/v1/web/wallet_users/update; on failure the API returns HTTP 400 with
@@ -70,11 +71,14 @@ class EditCustomerPage extends BasePage {
     this.occupation       = page.locator('input[formcontrolname="occupation"]');
     this.otherNatDetails  = page.locator('input[formcontrolname="other_nationalities"]');
     this.citySelect       = page.locator('select[formcontrolname="city"]');
-    this.dateInputs       = page.locator('input[placeholder="DD-MM-YYYY"]'); // 0 dob, 1 expiry, 2 issuing
+    this.dateInputs       = page.locator('input[placeholder="DD-MM-YYYY"]'); // 0 dob, 1 expiry
     // formcontrolname is no longer rendered on the date inputs in the live panel (verified
-    // 2026-07-05 via DOM probe: all three DD-MM-YYYY inputs report formcontrolname=null) —
-    // use the same position-based locator as issuingDate (dateInputs.nth(2)) instead.
+    // 2026-07-05 via DOM probe: the DD-MM-YYYY inputs report formcontrolname=null) —
+    // use position-based locators instead.
+    // 2026-07-08: the Issuing Date picker changed from a DD-MM-YYYY (3rd) input to a
+    // dedicated MM/YYYY picker, so it is no longer part of dateInputs. Target it directly.
     this.dobInput         = this.dateInputs.nth(0); // Date of Birth (B10-55294)
+    this.issuingDateInput = page.locator('input[placeholder="MM/YYYY"]'); // Issuing Date
   }
 
   // ── Navigation ──────────────────────────────────────────────────────────────
@@ -139,13 +143,26 @@ class EditCustomerPage extends BasePage {
     await this.page.waitForTimeout(150);
   }
 
-  /** Issuing date is the 3rd DD-MM-YYYY picker. Pass '' to clear.
-   *  Filling opens the dp-date-picker calendar overlay, which would intercept the
-   *  Confirm click — dismiss it by clicking the modal heading (Escape closes the modal). */
+  /** Issuing date is a MM/YYYY month picker (changed from a DD-MM-YYYY day picker 2026-07-08).
+   *  Accepts either a DD-MM-YYYY value (month+year are used) or a ready MM/YYYY string; pass ''
+   *  to clear. Filling opens the calendar overlay, which would intercept the Confirm click —
+   *  dismiss it by clicking the modal heading (Escape closes the modal). */
   async setIssuingDate(value) {
-    await this.dateInputs.nth(2).fill(value);
+    await this.issuingDateInput.fill(this.constructor.toMonthYear(value));
     await this.editHeading.click({ timeout: 5000 }).catch(() => {});
     await this.page.waitForTimeout(200);
+  }
+
+  /** Normalise a date value to the MM/YYYY the Issuing Date picker now expects.
+   *  '02-02-2015' → '02/2015', '02/2015' → '02/2015', '' → ''. */
+  static toMonthYear(value) {
+    if (!value) return '';
+    const parts = String(value).trim().split(/[-/]/);
+    let month, year;
+    if (parts.length === 3)      { month = parts[1]; year = parts[2]; } // DD-MM-YYYY
+    else if (parts.length === 2) { month = parts[0]; year = parts[1]; } // MM/YYYY (or MM-YYYY)
+    else return String(value);
+    return `${String(month).padStart(2, '0')}/${year}`;
   }
 
   /** True if the conditional "Specify other nationalities" field is in the DOM + visible. */

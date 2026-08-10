@@ -7,20 +7,20 @@
 
 | Capability needed | Reuse this | File |
 |-------------------|-----------|------|
-| Admin-panel **login (UI)** | `LoginPage.fillLoginFormAndSubmit(user, pass)` | [pages/LoginPage.js](b55168_pom/pages/LoginPage.js) |
-| Admin-panel **login (API, get JWT)** | `ApiHelper.loginAndGetToken(request)` | [helpers/ApiHelper.js](b55168_pom/helpers/ApiHelper.js) |
-| **Create perk via UI** (General Spend Cashback) | `PerksPage` — `goToPerksPage` → `clickAddPerk` → `selectGeneralSpendCashbackType` → `fillMandatoryFields` → `submitPerkExpectSuccess` | [pages/PerksPage.js](b55168_pom/pages/PerksPage.js) |
-| **Create perk via API** | `ApiHelper.createGeneralCashbackPerk(request, token, ids, value, type, minTx, title)` | [helpers/ApiHelper.js](b55168_pom/helpers/ApiHelper.js) |
-| **Bulk merchant-ID generation** | `ApiHelper.buildMerchantIds(count, offset)` | [helpers/ApiHelper.js](b55168_pom/helpers/ApiHelper.js) |
-| **List perks** (verify created) | `ApiHelper.listPerks(request, token)` | [helpers/ApiHelper.js](b55168_pom/helpers/ApiHelper.js) |
-| **Excluded-merchant multi-select** (select/deselect/count) | `PerksPage.selectMerchantsByName / deselectMerchantsByName / selectMerchants / selectAllMerchants / getSelectedMerchantsCount` | [pages/PerksPage.js](b55168_pom/pages/PerksPage.js) |
-| **DB seeding** (clone/adjust a purchase) | `DbHelper.cloneEligiblePurchase / adjustPurchaseForTest / setRawTransactionData / findLatestPurchaseForMobile / resetPerkProcessed` | [helpers/DbHelper.js](b55168_pom/helpers/DbHelper.js) |
-| **DB verification** (cashback rows) | `DbHelper.countCashback / getCashbackRows / getPerkProcessed / getRow` | [helpers/DbHelper.js](b55168_pom/helpers/DbHelper.js) |
-| **Trigger cashback cron** | `CronHelper.triggerCashbackCron(request)` → `GET {cardBackend}/test?cronJobType=cashback` | [helpers/CronHelper.js](b55168_pom/helpers/CronHelper.js) |
-| **Read non-secret config** | `ConfigReader` singleton getters | [helpers/ConfigReader.js](b55168_pom/helpers/ConfigReader.js) |
-| **Read DB/SSH secrets** (from Java framework) | `PropertiesReader.getCardDbConfig(path)` | [helpers/PropertiesReader.js](b55168_pom/helpers/PropertiesReader.js) |
-| **Bug-repro video recording** | pattern in standalone runner | [record_bug_b10_56609.js](b55168_pom/record_bug_b10_56609.js) |
-| **Ad-hoc API perk seeding** (node, no test runner) | pattern in standalone runner | [create_perks_api.js](b55168_pom/create_perks_api.js) |
+| Admin-panel **login (UI)** | `LoginPage.fillLoginFormAndSubmit(user, pass)` | [pages/LoginPage.js](../../../automation/pages/LoginPage.js) |
+| Admin-panel **login (API, get JWT)** | `ApiHelper.loginAndGetToken(request)` | [helpers/ApiHelper.js](../../../automation/helpers/ApiHelper.js) |
+| **Create perk via UI** (General Spend Cashback) | `PerksPage` — `goToPerksPage` → `clickAddPerk` → `selectGeneralSpendCashbackType` → `fillMandatoryFields` → `submitPerkExpectSuccess` | [pages/PerksPage.js](../../../automation/pages/PerksPage.js) |
+| **Create perk via API** | `ApiHelper.createGeneralCashbackPerk(request, token, ids, value, type, minTx, title)` | [helpers/ApiHelper.js](../../../automation/helpers/ApiHelper.js) |
+| **Bulk merchant-ID generation** | `ApiHelper.buildMerchantIds(count, offset)` | [helpers/ApiHelper.js](../../../automation/helpers/ApiHelper.js) |
+| **List perks** (verify created) | `ApiHelper.listPerks(request, token)` | [helpers/ApiHelper.js](../../../automation/helpers/ApiHelper.js) |
+| **Excluded-merchant multi-select** (select/deselect/count) | `PerksPage.selectMerchantsByName / deselectMerchantsByName / selectMerchants / selectAllMerchants / getSelectedMerchantsCount` | [pages/PerksPage.js](../../../automation/pages/PerksPage.js) |
+| **DB seeding** (clone/adjust a purchase) | `DbHelper.cloneEligiblePurchase / adjustPurchaseForTest / setRawTransactionData / findLatestPurchaseForMobile / resetPerkProcessed` | [helpers/DbHelper.js](../../../automation/helpers/DbHelper.js) |
+| **DB verification** (cashback rows) | `DbHelper.countCashback / getCashbackRows / getPerkProcessed / getRow` | [helpers/DbHelper.js](../../../automation/helpers/DbHelper.js) |
+| **Trigger cashback cron** | `CronHelper.triggerCashbackCron(request)` → `GET {cardBackend}/test?cronJobType=cashback` | [helpers/CronHelper.js](../../../automation/helpers/CronHelper.js) |
+| **Read non-secret config** | `ConfigReader` singleton getters | [helpers/ConfigReader.js](../../../automation/helpers/ConfigReader.js) |
+| **Read DB/SSH secrets** (from Java framework) | `PropertiesReader.getCardDbConfig(path)` | [helpers/PropertiesReader.js](../../../automation/helpers/PropertiesReader.js) |
+| **Bug-repro video recording** | pattern in standalone runner | [record_bug_b10_56609.js](../../../automation/legacy/record_bug_b10_56609.js) |
+| **Ad-hoc API perk seeding** (node, no test runner) | pattern in standalone runner | [create_perks_api.js](../../../automation/legacy/create_perks_api.js) |
 | **Mobile WebDriver actions** (BrowserStack) | `bsReq, getSource, findElement(s), clickEl, typeText, tap, getAttr, screenshot, sleep` | [bs_helper.js](bs_helper.js) |
 | **Mobile session caps / OTP / lang matrix** | process doc | [docs/ai/browserstack-process.md](../browserstack-process.md), [CLAUDE.md](CLAUDE.md) |
 
@@ -50,7 +50,7 @@
 | **RBAC permission assertions** | `rolesValidators/*` (39, `BaseRolesValidator`) + `RolesDataProviderSource` | `helpers/rolesValidators/`, `helpers/dataProviders/` |
 | **Per-tag config mutation** | `ConfigurationsManagementHelper.updateConfigsToMatchTestTag` | `helpers/ConfigurationsManagementHelper.java` |
 | **Card encryption** | `EncryptionHelper` | `helpers/EncryptionHelper.java` |
-| **Config source of truth** (this framework feeds `b55168_pom`) | `config_testing.properties`, `cardServiceConfigs_testing.properties`, `browserStackConfigs.properties` | `resources/environments/` |
+| **Config source of truth** (this framework feeds the in-repo `automation/`) | `config_testing.properties`, `cardServiceConfigs_testing.properties`, `browserStackConfigs.properties` | `resources/environments/` |
 | **Parallel-safe fixture root** | `BaseTest` (all state `ThreadLocal<>`) | `src/test/java/base/BaseTest.java` |
 
 ## Detailed catalogs
@@ -66,7 +66,7 @@
 
 ## Known gaps / open items
 
-From [AUTOMATION_B10-55185.md](b55168_pom/AUTOMATION_B10-55185.md) and the code — build these out when needed instead of assuming they exist:
+From [AUTOMATION_B10-55185.md](../../../automation/legacy/AUTOMATION_B10-55185.md) and the code — build these out when needed instead of assuming they exist:
 
 1. **Perk-form selectors — PARTIALLY RESOLVED 2026-07-27 (B10-57393).** The JS `PerksPage.fillCouponPerk` / `fillCategoryPerk` / `setLimits` are still **stubs that throw**, but the selectors they were waiting on are now **captured live** and implemented in the **Java** `modals/cardsAdminPanel/PerksPage` — port them rather than re-recording:
    - coupon code `app-bf-input[controlname='coupon_code'] input`; **coupon type** `mat-radio-button` `Online`/`Physical`, which **only renders after a coupon code is entered** (missing it silently blocks Preview & save)
@@ -79,5 +79,5 @@ From [AUTOMATION_B10-55185.md](b55168_pom/AUTOMATION_B10-55185.md) and the code 
 5. **`transaction_data` column type** — `adjustPurchaseForTest` assumes JSON (`JSON_SET`); if it's plain TEXT, callers must use `setRawTransactionData`.
 6. **Table name assumption** — `transactions_requests` is assumed from the export sample; override via `BF_TX_TABLE` if the live schema differs.
 7. **No CI for the DB suite** — the cashback suite needs the SSH key + bastion network path and cannot run from CI; it auto-skips until `SETUP.templateTxId` is set.
-8. **Open bug B10-56609** — after a rejected over-limit (206-MID) save, deselecting a merchant doesn't re-submit the corrected list; tracked via `test.fail()` in [mid_exclusion_ui.spec.js](b55168_pom/tests/mid_exclusion_ui.spec.js) TC_UI_021.
+8. **Open bug B10-56609** — after a rejected over-limit (206-MID) save, deselecting a merchant doesn't re-submit the corrected list; tracked via `test.fail()` in [mid_exclusion_ui.spec.js](../../../automation/legacy/tests/mid_exclusion_ui.spec.js) TC_UI_021.
 9. **No formal Playwright fixtures yet** — auth/token/db are set up via `beforeEach`/`beforeAll`; see [fixtures.md](fixtures.md) for where to add `test.extend(...)`.

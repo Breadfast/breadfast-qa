@@ -1,10 +1,10 @@
 # Helper Catalog
 
-> Every helper in `b55168_pom/helpers/`. Reuse these before writing new utility code.
+> Every helper in [`automation/helpers/`](../../../automation/helpers/). Reuse these before writing new utility code.
 
 ---
 
-## ApiHelper — [helpers/ApiHelper.js](b55168_pom/helpers/ApiHelper.js)
+## ApiHelper — [helpers/ApiHelper.js](../../../automation/helpers/ApiHelper.js)
 
 Static-method wrapper around Playwright's `APIRequestContext` for the Card Admin Panel REST API. Base URL from `ConfigReader.getCardServicesAdminPanelBaseURL()`. See [api-clients.md](api-clients.md) for the full payload schema. Endpoints: `/api/v1/web/user/login`, `/api/v1/web/card/perks/create`, `/api/v1/web/card/perks/list`.
 
@@ -24,7 +24,7 @@ expect(resp.status()).toBe(200);
 
 ---
 
-## ConfigReader — [helpers/ConfigReader.js](b55168_pom/helpers/ConfigReader.js)
+## ConfigReader — [helpers/ConfigReader.js](../../../automation/helpers/ConfigReader.js)
 
 Singleton (`module.exports = new ConfigReader()`). Loads `config/environments/cardServiceConfigs_${process.env.ENV || 'testing'}.js` in the constructor (throws if missing).
 
@@ -44,7 +44,7 @@ const baseURL = config.getCardServicesAdminPanelBaseURL();
 
 ---
 
-## CronHelper — [helpers/CronHelper.js](b55168_pom/helpers/CronHelper.js)
+## CronHelper — [helpers/CronHelper.js](../../../automation/helpers/CronHelper.js)
 
 Triggers the card-backend cashback cron on demand (processing-flow step 3).
 
@@ -58,7 +58,7 @@ await CronHelper.triggerCashbackCron(request);  // request = Playwright APIReque
 
 ---
 
-## DbHelper — [helpers/DbHelper.js](b55168_pom/helpers/DbHelper.js)
+## DbHelper — [helpers/DbHelper.js](../../../automation/helpers/DbHelper.js)
 
 MySQL access to `cards_hades_testing` over an SSH tunnel (`ssh2 forwardOut` + `mysql2`), mirroring the Java `DatabaseConnectionFactory`. Connection values come from `PropertiesReader.getCardDbConfig()`. **Constructor:** `new DbHelper(propsPath)`. Module constants: `DbHelper.TYPE_PURCHASE = 25`, `DbHelper.TYPE_CASHBACK = 30`. Table is `transactions_requests` (override via `BF_TX_TABLE`). MID/MCC live **inside** the `transaction_data` JSON column (keys `"mid"`, `"mcc"`).
 
@@ -75,7 +75,7 @@ MySQL access to `cards_hades_testing` over an SSH tunnel (`ssh2 forwardOut` + `m
 | Method | Signature | Purpose / returns |
 |--------|-----------|-------------------|
 | `findLatestPurchaseForMobile` | `async findLatestPurchaseForMobile(mobile)` | Most recent type-25 row for a `sender_identifier`. Returns the row or `null`. |
-| `adjustPurchaseForTest` | `async adjustPurchaseForTest(id, { mid, mcc, amount, createdAt })` | Mutates an existing purchase: sets `transaction_data.mid`/`.mcc` via **`JSON_SET`**, optional `amount`/`createdAt`, resets `perk_processed=0`. Returns the updated row. **If `transaction_data` is plain TEXT (not JSON), use `setRawTransactionData` instead** (open item in [AUTOMATION_B10-55185.md](b55168_pom/AUTOMATION_B10-55185.md)). |
+| `adjustPurchaseForTest` | `async adjustPurchaseForTest(id, { mid, mcc, amount, createdAt })` | Mutates an existing purchase: sets `transaction_data.mid`/`.mcc` via **`JSON_SET`**, optional `amount`/`createdAt`, resets `perk_processed=0`. Returns the updated row. **If `transaction_data` is plain TEXT (not JSON), use `setRawTransactionData` instead** (open item in [AUTOMATION_B10-55185.md](../../../automation/legacy/AUTOMATION_B10-55185.md)). |
 | `setRawTransactionData` | `async setRawTransactionData(id, jsonString)` | Overwrites the whole `transaction_data` blob — use when the column is TEXT, not JSON. |
 | `cloneEligiblePurchase` | `async cloneEligiblePurchase(templateId, overrides={}, jsonFields={})` | Copies a known-good type-25 row (minus PK), applies column `overrides` and `transaction_data` `{mid,mcc}` overrides, forces `transaction_type=25`/`perk_processed=0`, INSERTs. Returns the new `insertId`. Sidesteps the unconfirmed eligibility predicate (open item #1). |
 | `resetPerkProcessed` | `async resetPerkProcessed(id)` | Sets `perk_processed=0` (re-arm for an idempotency re-run). |
@@ -100,7 +100,7 @@ await db.close();
 
 ---
 
-## PropertiesReader — [helpers/PropertiesReader.js](b55168_pom/helpers/PropertiesReader.js)
+## PropertiesReader — [helpers/PropertiesReader.js](../../../automation/helpers/PropertiesReader.js)
 
 Reads the external Java framework's `config_testing.properties` so DB+SSH secrets are never copied into this repo. Default path `D:\projects\resources\environments\config_testing.properties`; override with `BF_PROPERTIES_PATH`. Parses `key=value` lines (skips blanks/`#`), caches by path.
 

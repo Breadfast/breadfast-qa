@@ -9,6 +9,11 @@ coverage/
 .env
 .env.local
 
+# per-person credentials — ship credentials.local.example.js, never the real one.
+# NOTE: this rule does NOT untrack a file already committed; see automation/config/README.md.
+automation/config/credentials.local.js
+**/credentials.local.js
+
 # personal / runtime (belt-and-suspenders — these live in the workspace, not the repo)
 runtime/
 **/*.db

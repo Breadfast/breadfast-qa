@@ -8,7 +8,7 @@
 
 ## 1. Environment Setup (before every session)
 
-1. Active session ID lives in `D:/BreadfastQA/current_session.txt`. Read it before starting.
+1. Active session ID lives in `<storyDir>/current_session.txt` — **per story**, written by that story's own session script (e.g. `B10-57806/current_session.txt`). Read it before starting. (There is no global session file; the old `D:/BreadfastQA/current_session.txt` path never existed.)
 2. Check the session is alive:
    ```js
    const r = await bsReq('GET', `/wd/hub/session/${SID}`);
@@ -231,7 +231,7 @@ The **approved BrowserStack test cases** (canonical export `test_cases_BCard Squ
 - **Every step has its own Expected Result** (N steps → N expected results; validate 0 steps missing an expected result before export).
 - **Never combine multiple actions in one step**; navigation, validations, and verifications are each explicit steps.
 - **Titles**: descriptive `Verify …` sentences. **Type of Test Case** restricted to the canonical vocabulary (§10.2). **Template** always `Steps`.
-- **Reuse the generator** `D:\Playwright\b55168_pom\gen_browserstack_csv_b10_56336.js` (reusable step preambles `OPEN_EDIT` / `OPEN_VIEW_REG` / `OPEN_VIEW_RECEIVED`) — adapt per story, don't re-derive the format.
+- **Reuse the generator** [`automation/legacy/gen_browserstack_csv_b10_56336.js`](../../automation/legacy/gen_browserstack_csv_b10_56336.js) (reusable step preambles `OPEN_EDIT` / `OPEN_VIEW_REG` / `OPEN_VIEW_RECEIVED`) — adapt per story, don't re-derive the format.
 
 This is automatic for every story — no extra instruction needed.
 
@@ -270,6 +270,35 @@ Test Case ID,Title,Folder ID,Folder Path,State,Owner,Priority,Type of Test Case,
 | 23 | **Project Name** | author | BrowserStack project | `BCard Squad` |
 | 24 | **Test Case URL** | system | Direct case URL | `https://test-management.browserstack.com/projects/2407303/folder/<folderId>/test-cases/<id>` |
 
+### 10.2a Traceability tags — `ac:` and `screen:` (added 2026-08-09, MANDATORY on generated cases)
+
+Column 16 **Tags** is author-owned, so it carries the machine-readable traceability the 24-column format
+has nowhere else to put. Comma-separated inside the quoted cell:
+
+```
+"ai-created,ac:AC-1,ac:AC-3,screen:perks-list"
+```
+
+| Tag | Meaning | Rule |
+|---|---|---|
+| `ai-created` | generated case (existing convention) | keep |
+| `ac:AC-<n>` | the Acceptance Criterion this case verifies | **≥ 1 per case** — a case that cites no AC fails the review gate |
+| `screen:<screenId>` | the screen(s) it exercises (QA_PROCESS Phase 3, activity 5) | expected; a missing one is a warning, because an unpaired screen is a *coverage gap*, not a defect |
+
+`AC-1`, `AC1` and `ac 1` all normalize to `AC-1`. Multiple ACs → repeat the tag.
+
+**Why this and not prose.** The parity audit (§B2, `process-parity-audit.md`) recorded that AC traceability
+lived only in each case's description text — readable by a human, unjoinable by a tool. With these tags,
+"every AC is covered by at least one case" is **computed** by `qa-cli.js testcase-lint`, and the QA
+Summary's AC coverage is derived rather than asserted:
+```
+node qa-workflow/bin/qa-cli.js testcase-lint "<storyDir>" --acs-from "<storyDir>/requirements-analysis/requirements.md" --require-screens
+```
+
+> **Verify on the first real import.** BrowserStack may treat the quoted cell as a single tag rather than
+> three. Nothing breaks if it does — the lint reads the CSV, not the API — but confirm how the tags land
+> and record the result here rather than assuming.
+
 ### 10.3 Multi-step row pattern (critical)
 Each test case spans **one row per step**:
 - **First row of a case** — populate columns 1–16 + 19–24 (Test Case ID, Title, Folder ID/Path, State, Owner, Priority, Type, Automation Status, Description, Preconditions, Template=`Steps`, Steps=step #1, Expected Result=step #1, Issues, Tags, then the system timestamp/owner/project/URL columns), Status (latest) + Attachments blank.
@@ -290,12 +319,24 @@ TC-49826,Verify DOB for a user 14 years and 364 days old is rejected in Admin Po
 ### 10.5 End-to-end BrowserStack workflow (run automatically every story)
 This is the standing process — no extra instruction required:
 
-1. **Generate test cases** from the AC/HLS following the canonical standard (§10.0).
+1. **Generate test cases** from the AC/HLS following the canonical standard (§10.0) — **pre-development**, in `qa-shift-left`.
+1b. **Pass the review + approval gate.** The cases are reviewed against the nine checks (no duplicates · no unrelated cases · no missing AC coverage · correct expected results · correct granularity · correct categorization · correct automatable classification · justified regression coverage · format conformance), revised until clean, and **explicitly approved by the operator** — `qa-cli.js approve "<storyDir>" testcases --by "<operator>"`. **Nothing below runs on unapproved cases**; recording the import is blocked without the approval. ([testcase-review skill](../../qa-workflow/skills/testcase-review/SKILL.md).)
 2. **Generate the BrowserStack-compatible CSV** per §10.1–10.4 (24-column header byte-exact; one row per step; every step has an Expected Result; Folder Path `>`-delimited).
 3. **Ask for BrowserStack credentials if not available** (saved as User env vars `BS_TM_USERNAME`/`BS_TM_API_TOKEN` + `BROWSERSTACK_USERNAME`/`BROWSERSTACK_ACCESS_KEY`). UI login (when API is SSO-blocked) uses the Test Management web login.
 4. **Ask for the project/folder destination if not provided** (project id `2407303` = BCard Squad; set Folder ID / Folder Path).
 5. **Upload the test cases** (§10.6).
 6. **Verify the import succeeded** — folder count = expected case count (e.g. `28(28)`), cases land directly in the target folder (no nested/duplicate folder), open one case and confirm the Steps & Results render granularly with an expected result per step. Record destination + result in the story report.
+7. **After the automation exists and has run: mark the automated cases, create the run(s), attach the results** — one command, §10.8. Cases are uploaded `not_automated` (correct: at upload time nothing is automated yet) and are flipped to `automated` only once a test is actually bound to them by `@TmsLink`.
+8. **Verify by read-back, never by status code** — `automation_status` per case, attached case count, and per-case `latest_status` on the run.
+9. **Record the run ids in the story report** (execution report + QA summary), with the source build each result came from.
+
+> **The trigger is the folder link.** When the operator shares a test-case folder link, that is the cue to run §10.8 — no further instruction is needed. Everything else (project identifier, folder id, story key, platforms, which cases are automated, which build holds the results) is derived from it.
+
+> **Post-development is a SYNC, not a second import (2026-08-09).** Validation may add, update or remove
+> cases (`test-design` Phase C). Apply those deltas to the **existing** folder by `TC-xxxx` id —
+> create / update / archive — after they have been re-reviewed and re-approved. Re-uploading the whole
+> CSV creates a duplicate folder and orphans every `@TmsLink` the automation binds. Verify each write by
+> reading it back.
 
 ### 10.6 Upload method — **REST API v2 (preferred, proven)**
 
@@ -395,6 +436,74 @@ await bsReq('POST', `/wd/hub/session/${SID}/back`, {});
 ```
 
 Helper functions (`bsReq`, `getSource`, `findElement(s)`, `clickEl`, `tap`, `sleep`) are catalogued in [appium-framework.md](automation/appium-framework.md).
+
+---
+
+### 10.8 Test RUNS + `automation_status` — the standard step (run automatically every story)
+
+> Added 2026-08-03 by operator instruction: *"standardize this step and do it automatically across any new
+> story — create the run and attach the result automatically, so when I share the testcase folder link you
+> take the target run and project id and do this, and update the automation status for the automated
+> testcases to be automated instead of not automated."*
+
+**One command, story-agnostic:**
+
+```bash
+node automation/browserstack_test_run.js --folder-url "<the shared folder link>" --story B10-xxxxx --dry
+node automation/browserstack_test_run.js --folder-url "<the shared folder link>" --story B10-xxxxx
+```
+
+It derives project + folder from the link, indexes the story's automated tests out of the framework's
+`@TmsLink` annotations, flips `automation_status` to `automated` on exactly those cases, creates **one run
+per platform**, fills each from the recorded App Automate sessions, and verifies every write by reading it
+back. Useful flags: `--platforms ios,android,web` · `--build <name|hash>` · `--since <iso>` ·
+`--run-map ios=TR-x,android=TR-y` (post into runs that already exist) · `--no-results` (create the run and
+let the suite post live) · `--new-run`.
+
+**One run PER PLATFORM — not one shared run.** Mirrored platform classes carry the *same* `@TmsLink` ids, so
+in a shared run whichever platform posts second overwrites the first, per case: the run then shows one
+platform's result while appearing to speak for both.
+
+**Where the results come from.** If the suite ran with `targetProjectId`/`targetRunId` unset, `BaseTest`
+posted nothing — and `target/surefire-reports` + `logs/test.log` are **overwritten by the next run**, so
+BrowserStack **App Automate** is the only surviving per-test record. Two traps in reading it:
+
+- **Take the LATEST session per test-method name, never a tally over the build.** Retries are separate
+  sessions; a raw pass/fail count over a build reads as 11 failures where the suite's verdict was 17/17.
+- **Filter sessions by `os`.** Because both platform classes use identical method names, matching on name
+  alone hands the Android leg an iOS build. Caught in a dry run on 2026-08-03, when the Android leg was
+  about to be filled from iOS build `1088`.
+
+A build can also hold several unrelated executions (the framework names builds after the **app build
+number**, not the story), which is what `--since` scopes.
+
+**To have the NEXT run post live instead of being back-filled**, pass the run id to the suite:
+
+```bash
+mvn -o test -Dsurefire.suiteXmlFiles=<story>.xml     -Dtarget.browserstack.project.id=PR-5 -Dtarget.browserstack.run.id=TR-xxxx
+```
+
+Prefer these `-D` flags over editing `resources/environments/browserStackConfigs.properties`: that file is a
+**shared global**, and a `targetRunId` left in it makes every mobile suite anyone runs post into that story's
+run. `BrowserstackApiClient` sends `{"results":[{test_result,test_case_id}]}`; that shape is verified against
+the live endpoint.
+
+**API v2 specifics, all verified live 2026-08-03:**
+
+| Need | Call | Trap |
+|---|---|---|
+| numeric project id → `PR-x` | `GET /projects?p=N` | the response has **no numeric id** — it is inside `urls.self` |
+| read a case (incl. `automation_status`) | `GET /projects/{p}/test-cases?p=N`, filter `folder_id` | there is **no single-case GET**; `GET …/test-cases/{tc}` 404s |
+| set `automation_status` | `PATCH /projects/{p}/test-cases/{tc}` body `{test_case:{automation_status:'automated'}}` | works on the same path that 404s for GET; it is a true **partial** update — issues/tags/steps/priority/preconditions verified untouched |
+| create a run | `POST /projects/{p}/test-runs` body `{test_run:{name,test_cases:[…],include_all:false}}` | the immediate post-create read of attached cases can return **0** — a race, not a failure; re-read |
+| post a result | `POST /projects/{p}/test-runs/{tr}/results` | a `200` is **not proof** (cf. `steps` vs `test_case_steps`) — read `latest_status` back |
+| folder name (seeds the run name) | `GET /projects/{p}/folders/{id}` | — |
+
+The run name is **derived** — `<STORY> — <folder name> (<Platform>)` — because that string is the reuse key:
+hand-written names are what make a second invocation create duplicates instead of updating the run it made
+last time. Exact-name lookup over the paginated `GET /projects/{p}/test-runs` is verified to resolve. A run
+**cannot be renamed** (`PATCH /projects/{p}/test-runs/{id}` → 404), so a run created under some other name can
+only be targeted with `--run-map` — which is exactly the state B10-56711's `TR-6742`/`TR-6743` are in.
 
 ---
 

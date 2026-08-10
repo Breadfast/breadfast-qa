@@ -136,7 +136,7 @@ implement ports and are never imported by the core. Fallback rule: **the core ne
 | **AI Residual** | L8 — runs only over the residual worklist via an injected judge | [`residual.js`](qa-workflow/lib/conformance/residual.js) |
 | **Screen Registry** | `screenId` → frames per platform/locale + curated components + profile | [`docs/ai/screens/`](docs/ai/screens/) |
 | **Jira · Figma · BrowserStack** | Atlassian MCP (story, HLS, defects) · capture with browser session **PRIMARY**, REST fallback, MCP last · Test Management **API v2** + App Automate | MCP · [`figma-connect.js`](qa-workflow/bin/figma-connect.js) · [`automation/`](automation/) |
-| **Automation** | generated **inside the Java framework** (web→Selenium, mobile→Appium; path configurable, default `D:\projects`); legacy Playwright at `D:\Playwright\b55168_pom` maintained, new Playwright on explicit request only | [automation-generation.md](docs/ai/automation/automation-generation.md) · [`automation/`](automation/) |
+| **Automation** | generated **inside the Java framework** (web→Selenium, mobile→Appium; path configurable, default `D:\projects`); legacy Playwright in-repo at [`automation/legacy/`](automation/legacy/) maintained, new Playwright on explicit request only | [automation-generation.md](docs/ai/automation/automation-generation.md) · [`automation/`](automation/) |
 | **Reporting** | per-screen verdicts, findings, patterns, gaps, health, QA Summary | [`finding.js`](qa-workflow/lib/conformance/finding.js) |
 | **Execution engine** | one continuous session owns one browser/app session per story | [execution-engine.md](docs/ai/execution-engine.md) |
 
@@ -731,7 +731,7 @@ test-case name, verbatim**, one test per case — that's how results map back by
 |---|---|---|
 | [`CLAUDE.md`](CLAUDE.md) · `ONBOARDING.md` | orchestration (roles, story process, routing, governance) · **this handbook**, the single entry point | **never** edit CLAUDE.md silently; keep this handbook cohesive — expand sections, don't add documents |
 | [`qa-workflow/`](qa-workflow/) · [`docs/ai/`](docs/ai/) | the engine + workflows + skills · all methodology, knowledge, contracts | the migration unit, kept self-contained · the **source of truth**; skills reference it, never duplicate it |
-| [`automation/`](automation/) | **shared** JS page objects, helpers, config (+ [`config/framework.js`](automation/config/framework.js) — Java framework path resolver) | lives here **once**; generated Java automation lives in the Java framework (default `D:\projects`); the legacy runnable Playwright project is `D:\Playwright\b55168_pom` |
+| [`automation/`](automation/) | **shared** JS page objects, helpers, config (+ [`config/framework.js`](automation/config/framework.js) — Java framework path resolver) | lives here **once**, runnable in place; generated Java automation lives in the Java framework (default `D:\projects`); the legacy Playwright suite is in-repo at [`automation/legacy/`](automation/legacy/) — there is **no** out-of-repo mirror |
 | `<TICKET>/` | one folder per story: `requirements-analysis/ figma-analysis/ hls/ browserstack/ testcases/ automation/ execution-reports/ screenshots/ defects/ evidence/` + `qa-state.json` | all story output goes here and is reused on retest |
 | [`qa-platform/`](qa-platform/) · `.claude/skills/` | the **legacy** execution engine · the thin Claude Code entrypoints | 🗄 in-flight work, certification, critical fixes only · the only Claude-Code glue, **discarded on migration** |
 
@@ -905,7 +905,7 @@ it, and `extension.token` names the root-cause design token — fix once, close 
 ## 12.1 Quick reference
 
 `D:\breadfast-qa\<TICKET>\` story folder (+ `qa-state.json`) · `D:\breadfast-qa\automation\` shared code ·
-`D:\Playwright\b55168_pom` runnable Playwright · `D:\projects` Java/Appium framework + config source of truth ·
+`D:\breadfast-qa\automation\legacy\` runnable Playwright (in-repo) · `D:\projects` Java/Appium framework + config source of truth ·
 `automation/config/credentials.js` · `auth/figma-auth.json` (`FIGMA_AUTH_PATH`) · `docs/ai/screens/`
 (`QA_SCREEN_REGISTRY_DIR`) · BrowserStack `…/api/v2` (**v2 only**) · HLS cap 20 · resolver floor `0.3` ·
 penalties 25/10/3/0 · health ≥ 80 high, ≥ 50 medium · **128** tests. Device matrix, locale caps, OTP channels

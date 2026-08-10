@@ -4,7 +4,7 @@
 > Living document — primary source is the B10-55185 automation work.
 
 ## Purpose
-Server-side processing for the Breadfast Card: perk definitions, cashback calculation (cron-driven), MID exclusion, and card lifecycle status. Tested via the Playwright framework in [b55168_pom/](../../b55168_pom/) with DB + cron + API helpers.
+Server-side processing for the Breadfast Card: perk definitions, cashback calculation (cron-driven), MID exclusion, and card lifecycle status. Tested via the in-repo Playwright framework ([`automation/`](../../../automation/) + [`automation/legacy/`](../../../automation/legacy/)) with DB + cron + API helpers.
 
 ## Core flow — cashback processing (cron, not UI)
 ```
@@ -22,8 +22,8 @@ Business rules (anti-stacking, winner = priority + smallest id, perk_processed f
 
 ## APIs
 - Card backend base URL: `cardBackendBaseURL` (config).
-- Cron trigger endpoint: `GET /test?cronJobType=cashback` ([CronHelper.js](../../b55168_pom/helpers/CronHelper.js)).
-- Perk creation via API: [create_perks_api.js](../../b55168_pom/create_perks_api.js) + ApiHelper — merchant + general implemented; coupon/category/limits not yet captured.
+- Cron trigger endpoint: `GET /test?cronJobType=cashback` ([CronHelper.js](../../../automation/helpers/CronHelper.js)).
+- Perk creation via API: [create_perks_api.js](../../../automation/legacy/create_perks_api.js) + ApiHelper — merchant + general implemented; coupon/category/limits not yet captured.
 
 ## Testing considerations
 - Run cashback specs with `--workers=1` so cron runs don't interleave.
@@ -36,7 +36,7 @@ Changes to perk priority, eligibility predicate, or MID exclusion → re-run cas
 ## Known issues / open items
 - Eligibility predicate not fully confirmed (status value / `external_response_code='00'` / settlement datetime) — automation clones a known-good template to sidestep.
 - Coupon/category/limits perk-form selectors uncaptured (stub methods throw).
-- Bug **B10-56609** — stale 206-MID list re-submitted after correction (see [record_bug_b10_56609.js](../../b55168_pom/record_bug_b10_56609.js)).
+- Bug **B10-56609** — stale 206-MID list re-submitted after correction (see [record_bug_b10_56609.js](../../../automation/legacy/record_bug_b10_56609.js)).
 
 ## Automation entry points
 [../automation/playwright-framework.md](../automation/playwright-framework.md), [../automation/helpers.md](../automation/helpers.md) (DbHelper/CronHelper/ApiHelper), [../automation/api-clients.md](../automation/api-clients.md), [../automation/page-objects.md](../automation/page-objects.md) (PerksPage).
