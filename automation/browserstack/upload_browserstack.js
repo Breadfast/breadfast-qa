@@ -12,6 +12,18 @@
  *   --folder  54229453        the target folder id, which must be EMPTY
  *   --cases   <path>          module exporting { CASES, ISSUES } — normally the story's
  *                             gen_browserstack_csv.js (see gen_browserstack_csv.template.js)
+ *   --story-dir <path>        the story folder, so the APPROVAL GATE can be enforced (see below).
+ *                             Defaults to the --cases file's parent's parent. `--force-unapproved`
+ *                             skips the gate and must be justified out loud.
+ *
+ * APPROVAL GATE (added 2026-08-10, B10-57774). Before a single case is written this refuses to run
+ * unless the story's `qa-state.json` carries `approvals.testcases`, AND `testcases/testcases.csv` is
+ * still byte-identical to the checksummed `testcases/testcases.approved.csv` snapshot that
+ * `qa-cli approve` took. Why both:
+ *   - `qa-cli record browserstack-import` already refuses without an approval, but that is *after* the
+ *     upload — by then un-approved cases are live in test management and removing them is manual.
+ *   - an approval covers the suite as it was reviewed. If the generator changed afterwards, what would
+ *     be uploaded is not what the operator approved, and only a checksum can tell.
  *
  * API traps encoded here (docs/ai/browserstack-process.md §10.6):
  *   - Test Management is **v2**. v1 answers 401 + an SSO login_url for VALID keys.
@@ -37,6 +49,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const creds = require('../config/credentials.js');
 
 const arg = (n, d) => { const i = process.argv.indexOf(n); return i !== -1 ? process.argv[i + 1] : d; };
@@ -59,7 +72,59 @@ if (missing.length) {
   process.exit(1);
 }
 
-const { CASES, ISSUES } = require(path.resolve(CASES_PATH));
+const casesModule = require(path.resolve(CASES_PATH));
+const { ISSUES } = casesModule;
+// Name the contract violation instead of dying on `undefined.length` further down. Story generators
+// written before this tool was promoted export lowercase `cases`; accept that spelling with a warning.
+const CASES = Array.isArray(casesModule.CASES) ? casesModule.CASES
+  : Array.isArray(casesModule.cases) ? casesModule.cases : null;
+if (!CASES) {
+  console.error(`upload_browserstack: ${CASES_PATH} must export { CASES, ISSUES } — got `
+    + `${JSON.stringify(Object.keys(casesModule)).slice(0, 120)}.\n`
+    + '  See automation/browserstack/gen_browserstack_csv.template.js for the expected shape.');
+  process.exit(1);
+}
+if (!casesModule.CASES) console.warn(`note: ${CASES_PATH} exports lowercase \`cases\`; the contract is \`CASES\`.`);
+
+// ── approval gate ───────────────────────────────────────────────────────────────────────
+// Runs before any write. `--force-unapproved` exists only so an operator can consciously override it.
+const STORY_DIR = arg('--story-dir', path.dirname(path.dirname(path.resolve(CASES_PATH))));
+const FORCE_UNAPPROVED = process.argv.includes('--force-unapproved');
+
+function assertApproved(storyDir) {
+  if (FORCE_UNAPPROVED) {
+    console.warn('!! --force-unapproved: the approval gate was SKIPPED. Say so in the import report.');
+    return;
+  }
+  const statePath = path.join(storyDir, 'qa-state.json');
+  if (!fs.existsSync(statePath)) {
+    throw new Error(`approval gate: no qa-state.json at ${statePath}.\n`
+      + '  Pass --story-dir <story folder>, or --force-unapproved to override deliberately.');
+  }
+  const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+  const appr = (state.approvals || {}).testcases;
+  if (!appr) {
+    throw new Error('approval gate: testcases are NOT approved — refusing to upload.\n'
+      + `  node qa-workflow/bin/qa-cli.js approve "${storyDir}" testcases --by "<operator>"`);
+  }
+  const snapshot = path.join(storyDir, 'testcases', 'testcases.approved.csv');
+  const live = path.join(storyDir, 'testcases', 'testcases.csv');
+  if (fs.existsSync(snapshot) && fs.existsSync(live)) {
+    const sha = (p) => crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
+    const a = sha(snapshot);
+    const b = sha(live);
+    if (a !== b) {
+      throw new Error('approval gate: testcases.csv has DRIFTED from the approved snapshot.\n'
+        + `  approved ${a.slice(0, 12)} vs current ${b.slice(0, 12)}\n`
+        + '  Re-review and have the operator re-approve, or regenerate from the approved definitions.');
+    }
+    console.log(`approval: ${appr.by || appr.approvedBy || 'unknown'} at ${appr.at} · snapshot matches (sha ${a.slice(0, 12)})`);
+  } else {
+    console.log(`approval: ${appr.by || appr.approvedBy || 'unknown'} at ${appr.at} · no CSV snapshot to compare`);
+  }
+}
+
+assertApproved(STORY_DIR);
 
 const user = creds.browserstack.tmUsername();
 const key = creds.browserstack.tmApiToken();
