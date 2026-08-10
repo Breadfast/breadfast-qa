@@ -10,9 +10,14 @@
  *     Needs update    keep the case, change it — the comment carries the instructions
  *     Invalid         delete the case — the comment carries why
  *
+ * Alongside the verdict it captures the **automation decision**: if the story has an
+ * `<storyDir>/testcases/automation-plan.json`, each case shows a recommendation (layer, effort, reason,
+ * blockers, reuse) with a checkbox, so the operator picks exactly which cases get automated. Only the
+ * selected set is automated afterwards.
+ *
  * "Copy review" then emits a structured block that can be pasted straight back into the session, so
- * the revisions are actionable text rather than a verbal summary. Verdicts persist in localStorage
- * keyed by ticket, so a long review survives a closed tab.
+ * the revisions and the automation scope are actionable text rather than a verbal summary. Verdicts and
+ * selections persist in localStorage keyed by ticket, so a long review survives a closed tab.
  *
  * Why this exists: on B10-57776 the operator reviewed 24 cases through an ad-hoc page. A binary
  * ok/flag mark could say *that* something was wrong but not *what to change*, and there was nowhere
@@ -67,6 +72,16 @@ const outPath = flag('out')
     : path.join(path.dirname(csvPath), 'review-page.html'));
 
 // ── data ────────────────────────────────────────────────────────────────────
+// Optional automation plan: <csvDir>/automation-plan.json, authored per story. Absent is fine — the
+// page then falls back to the CSV's Automation Status and says no plan has been authored.
+const planPath = flag('plan') || path.join(path.dirname(csvPath), 'automation-plan.json');
+let plan = null;
+if (fs.existsSync(planPath)) {
+  try { plan = JSON.parse(fs.readFileSync(planPath, 'utf8')); }
+  catch (e) { console.error('automation-plan.json is not valid JSON, ignoring it: ' + e.message); }
+}
+const planByCase = new Map((plan && plan.cases ? plan.cases : []).map((p) => [p.n, p]));
+
 const parsed = parseTestCases(fs.readFileSync(csvPath, 'utf8'));
 const cases = parsed.cases.map((c, i) => ({
   n: i + 1,
@@ -80,10 +95,20 @@ const cases = parsed.cases.map((c, i) => ({
   screens: c.screens,
   folder: c.folderPath,
   steps: c.steps.filter((s) => s.step).map((s) => ({ step: s.step, expected: s.expected })),
+  plan: planByCase.get(i + 1) || null,
 }));
 if (!cases.length) { console.error('no test cases parsed from ' + csvPath); process.exit(1); }
 
+// sanity: a plan that has drifted from the CSV is worse than no plan
+if (plan) {
+  const missing = cases.filter((c) => !c.plan).map((c) => c.n);
+  const extra = [...planByCase.keys()].filter((n) => n < 1 || n > cases.length);
+  if (missing.length) console.error(`WARNING: automation-plan.json has no entry for case(s) ${missing.join(', ')}`);
+  if (extra.length) console.error(`WARNING: automation-plan.json references non-existent case(s) ${extra.join(', ')}`);
+}
+
 const stepTotal = cases.reduce((a, c) => a + c.steps.length, 0);
+const recCount = cases.filter((c) => c.plan && c.plan.recommend === 'yes').length;
 const acsCovered = [...new Set(cases.flatMap((c) => c.acs))]
   .sort((a, b) => Number(a.slice(3)) - Number(b.slice(3)));
 const folder = cases[0].folder || '';
@@ -240,6 +265,28 @@ const html = `<title>${esc(ticket)} — Test Case Review</title>
   .vhint{font-size:12.5px; color:var(--muted); margin-top:7px}
   .vhint.warn{color:var(--upd)}
 
+  /* ── automation suggestion ───────────────────────────────── */
+  .auto{background:var(--surface); border:1px solid var(--rule); border-radius:5px;
+    padding:15px 17px; margin-bottom:14px; box-shadow:var(--shadow)}
+  .auto[data-sel="1"]{border-color:var(--accent)}
+  .autohead{display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:9px}
+  .rec{font-family:var(--mono); font-size:11px; letter-spacing:.04em; padding:3px 8px;
+    border-radius:3px; border:1px solid currentColor; white-space:nowrap}
+  .rec.yes{color:var(--ok)} .rec.no{color:var(--bad)} .rec.partial{color:var(--upd)}
+  .auto p{margin:0 0 9px; font-size:14px; max-width:74ch; color:var(--ink)}
+  .auto ul{margin:0 0 9px; padding-left:18px; font-size:13px; color:var(--muted)}
+  .auto ul li{margin:2px 0}
+  .auto ul.blockers li{color:var(--upd)}
+  .pick{display:flex; align-items:center; gap:9px; padding:9px 11px; border-radius:4px;
+    border:1px solid var(--rule-strong); background:var(--paper); cursor:pointer;
+    font-size:14px; user-select:none}
+  .pick:hover{background:var(--raised)}
+  .pick input{width:16px; height:16px; accent-color:var(--accent); cursor:pointer; margin:0}
+  .pick:focus-within{outline:2px solid var(--accent); outline-offset:1px}
+  .auto[data-sel="1"] .pick{background:var(--accent-soft); border-color:var(--accent)}
+  .pick .off{color:var(--muted)}
+  .noplan{font-size:13px; color:var(--muted); margin:0}
+
   .bar{position:fixed; bottom:0; left:0; right:0; z-index:30; background:var(--surface);
     border-top:1px solid var(--rule-strong); padding:10px 22px;
     display:flex; align-items:center; gap:10px; flex-wrap:wrap;
@@ -276,6 +323,7 @@ const html = `<title>${esc(ticket)} — Test Case Review</title>
     <div class="cell"><span class="num upd" id="tUpd">0</span><span class="label">update</span></div>
     <div class="cell"><span class="num bad" id="tBad">0</span><span class="label">delete</span></div>
     <div class="cell"><span class="num" id="tLeft">${cases.length}</span><span class="label">left</span></div>
+    ${plan ? `<div class="cell"><span class="num" id="tAuto" style="color:var(--accent)">0</span><span class="label">automate</span></div>` : ''}
   </div>
 </header>
 
@@ -304,9 +352,26 @@ const html = `<title>${esc(ticket)} — Test Case Review</title>
         <button class="vbtn accept"  id="vA" aria-pressed="false">Accept <kbd>A</kbd></button>
         <button class="vbtn update"  id="vU" aria-pressed="false">Needs update <kbd>U</kbd></button>
         <button class="vbtn invalid" id="vI" aria-pressed="false">Invalid — delete <kbd>D</kbd></button>
+      <span class="label" style="align-self:center">${plan ? 'C comment · T toggle automation' : 'C comment'}</span>
       </div>
       <textarea id="vC" placeholder="Comment — what to change, which step, or why the case should be deleted. Referencing a step by its number helps (e.g. &quot;step 4 expected result is wrong&quot;)."></textarea>
       <div class="vhint" id="vH"></div>
+    </div>
+
+    <div class="auto" id="aBox" style="margin-top:14px">
+      <div class="autohead">
+        <span class="label">Automation</span>
+        <span class="rec" id="aRec"></span>
+        <span class="label" id="aMeta"></span>
+      </div>
+      <p id="aReason"></p>
+      <ul class="reuse" id="aReuse"></ul>
+      <ul class="blockers" id="aBlockers"></ul>
+      <label class="pick" id="aPickWrap">
+        <input type="checkbox" id="aPick">
+        <span id="aPickLabel">Automate this case</span>
+      </label>
+      <p class="noplan" id="aNoPlan" hidden>No automation plan authored for this story yet.</p>
     </div>
   </main>
 </div>
@@ -315,6 +380,7 @@ const html = `<title>${esc(ticket)} — Test Case Review</title>
   <button class="act" id="bPrev">← Previous</button>
   <button class="act primary" id="bNext">Next →</button>
   <button class="act" id="bJump">Next unreviewed</button>
+  ${plan ? `<button class="act" id="bAllRec">Select all ${recCount} recommended</button>` : ''}
   <span class="spacer"></span>
   <span class="hint" id="hint"></span>
   <button class="act" id="bSummary">Copy review</button>
@@ -332,9 +398,18 @@ const html = `<title>${esc(ticket)} — Test Case Review</title>
 <script>
 const TICKET = ${JSON.stringify(ticket)};
 const CASES = ${JSON.stringify(cases)};
+const HAS_PLAN = ${plan ? 'true' : 'false'};
 const KEY = 'tc-review:' + TICKET;
-let R = {};                                  // { n: {v:'accept'|'update'|'invalid', c:'comment'} }
+// { n: { v:'accept'|'update'|'invalid', c:'comment', a:true|false } }  a = automate this case
+let R = {};
 try { R = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) { R = {}; }
+// first visit: pre-tick the recommended set so the operator overrides rather than starts from nothing
+if (HAS_PLAN && !localStorage.getItem(KEY + ':seeded')) {
+  CASES.forEach((c) => {
+    if (c.plan && c.plan.recommend === 'yes') { R[c.n] = R[c.n] || { v: null, c: '' }; R[c.n].a = true; }
+  });
+  try { localStorage.setItem(KEY + ':seeded', '1'); localStorage.setItem(KEY, JSON.stringify(R)); } catch (e) {}
+}
 let cur = 0;
 
 const $ = (id) => document.getElementById(id);
@@ -367,6 +442,7 @@ function tallies(){
   const ok = n('accept'), upd = n('update'), bad = n('invalid');
   $('tOk').textContent = ok; $('tUpd').textContent = upd; $('tBad').textContent = bad;
   $('tLeft').textContent = CASES.length - ok - upd - bad;
+  if (HAS_PLAN) $('tAuto').textContent = v.filter((x) => x.a).length;
   const done = ok + upd + bad === CASES.length;
   const missing = Object.entries(R).filter(([, x]) => (x.v === 'update' || x.v === 'invalid') && !x.c.trim()).length;
   $('hint').textContent = missing ? missing + ' case(s) marked without a comment'
@@ -412,6 +488,28 @@ function render(){
     : r.v === 'accept' ? 'Accepted as written. A comment is optional.'
     : 'No verdict yet.';
 
+  // ── automation suggestion ──
+  const p = c.plan;
+  $('aBox').dataset.sel = r.a ? '1' : '0';
+  $('aNoPlan').hidden = !!p;
+  ['aRec','aMeta','aReason','aReuse','aBlockers','aPickWrap'].forEach((id) => { $(id).hidden = !p; });
+  if (p) {
+    const REC = { yes: 'recommend: automate', no: 'recommend: do not automate', partial: 'recommend: partial' };
+    $('aRec').className = 'rec ' + p.recommend;
+    $('aRec').textContent = REC[p.recommend] || p.recommend;
+    $('aMeta').textContent = [p.layer, p.effort ? 'effort ' + p.effort : ''].filter(Boolean).join(' · ');
+    $('aReason').textContent = p.reason || '';
+    const fill = (el, items, prefix) => {
+      el.replaceChildren(); el.hidden = !(items && items.length);
+      (items || []).forEach((t) => { const li = document.createElement('li'); li.textContent = prefix + t; el.appendChild(li); });
+    };
+    fill($('aReuse'), [].concat(p.reuse || [], p.traps || []).length ? [].concat((p.reuse || []).map((t) => 'reuse: ' + t), (p.traps || []).map((t) => 'watch: ' + t)) : [], '');
+    fill($('aBlockers'), (p.blockers || []).map((t) => 'blocker: ' + t), '');
+    $('aPick').checked = !!r.a;
+    $('aPickLabel').textContent = r.a ? 'Automate this case' : 'Not automating this case';
+    $('aPickLabel').className = r.a ? '' : 'off';
+  }
+
   $('bPrev').disabled = cur === 0;
   tallies(); railRows();
   const active = rail.children[cur];
@@ -446,6 +544,23 @@ $('vC').addEventListener('input', () => {
   $('vC').classList.toggle('wanted', needs && !r.c.trim());
   railRows(); tallies();
 });
+function setAuto(on){
+  const r = rec(CASES[cur].n);
+  r.a = on; r.c = $('vC').value;
+  if (!r.v && !r.c.trim() && !r.a) delete R[CASES[cur].n];
+  save(); render();
+}
+$('aPick').addEventListener('change', (e) => setAuto(e.target.checked));
+if (HAS_PLAN) {
+  $('bAllRec').addEventListener('click', () => {
+    commit();
+    CASES.forEach((c) => {
+      if (c.plan && c.plan.recommend === 'yes') { rec(c.n).a = true; }
+    });
+    save(); render();
+  });
+}
+
 $('bPrev').addEventListener('click', () => go(-1));
 $('bNext').addEventListener('click', () => go(1));
 $('bJump').addEventListener('click', () => {
@@ -492,6 +607,37 @@ $('bSummary').addEventListener('click', () => {
     L.push('');
   }
   if (!updates.length && !invalid.length && !none.length) L.push('All ' + CASES.length + ' cases accepted as written.');
+
+  if (HAS_PLAN){
+    // automation scope — exclude anything marked for deletion, it will not exist to automate
+    const live = CASES.filter((c) => (R[c.n] || {}).v !== 'invalid');
+    const chosen = live.filter((c) => (R[c.n] || {}).a);
+    const declined = live.filter((c) => !(R[c.n] || {}).a);
+    const overrides = live.filter((c) => {
+      const wanted = c.plan && c.plan.recommend === 'yes';
+      return !!(R[c.n] || {}).a !== wanted;
+    });
+    L.push('');
+    L.push('=== AUTOMATE: ' + chosen.length + ' of ' + live.length + ' cases selected ===');
+    chosen.forEach((c) => {
+      const p = c.plan || {};
+      L.push('Case ' + c.n + ' [' + (p.layer || '?') + '/' + (p.effort || '?') + '] ' + c.title);
+    });
+    if (!chosen.length) L.push('(none selected)');
+    L.push('');
+    L.push('=== DO NOT AUTOMATE: ' + declined.length + ' ===');
+    declined.forEach((c) => L.push('Case ' + c.n + ' — ' + c.title));
+    if (!declined.length) L.push('(none)');
+    if (overrides.length){
+      L.push('');
+      L.push('=== OVERRIDES vs MY RECOMMENDATION: ' + overrides.length + ' ===');
+      overrides.forEach((c) => {
+        const wanted = c.plan && c.plan.recommend === 'yes';
+        L.push('Case ' + c.n + ' — ' + (wanted ? 'I recommended automating; you excluded it' : 'I recommended NOT automating; you included it'));
+      });
+    }
+    L.push('');
+  }
   $('dlgText').value = L.join('\\n');
   $('dlgCount').textContent = accepted.length + ' / ' + updates.length + ' / ' + invalid.length;
   $('dlg').showModal();
@@ -517,6 +663,7 @@ document.addEventListener('keydown', (e) => {
   else if (k === 'u') { setV('update'); e.preventDefault(); }
   else if (k === 'd') { setV('invalid'); e.preventDefault(); }
   else if (k === 'c') { $('vC').focus(); e.preventDefault(); }
+  else if (k === 't' && HAS_PLAN) { setAuto(!(R[CASES[cur].n] || {}).a); e.preventDefault(); }
 });
 window.addEventListener('beforeunload', commit);
 

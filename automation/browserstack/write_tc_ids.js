@@ -25,6 +25,18 @@ const STORY_DIR = path.resolve(argOf('--story-dir', process.cwd()));
 const CSV = path.join(STORY_DIR, 'testcases', 'testcases.csv');
 const MAP = path.join(STORY_DIR, 'automation', 'tc-map.json');
 
+// ask-never-block: name the missing input and where it comes from, rather than an ENOENT stack.
+for (const [label, p, hint] of [
+  ['the TC-id map', MAP, 'produced by automation/browserstack/upload_browserstack.js — run the upload first'],
+  ['the approved test cases', CSV, 'the story\'s approved testcases/testcases.csv'],
+]) {
+  if (!fs.existsSync(p)) {
+    console.error(`write_tc_ids: cannot find ${label}:\n  ${p}\n  -> ${hint}`);
+    console.error(`  (story dir resolved from --story-dir; currently "${STORY_DIR}")`);
+    process.exit(1);
+  }
+}
+
 const map = new Map(JSON.parse(fs.readFileSync(MAP, 'utf8')).filter((m) => m.id).map((m) => [m.title.trim(), m.id]));
 const rows = parseCsv(fs.readFileSync(CSV, 'utf8')).filter((r) => r.length && r.some((f) => f !== ''));
 

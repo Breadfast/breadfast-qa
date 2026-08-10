@@ -18,7 +18,9 @@ metadata:
 
 # detect-prerequisites (gate skill)
 
-> Ported from the QA Platform's `detect_prerequisites` node (`qa-platform/packages/shared/src/prompts.ts`),
+> Ported from the QA Platform's `detect_prerequisites` node (`packages/shared/src/prompts.ts` in the
+> retired `qa-platform` app — removed from this repo 2026-08-10; see
+> [architecture/legacy-qa-platform/](../../../docs/ai/architecture/legacy-qa-platform/)),
 > which `qa-workflow/` was missing. Added 2026-07-26 after B10-56750 shipped a QA summary containing
 > **two** avoidable "blocked" outcomes — see *Why this exists*.
 
