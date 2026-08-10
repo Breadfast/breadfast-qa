@@ -151,6 +151,13 @@ Creates the story folder (with standard subfolders per `CLAUDE.md` STEP 0) + a `
   (unrelated cases · correct expected results · granularity · categorization · automatable
   classification · justified regression coverage). It **revises and re-runs until all nine pass**, and
   writes `testcases/review.md`.
+- **Build the operator's review page** — standard for every story since 2026-08-10:
+  ```
+  node automation/gen_testcase_review_page.js --story "<storyDir>"
+  ```
+  One case at a time, with a per-case **Accept / Needs update / Invalid-delete** verdict **and a comment**.
+  Its "Copy review" block is the revision list: apply it to `testcases.csv`, re-run lint + the nine checks
+  from the top, record the changes in `review.md`, and present again. (Skill §*Operator review page*.)
 - Record the review, then **present the counts, the AC-coverage table and every revision to the operator
   and STOP.** Approval is theirs:
   ```

@@ -141,6 +141,17 @@ Generate detailed test cases in the **canonical project standard**: granular use
 
 ### STEP 6b — Test Case Review + Approval  ⟵ **MANDATORY GATE, will STOP**
 Nothing is imported before it passes. Review the generated cases against nine checks — **no duplicates · no unrelated cases · no missing AC coverage · correct expected results · correct granularity · correct categorization · correct automatable classification · justified regression coverage · format conformance** — **revise and re-review until all nine pass**, then **present the counts, the AC-coverage table and every revision to the operator and STOP for approval**:
+
+**Every story hands the operator the review page** (standard 2026-08-10, operator instruction) — one case
+at a time, each with an **Accept / Needs update / Invalid-delete** verdict **and a comment field**, so a
+rejection arrives as *instructions* rather than a count. The same gate also fixes **automation scope**: an
+authored `testcases/automation-plan.json` gives each case a recommendation (layer · effort · reason ·
+blockers) and a checkbox, and **only the selected cases are automated**. Its "Copy review" block is the
+revision list *and* the automation scope: apply it, re-run lint + the nine checks from the top, log the
+changes in `review.md`, set `Automation Status` to match the picks, present again.
+```
+node automation/gen_testcase_review_page.js --story "<storyDir>"   # → <storyDir>/testcases/review-page.html
+```
 ```
 node qa-workflow/bin/qa-cli.js approve "<storyDir>" testcases --by "<operator>"
 ```

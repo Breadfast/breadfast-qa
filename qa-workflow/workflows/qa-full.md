@@ -97,8 +97,12 @@ Execute [`qa-shift-left.md`](qa-shift-left.md) **Steps 0–9 exactly as written*
 | 5 · Exploratory Analysis ⟵ **conditional** | `exploratory-testing` (inline, Mode A) | `exploratory-notes` |
 | 6 · HLS (+ publish checklist to Jira) | `test-design` (subagent, Phase A) | `hls` |
 | 7 · Test Case Generation | `test-design` (subagent, Phase B) | `testcases` |
-| 8 · Test Case Review ⟵ **GATE, WILL STOP for approval** | `testcase-review` (subagent → inline stop) | `testcase-review` |
+| 8 · Test Case Review ⟵ **GATE, WILL STOP for approval** | `testcase-review` (subagent → inline stop) + `automation/gen_testcase_review_page.js --story "<storyDir>"` | `testcase-review` |
 | 9 · BrowserStack Import (approved cases only) | `browserstack-mgmt` (inline, Mode A) | `browserstack-import` |
+
+At step 8 the operator gets the **review page** (standard for every story since 2026-08-10): one case at a
+time with a per-case **Accept / Needs update / Invalid-delete** verdict **and a comment**. Apply whatever
+its "Copy review" block returns, re-run lint + the nine checks from the top, then present again.
 
 Fingerprint + `record` each artifact with the commands given in `qa-shift-left.md` — **use the same
 per-skill `--generator` values** (`story-analysis@1.0`, `figma-analysis@1.0`, `clarification@1.0`,
