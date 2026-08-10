@@ -34,6 +34,14 @@ const PW_JSON = path.join(STORY_DIR, 'execution-reports', 'playwright-results.js
 const CASE_MAP = path.join(STORY_DIR, 'automation', 'browserstack_case_map.json');
 const AS_MD = process.argv.includes('--md');
 
+// ask-never-block: name the missing input rather than throwing an ENOENT stack.
+if (!fs.existsSync(CASE_MAP)) {
+  console.error(`compare_stacks: cannot find the BrowserStack case map:\n  ${CASE_MAP}`);
+  console.error('  -> it lists the cases both stacks ran, as { "cases": [ { "id": "TC-xxxxx", "title": "…" } ] }');
+  console.error(`  (story dir resolved from --story-dir; currently "${STORY_DIR}")`);
+  process.exit(1);
+}
+
 const cases = JSON.parse(fs.readFileSync(CASE_MAP, 'utf8')).cases;
 
 /**
