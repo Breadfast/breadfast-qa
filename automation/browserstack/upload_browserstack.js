@@ -137,7 +137,18 @@ const stripHtml = (s) => String(s || '').replace(/<[^>]+>/g, '').replace(/&amp;/
 
 // BrowserStack case_type vocabulary differs from our CSV's "Type of Test Case".
 const CASE_TYPE = { Acceptance: 'Acceptance', Functional: 'Functional', Regression: 'Regression' };
-const AUTOMATION = { 'Not Automated': 'not_automated', 'Automation Not Required': 'automation_not_required' };
+// CSV "Automation Status" -> BrowserStack automation_status.
+// `Automated` maps to **not_automated** on purpose: in the approved CSV that value is the operator's
+// automation *scope* decision from the review gate, not a claim that a test exists yet. Only
+// `browserstack_test_run.js` may set `automated`, and only for cases actually bound by @TmsLink after
+// the suite has run (browserstack-process.md §10.8). Mapping it explicitly (rather than letting it fall
+// through as undefined) keeps the read-back verifier's expectation equal to what was posted — otherwise
+// every `Automated` case is reported as a PROBLEM even though it imported correctly. (B10-57777: 23 of 24.)
+const AUTOMATION = {
+  'Not Automated': 'not_automated',
+  Automated: 'not_automated',
+  'Automation Not Required': 'automation_not_required',
+};
 
 async function call(method, p, body) {
   const res = await fetch(BASE + p, {

@@ -26,6 +26,9 @@
  * Usage:
  *   node automation/gen_testcase_review_page.js --story "D:\\breadfast-qa\\B10-57776" [--out <path>]
  *   node automation/gen_testcase_review_page.js --csv <file> --ticket B10-XXXXX [--title "..."]
+ *     --plan <file>   an automation plan somewhere other than <csvDir>/automation-plan.json
+ *     --force         render even when the plan fails validation (PREVIEW ONLY — the automation
+ *                     panel is not trustworthy, so do not review scope on a forced page)
  *
  * Contract: docs/ai/browserstack-process.md §10.1–10.4 (CSV format) · the page is built with the
  * repo's own parser, so it can never disagree with what `qa-cli testcase-lint` sees.
@@ -74,15 +77,91 @@ const outPath = flag('out')
 // ── data ────────────────────────────────────────────────────────────────────
 // Optional automation plan: <csvDir>/automation-plan.json, authored per story. Absent is fine — the
 // page then falls back to the CSV's Automation Status and says no plan has been authored.
+//
+// The plan is VALIDATED, not merely parsed. On B10-57777 the plan wrote `"recommend": true` while this
+// generator compared `=== 'yes'`: nothing was pre-ticked, the bulk button read "Select all 0
+// recommended", the chip printed the bare string `true`, and every operator pick was exported as an
+// override of a recommendation the page had never displayed. The predicate was written inline in four
+// places, so there was no single point to get right — hence `recommends()` below, one source of truth
+// used by both the Node side and the browser side, plus a hard failure on any value it cannot read.
 const planPath = flag('plan') || path.join(path.dirname(csvPath), 'automation-plan.json');
+const force = argv.includes('--force');
 let plan = null;
 if (fs.existsSync(planPath)) {
   try { plan = JSON.parse(fs.readFileSync(planPath, 'utf8')); }
   catch (e) { console.error('automation-plan.json is not valid JSON, ignoring it: ' + e.message); }
 }
-const planByCase = new Map((plan && plan.cases ? plan.cases : []).map((p) => [p.n, p]));
 
+/** Accepted `recommend` spellings → the canonical three. Returns null for anything unreadable. */
+const RECOMMEND = { yes: 'yes', no: 'no', partial: 'partial', true: 'yes', false: 'no' };
+const normalizeRecommend = (v) => {
+  if (typeof v === 'boolean') return v ? 'yes' : 'no';
+  if (typeof v === 'string') return RECOMMEND[v.trim().toLowerCase()] || null;
+  return null;
+};
+/** Pre-tick and override-detection predicate. `partial` IS a recommendation to automate — a case I
+ *  flagged as partially automatable and you then selected is not an override of anything. */
+const recommends = (p) => !!p && (p.recommend === 'yes' || p.recommend === 'partial');
+
+const LAYERS = ['ui', 'api', 'api+ui', 'selenium', 'appium', 'manual'];
+const EFFORTS = ['S', 'M', 'L'];
+/** Exactly the fields the page renders. Keeping "known" == "read" is what makes the unknown-field
+ *  warning meaningful — a field listed here but never displayed is a silent no-op again. */
+const CASE_KEYS = ['n', 'recommend', 'layer', 'effort', 'reason', 'reuse', 'blockers', 'traps'];
+
+/** Validates + normalizes plan.cases in place. Fatal problems exit 1 unless --force. */
+function validatePlan(p, caseCount) {
+  const fatal = [];
+  const warn = [];
+  const unknown = {};
+  if (!Array.isArray(p.cases)) { fatal.push('`cases` is missing or not an array'); p.cases = []; }
+  const seen = new Set();
+  p.cases.forEach((e, i) => {
+    const at = `cases[${i}]` + (e && e.n != null ? ` (case ${e.n})` : '');
+    if (!e || typeof e !== 'object') { fatal.push(`${at}: not an object`); return; }
+    if (!Number.isInteger(e.n) || e.n < 1 || e.n > caseCount) {
+      fatal.push(`${at}: \`n\` must be an integer 1..${caseCount}, got ${JSON.stringify(e.n)}`);
+    } else if (seen.has(e.n)) { fatal.push(`${at}: duplicate entry for case ${e.n}`); } else { seen.add(e.n); }
+    const rec = normalizeRecommend(e.recommend);
+    if (!rec) {
+      fatal.push(`${at}: \`recommend\` is ${JSON.stringify(e.recommend)} — expected yes/no/partial (or true/false)`);
+    }
+    e.recommend = rec;                                     // normalize for every consumer downstream
+    if (!e.reason || !String(e.reason).trim()) warn.push(`${at}: no \`reason\` — the operator reads this to decide`);
+    if (e.layer && !LAYERS.includes(String(e.layer))) warn.push(`${at}: layer "${e.layer}" is outside ${LAYERS.join('/')}`);
+    if (e.effort && !EFFORTS.includes(String(e.effort))) warn.push(`${at}: effort "${e.effort}" is outside ${EFFORTS.join('/')}`);
+    ['reuse', 'blockers', 'traps'].forEach((k) => {
+      if (e[k] != null && !Array.isArray(e[k])) warn.push(`${at}: \`${k}\` must be an array`);
+    });
+    Object.keys(e).filter((k) => !CASE_KEYS.includes(k))
+      .forEach((k) => (unknown[k] = (unknown[k] || 0) + 1));
+  });
+  // one line per unknown field, not one per case — 24 copies of the same warning teaches people to
+  // scroll past warnings, which is how `recommend: true` went unnoticed in the first place
+  Object.entries(unknown).forEach(([k, n]) =>
+    warn.push(`unknown field \`${k}\` on ${n} case(s) — nothing reads it (known: ${CASE_KEYS.join(', ')})`));
+  // A plan covering only some cases is worse than no plan: the uncovered cases render as
+  // "no automation plan authored", which reads as a story-level statement rather than a gap.
+  const missing = [];
+  for (let n = 1; n <= caseCount; n++) if (!seen.has(n)) missing.push(n);
+  if (missing.length) fatal.push(`no entry for case(s) ${missing.join(', ')} — every case needs a recommendation`);
+
+  warn.forEach((w) => console.error('WARNING: automation-plan.json: ' + w));
+  if (fatal.length) {
+    fatal.forEach((f) => console.error('ERROR: automation-plan.json: ' + f));
+    if (!force) {
+      console.error('\nThe automation panel would be wrong for this story. Fix the plan, or pass --force');
+      console.error('to preview the page with the plan ignored where it is unreadable.');
+      process.exit(1);
+    }
+    console.error('--force: carrying on with an invalid plan. Do NOT review automation scope on this page.');
+  }
+}
 const parsed = parseTestCases(fs.readFileSync(csvPath, 'utf8'));
+if (!parsed.cases.length) { console.error('no test cases parsed from ' + csvPath); process.exit(1); }
+if (plan) validatePlan(plan, parsed.cases.length);
+
+const planByCase = new Map((plan && plan.cases ? plan.cases : []).map((p) => [p.n, p]));
 const cases = parsed.cases.map((c, i) => ({
   n: i + 1,
   title: c.title,
@@ -97,18 +176,9 @@ const cases = parsed.cases.map((c, i) => ({
   steps: c.steps.filter((s) => s.step).map((s) => ({ step: s.step, expected: s.expected })),
   plan: planByCase.get(i + 1) || null,
 }));
-if (!cases.length) { console.error('no test cases parsed from ' + csvPath); process.exit(1); }
-
-// sanity: a plan that has drifted from the CSV is worse than no plan
-if (plan) {
-  const missing = cases.filter((c) => !c.plan).map((c) => c.n);
-  const extra = [...planByCase.keys()].filter((n) => n < 1 || n > cases.length);
-  if (missing.length) console.error(`WARNING: automation-plan.json has no entry for case(s) ${missing.join(', ')}`);
-  if (extra.length) console.error(`WARNING: automation-plan.json references non-existent case(s) ${extra.join(', ')}`);
-}
 
 const stepTotal = cases.reduce((a, c) => a + c.steps.length, 0);
-const recCount = cases.filter((c) => c.plan && c.plan.recommend === 'yes').length;
+const recCount = cases.filter((c) => recommends(c.plan)).length;
 const acsCovered = [...new Set(cases.flatMap((c) => c.acs))]
   .sort((a, b) => Number(a.slice(3)) - Number(b.slice(3)));
 const folder = cases[0].folder || '';
@@ -400,13 +470,16 @@ const TICKET = ${JSON.stringify(ticket)};
 const CASES = ${JSON.stringify(cases)};
 const HAS_PLAN = ${plan ? 'true' : 'false'};
 const KEY = 'tc-review:' + TICKET;
+// One source of truth for "did I recommend automating this", mirroring recommends() on the Node side.
+// \`recommend\` arrives already normalized to yes/no/partial, and \`partial\` counts as a recommendation.
+const RECOMMENDED = (c) => !!c.plan && (c.plan.recommend === 'yes' || c.plan.recommend === 'partial');
 // { n: { v:'accept'|'update'|'invalid', c:'comment', a:true|false } }  a = automate this case
 let R = {};
 try { R = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) { R = {}; }
 // first visit: pre-tick the recommended set so the operator overrides rather than starts from nothing
 if (HAS_PLAN && !localStorage.getItem(KEY + ':seeded')) {
   CASES.forEach((c) => {
-    if (c.plan && c.plan.recommend === 'yes') { R[c.n] = R[c.n] || { v: null, c: '' }; R[c.n].a = true; }
+    if (RECOMMENDED(c)) { R[c.n] = R[c.n] || { v: null, c: '' }; R[c.n].a = true; }
   });
   try { localStorage.setItem(KEY + ':seeded', '1'); localStorage.setItem(KEY, JSON.stringify(R)); } catch (e) {}
 }
@@ -554,9 +627,7 @@ $('aPick').addEventListener('change', (e) => setAuto(e.target.checked));
 if (HAS_PLAN) {
   $('bAllRec').addEventListener('click', () => {
     commit();
-    CASES.forEach((c) => {
-      if (c.plan && c.plan.recommend === 'yes') { rec(c.n).a = true; }
-    });
+    CASES.forEach((c) => { if (RECOMMENDED(c)) { rec(c.n).a = true; } });
     save(); render();
   });
 }
@@ -613,10 +684,7 @@ $('bSummary').addEventListener('click', () => {
     const live = CASES.filter((c) => (R[c.n] || {}).v !== 'invalid');
     const chosen = live.filter((c) => (R[c.n] || {}).a);
     const declined = live.filter((c) => !(R[c.n] || {}).a);
-    const overrides = live.filter((c) => {
-      const wanted = c.plan && c.plan.recommend === 'yes';
-      return !!(R[c.n] || {}).a !== wanted;
-    });
+    const overrides = live.filter((c) => !!(R[c.n] || {}).a !== RECOMMENDED(c));
     L.push('');
     L.push('=== AUTOMATE: ' + chosen.length + ' of ' + live.length + ' cases selected ===');
     chosen.forEach((c) => {
@@ -632,8 +700,9 @@ $('bSummary').addEventListener('click', () => {
       L.push('');
       L.push('=== OVERRIDES vs MY RECOMMENDATION: ' + overrides.length + ' ===');
       overrides.forEach((c) => {
-        const wanted = c.plan && c.plan.recommend === 'yes';
-        L.push('Case ' + c.n + ' — ' + (wanted ? 'I recommended automating; you excluded it' : 'I recommended NOT automating; you included it'));
+        L.push('Case ' + c.n + ' — ' + (RECOMMENDED(c)
+          ? 'I recommended automating; you excluded it'
+          : 'I recommended NOT automating; you included it'));
       });
     }
     L.push('');
@@ -674,4 +743,14 @@ render();
 fs.mkdirSync(path.dirname(outPath), { recursive: true });
 fs.writeFileSync(outPath, html, 'utf8');
 console.log(`${ticket}: ${cases.length} cases · ${stepTotal} steps · ${acsCovered.length} ACs`);
+// Print the plan's split. "Select all 0 recommended" was only ever visible inside the generated HTML,
+// which is how B10-57777 shipped a review page whose automation panel recommended nothing at all.
+if (plan) {
+  const n = (v) => cases.filter((c) => c.plan && c.plan.recommend === v).length;
+  console.log(`automation plan: ${recCount} of ${cases.length} recommended `
+    + `(yes ${n('yes')} · partial ${n('partial')} · no ${n('no')}) — pre-ticked on first open`);
+  if (!recCount) console.error('WARNING: the plan recommends NOTHING — verify that is deliberate before reviewing.');
+} else {
+  console.log(`automation plan: none authored (${planPath}) — the page will say so and fall back to the CSV`);
+}
 console.log(`-> ${outPath}  (${(html.length / 1024).toFixed(0)} KB)`);
