@@ -126,7 +126,7 @@ Most `extend BaseHelper`, take `Configs` in the constructor, return `models` POJ
 | `OrderApiClient` | Create/cancel/list/sync orders (COD/CC/coupon/tipping/multi-product), Inai callback, order date validation |
 | `OrderPaymentApiClient` | Order payment transactions |
 | `CheckoutApiClient` | Checkout endpoints |
-| `CardServiceApiClient` | **Fintech card service** — token, card status, wallet user, passcode/PIN, link/activate/replace card, balance, transaction history, invitation codes, transfers (sender/receiver), card pool, change status, collect card |
+| `CardServiceApiClient` | **Fintech card service — the ONE client for the whole Card ecosystem, mobile and card admin panel alike** — token, card status, wallet user, passcode/PIN, link/activate/replace card, balance, transaction history, invitation codes, transfers (sender/receiver), card pool, change status, collect card, **and card perks** (read oracles, shape-finders, mark-featured, seed/expire). Every method takes `CardService` last and authenticates with `cardService.getCardServiceToken()`. Do **not** add a second card client or a second card login — the perks split (`CardAdminPanelPerksApiClient`, `loginAndGetJwtToken`) was merged in and deleted on 2026-08-20 |
 | `MobilePayServicesApiClient` | Bill-pay / Pay services |
 | `AddressApiClient` | Address CRUD |
 | `DeleteAccountApiClient` | Account deletion flow |
@@ -141,7 +141,6 @@ Most `extend BaseHelper`, take `Configs` in the constructor, return `models` POJ
 | Class | Purpose |
 |---|---|
 | `ControlRoomV2ApiClient` | Control Room: list warehouses/orders, get/filter orders, pickers app login/status, product stock add, change order status |
-| `CardAdminPanelPerksApiClient` | Card-panel perks: login→JWT, create general cashback perk (with MIDs / mid-count / no exclusions / invalid-token / no-auth variants) |
 | `CatalogProductsApiClient`, `DynamicProductCarouselApiClient` | Catalog products + carousels |
 | `CouponsApiClient` | Coupons |
 | `InventoryApiClient`, `TransitApiClient` | Inventory + transit |

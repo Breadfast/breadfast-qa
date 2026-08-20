@@ -67,19 +67,98 @@ indistinguishable from what the framework authors would write. Learning order:
 
 **Initial learning scope** (highest-traffic domains): customer app **androidNative/iosNative**
 (page hierarchy, reusable screens, navigation, components, helpers, existing tests) · **cards admin
-panel** (`modals/cardsAdminPanel`, `cardService/adminPanel` tests, `CardAdminPanelPerksApiClient`) ·
+panel** (`modals/cardsAdminPanel`, `cardService/adminPanel` tests, `CardServiceApiClient`'s perks region) ·
 **payment** (`modals/Payment`, `androidPayPage`, `CardServiceApiClient`, `MobilePayServicesApiClient`,
 payment models) · **existing test packages** (`src/test/java/**`, ~230 classes).
 
-## 4. Reuse-before-build (unchanged rule, Java target)
+## 4. Reuse-before-build — the framework teaches you how the code should be written
 
-Before writing ANY code, search the framework for existing **page objects, components, helpers,
-utilities, models, validators, API clients, data providers, base classes**. If it exists — reuse it;
-never duplicate. Before creating a new page object, establish that the page doesn't already exist,
-no similar page can be extended, and no reusable component covers it — only then create one,
-following the module's base-class contract (`BaseAndroidScreen`/iOS equivalent + `PageFactory`,
-or the Selenium page pattern of the target module). New mobile screens follow
-[mobile-native-framework.md](mobile-native-framework.md) including **BaseTest wiring**.
+**The framework is the source of truth. Adapt the generated code to the framework; never adapt the
+framework to what is easier to generate.** The finished suite has to read as if the engineers who
+built the framework wrote it — same architecture, same client boundaries, same authentication, same
+page-object shape, same test-class shape, same locator/wait/assertion/logging idiom. A reader should
+not be able to tell which stories were generated.
+
+### 4.1 The question to ask before writing anything
+
+> *Does the framework already have something that solves this, or something structurally equivalent?*
+
+- **Yes** → reuse it, or extend it in place.
+- **No, but something is close** → copy the **structure and style** of the closest existing
+  implementation and put the new behaviour inside it.
+- **Genuinely nothing** → only then create something new, and say in `framework-reference.md` what
+  you searched for and why nothing fit.
+
+"Easier for me to write" is never a reason. Neither is "cleaner by general software-engineering
+principles" — where generic good practice conflicts with an established Breadfast pattern, the
+Breadfast pattern wins.
+
+### 4.2 Name the golden references first — before the first line
+
+For every new class or method, identify **two or three existing implementations closest to the
+scenario** and record them in `framework-reference.md` with the paths. Then match them on:
+architecture · package · class and method structure · naming · constructor/config pattern ·
+authentication · request and response handling · error handling · logging · models · assertions ·
+setup/teardown · imports and formatting. The plan gate reviews those references, not just the plan.
+
+**Match the file you are editing, not a house style you bring with you** (§9.13): its import block,
+blank-line rhythm, comment density, separator comments, package-private vs `private final` fields.
+
+### 4.3 One domain, one client — one ecosystem, one authentication
+
+The single most damaging thing generation can do is ship a *parallel* implementation of something
+the framework already owns. Two hard rules:
+
+- **A service gets exactly one API client.** If the functionality belongs to a service the framework
+  already has a client for, it goes **into that client**, in that client's idiom — not into a new
+  class next to it, and not into a new package because the surface is "web" rather than "mobile".
+  The existing client's package is where it lives, even when the new endpoints are admin-panel ones:
+  `CardServiceApiClient` sits in `mobileApiClients` and owns `/api/v1/web/...` endpoints already.
+- **An ecosystem gets exactly one authentication path.** Reuse the existing token method and the
+  existing state object; never add a second login for the same service. Before writing any auth
+  code, **prove** the existing token is not accepted — issue the call and read the status. A `401`
+  with a token the framework already mints is a claim that needs evidence, not an assumption.
+
+**This is not hypothetical.** `CardAdminPanelPerksApiClient` (829 lines) was generated over B10-56652
+→ B10-56717 → B10-57764 alongside `CardServiceApiClient`, for the **same service** (`/api/v1/web/...`
+on the same host) behind the **same login endpoint** (`/api/v1/web/user/login`). It shipped a second
+auth (`loginAndGetJwtToken` + `Bearer` prefix + a 5-attempt retry loop), a second parameter
+convention (`String jwtToken` first, where every other card method takes `CardService` last), a
+second base-URL getter, and its own date and image helpers. Three test classes and 250 call sites
+were written against it. It was merged into `CardServiceApiClient` and deleted on 2026-08-20; the
+probe that should have been run at the start took one minute and showed the perks endpoints accept
+the plain card-service token with no `Bearer` prefix at all.
+
+### 4.4 The reuse ladder, per asset type
+
+| Need | Look here first, in this order |
+|---|---|
+| API call | the service's existing client → a sibling client in the same package → a new client only for a genuinely new service |
+| Authentication | the ecosystem's existing token method + state model (`CardService`, `User`, …) |
+| Page/screen | the exact page → a similar page to extend → a shared component/helper → a new page object on the module's base-class contract |
+| A reader or action on a page object | **grep that file** for a method already touching the same control (§9.13) before adding one |
+| Utility (dates, random, format, encryption) | `BaseHelper`, `helpers/*`, existing validators — never a private re-implementation |
+| Environment value / pinned record | `resources/environments/*.properties` → a `Configs` getter (§9.15) |
+| Form data | the page object owns it (§9.9) |
+| Which record to act on | a shape-finder on the module's API client (§9.15) |
+
+### 4.5 Do not ship what nothing calls
+
+Every generated public method needs a caller in the same change. The deleted perks client carried
+**11 unused public methods** — a whole `createGeneralCashbackPerkWith*` family (5 methods plus its
+private poster) written for a story whose tests never landed — which later readers had to treat as
+supported API. Speculative helpers are duplication waiting to happen: delete them, or don't write
+them. Anything a future story genuinely needs can be added by that story.
+
+### 4.6 Page objects, specifically
+
+Before creating a page object: establish that the page doesn't already exist, that no similar page
+can be extended, and that no reusable component covers it — only then create one, following the
+module's base-class contract (`BaseAndroidScreen`/iOS equivalent + `PageFactory`, or the Selenium
+page pattern of the target module). New mobile screens follow
+[mobile-native-framework.md](mobile-native-framework.md) including **BaseTest wiring**. Page objects
+carry **no** story-specific or environment-specific data — no ids, phone numbers, card numbers,
+amounts, merchant ids, OTPs, credentials, environment values (§9.9, §9.15).
 
 ## 5. Story-based test organization
 
@@ -136,6 +215,43 @@ duplicated selectors/flows. **Java 25; Checkstyle runs at `validate` and fails t
 
 **Before recording the `automation` artifact:** `mvn -q test-compile` (from the framework root)
 must pass — compile + checkstyle green. A generation that doesn't compile is not done.
+
+### 7.1 Framework-alignment self-review — run it before recording, answer every line
+
+A green compile proves the code is valid Java, not that it belongs in this framework. Walk this list
+and write the answers into `framework-reference.md`; anything answered "no" is rework, not a note.
+
+**Fit**
+- Does it read like existing Breadfast automation, or like generated code? Name the golden references
+  it was matched against (§4.2).
+- Did I search before creating each new class, and is the search recorded?
+- Is there any duplicate implementation — a second client, page object, helper, utility or model for
+  something the framework already has (§4.3)?
+- Is authentication the ecosystem's single existing path, with no second login and no second token
+  shape (§4.3)?
+- Does every new public method have a caller in this same change (§4.5)?
+
+**Shape**
+- Page objects: module base-class contract, locators as fields, UI interaction only, no story or
+  environment data (§4.6, §9.9)?
+- Test class: `B10_<id>_<Feature>Tests extends BaseTest`, in the module package, one test per
+  automatable case, `@Test(groups, description)` + `@Tags` + `@TmsLink` (§5, §6)?
+- Test methods: setup → action → validation → cleanup, in page-object calls and `Assert.*`, with no
+  Selenium/Appium mechanics, URL/date string surgery, collection algebra or index arithmetic inline
+  (§9.13)?
+- Test data: form data on the page object, environment values in `Configs`, the record under test
+  discovered by shape from the live API (§9.9, §9.15)?
+- Control flow: the simplest form that is still correct — no nested `if`, nested loops, streams,
+  speculative abstraction or duplicated fallback paths. Where complexity is genuinely required
+  (retry, synchronisation, platform branching), is it implemented **once**, on the page object, with
+  a comment naming what forced it (§9.13, §10)?
+
+**Truth**
+- Does every assertion have a concrete answer to *"what change in the product would turn this red?"*,
+  and is that answer in the assertion message (§9.14)?
+- Is every noun in the BrowserStack case title actually asserted (§9.14)?
+- Do the `@TmsLink` ids and the verbatim `description` titles match the imported folder (§6)?
+- Does it compile, does checkstyle pass, and did the selected cases actually run?
 
 ## 8. What lands where
 
@@ -454,10 +570,43 @@ screen).
   cannot delete. B10-57771's five saving tests all wrote the same coupon code into perks that can
   never be removed.
 
+### 9.16 The parallel client is the failure mode this process actually has
+
+> Added 2026-08-20 from the `CardAdminPanelPerksApiClient` merge. Three stories in a row passed the
+> plan gate, the conformance gate, checkstyle and a green run while building a second card API client
+> beside the framework's own. Every individual generation looked reasonable; the accumulation did not.
+
+The rule is in §4.3. These are the three habits that let it happen anyway, and the checks that catch
+them:
+
+- **A new surface is not a new service.** "The perks screens are in the web admin panel, and the
+  existing client is in `mobileApiClients`" is a *packaging* observation, and packaging is the weakest
+  possible reason to fork a client. Ask what **host and login** the endpoint sits behind, not which
+  screen calls it. Here both clients hit the same host and the same `/api/v1/web/user/login`.
+- **Never infer an auth requirement — probe it.** The second client sent `Authorization: Bearer <jwt>`
+  because that is the common convention, and nothing ever tested the alternative. One HTTP call
+  settles it: mint the framework's existing token, call the new endpoint with it, and read the status.
+  A `401` **without** a token and a `200`/`400`/`404` **with** it is proof the existing token works;
+  anything else is the evidence you need before adding a login. Record the probe and its date in a
+  comment beside the endpoint fields.
+- **Drift compounds silently across stories.** Each story only adds a few methods, so the divergence
+  never looks like a decision. Before extending any client, page object or helper that a *previous
+  story* created rather than the framework, check it against its nearest framework-owned sibling — if
+  the parameter order, auth, base URL, error handling or logging disagree, the fix is to converge
+  them, not to match the newer file.
+
+**Merging one back is expensive and it is on the generator to avoid, not the reviewer to catch:** this
+one moved 24 methods, deleted 11 unused ones, rewrote ~250 call sites across six test classes and
+touched four catalog documents.
+
 *Restructured 2026-07-27 (operator directive): web automation generation re-based from Playwright onto
 the Java framework; mobile unchanged. Supersedes the 2026-06-22 "new web automation goes to
 `b55168_pom`" resolution — see [process-parity-audit.md](../process-parity-audit.md) §E and
 [playwright-framework.md](playwright-framework.md) for the legacy scope. §9 added the same day from
 the B10-56750 migration's five live runs. §9.13–9.15 added 2026-08-09 from a second-pass review of
 B10-57771, which had already passed the conformance gate and run 21/21 green — readability, oracle
-falsifiability and fixture selection are the three dimensions no build gate and no green run can check.*
+falsifiability and fixture selection are the three dimensions no build gate and no green run can check.
+§4 rewritten and §7.1 + §9.16 added 2026-08-20 (operator directive: generated automation must be
+indistinguishable from the framework's own) after merging `CardAdminPanelPerksApiClient` back into
+`CardServiceApiClient` — one client per service, one authentication per ecosystem, golden references
+named before generation, and no shipped code without a caller.*
