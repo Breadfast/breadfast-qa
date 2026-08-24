@@ -136,7 +136,17 @@ const html = (s) => `<p>${esc(s)}</p><br/>`;
 const stripHtml = (s) => String(s || '').replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').trim();
 
 // BrowserStack case_type vocabulary differs from our CSV's "Type of Test Case".
-const CASE_TYPE = { Acceptance: 'Acceptance', Functional: 'Functional', Regression: 'Regression' };
+// `Smoke & Sanity` and `Usability` are in our CSV vocabulary (qa-workflow/lib/testcases/lint.js) but were
+// missing here, so a case typed either way was SILENTLY posted as `Functional` — the CSV and test
+// management then disagreed with nobody noticing. Sent as-is instead; the post-create read-back is what
+// confirms the API accepts the value, rather than a guess baked into this map. (B10-58603.)
+const CASE_TYPE = {
+  Acceptance: 'Acceptance',
+  Functional: 'Functional',
+  Regression: 'Regression',
+  'Smoke & Sanity': 'Smoke & Sanity',
+  Usability: 'Usability',
+};
 // CSV "Automation Status" -> BrowserStack automation_status.
 // `Automated` maps to **not_automated** on purpose: in the approved CSV that value is the operator's
 // automation *scope* decision from the review gate, not a claim that a test exists yet. Only

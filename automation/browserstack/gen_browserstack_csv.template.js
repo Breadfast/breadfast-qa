@@ -24,7 +24,14 @@ const HEADER = ['Test Case ID', 'Title', 'Folder ID', 'Folder Path', 'State', 'O
 
 const OWNER = 'Fintech';
 const PROJECT = 'B10-57771 Duplicate Perk Action';
-const TAGS = 'ai-created';
+// Tags are COMMA-separated: the parser splits on `,` and `;` only, so a space-separated list makes
+// every `ac:`/`screen:` tag invisible — AC coverage then reads as 0% and every case as citing no AC
+// (hit on B10-58603). Each case needs its own `ac:AC-<n>` tags, so build the string per case rather
+// than sharing one constant; `ai-created` is only the common prefix.
+const BASE_TAGS = ['ai-created'];
+const tagsOf = (c) => [...BASE_TAGS,
+  ...(c.acs || []).map((a) => `ac:${a}`),
+  ...(c.screens || []).map((s) => `screen:${s}`)].join(',');
 const ISSUES = 'B10-57771';
 
 // ── Shared fixtures (seeded 2026-08-09 via POST /api/v1/web/card/perks/create) ──────────
@@ -427,7 +434,11 @@ function toCsv() {
     c.steps.forEach(([step, result], si) => {
       if (si === 0) {
         rows.push([id, c.title, '', PROJECT, 'Active', OWNER, c.priority, 'Functional', 'Not Automated',
-          c.description, c.pre, 'Test Case Steps', step, result, ISSUES, TAGS, '', '', '', '', '', '', PROJECT, '']);
+          // Template must be exactly "Steps" — `testcase-lint` errors on anything else, and this
+          // template previously emitted "Test Case Steps", which cost every copying story one lint
+          // error per case (found on B10-58603). NB the API's request field for the steps ARRAY is
+          // `test_case_steps`; that is a different thing from this CSV column's value.
+          c.description, c.pre, 'Steps', step, result, ISSUES, tagsOf(c), '', '', '', '', '', '', PROJECT, '']);
       } else {
         rows.push(['', '', '', '', '', '', '', '', '', '', '', '', step, result, '', '', '', '', '', '', '', '', '', '']);
       }

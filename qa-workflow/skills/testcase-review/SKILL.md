@@ -156,6 +156,14 @@ Two calibration rules, both from real misses:
 - **`no` because a case is *visual* is only sound when the assertion has no non-visual proxy.** Pixel
   placement, typeface and animation are visual; a rendered string, a stored flag, a count, an order or
   a computed style are not — those are automatable even when the *screen* is what the case describes.
+- **A `yes` on a mobile case needs a signal in the accessibility tree — confirm it in a dump before
+  recommending.** The tree is not the screen. On B10-58603 a "header collapses into a centred title on
+  scroll" case was recommended `yes`, and only at implementation time did a dump show **both** title
+  nodes present at **identical bounds in the scrolled and unscrolled states** — the collapse is a
+  Compose animation with no tree representation at all, so nothing could assert it and the case had to
+  move to manual after the page object was written. Before `yes`, name the attribute, id or node the
+  assertion will read, from a real dump. Absent that, it is a **visual** case however behavioural it
+  sounds. (This is the mirror of the calibration rule above: do not talk yourself *into* `yes` either.)
 
 `partial` is for a case whose oracle is automatable but whose trigger is not (or vice versa) — say in
 `reason` which half automates and what the other half needs manually.

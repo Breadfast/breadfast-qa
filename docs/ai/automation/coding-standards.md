@@ -71,8 +71,19 @@ These are NOT a license to fork a third architecture. The Architecture Standard 
 
 **Page objects**
 - `extends BaseWebPage` (Selenium) or the module's `Base…Screen` (Appium) + `PageFactory`.
-- Locators are `private static final String …_XPATH` / `By` fields or `@FindBy`, declared at the top
-  and reused. Locator preference order and the verified traps: [automation-generation.md](automation-generation.md) §9.3–§9.5.
+- **Locators: match the module you are generating into, not a single global rule.** The Selenium
+  `cardsAdminPanel` pages use `private static final String …_XPATH` constants + `@FindBy`; the
+  **mobile** `androidNative`/`iosNative` screens use an **individual `@FindBy` per fixed control**
+  (bilingual `or` conditions in one xpath) and a plain `String …Selector` format field **only** for
+  dynamic/templated lookups — see [mobile-native-framework.md](mobile-native-framework.md) §2.
+  Never collapse a fixed control set into one parameterised selector to reduce field count.
+- **A page object does not reimplement framework behaviour** — no scroll loops, gesture code, geometry,
+  expected-value getters, or long Javadoc. The boundary table and the reasons:
+  [automation-generation.md](automation-generation.md) §4.6.
+- **Golden references must be human-authored** — verify with `git log` before matching against a file
+  ([automation-generation.md](automation-generation.md) §4.2). The framework now contains generated
+  code; matching against it propagates its mistakes.
+- Locator preference order and the verified traps: [automation-generation.md](automation-generation.md) §9.3–§9.5.
 - Methods are camelCase and verb-first, named for the **control and operation**, never the story
   (`getCouponCodeFieldValue()`, not `getPrefilledCouponCode()`).
 - UI interaction and any decoding (URL/date/string surgery, collection algebra, index arithmetic)
