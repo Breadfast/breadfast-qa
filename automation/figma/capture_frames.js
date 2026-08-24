@@ -47,6 +47,29 @@ function arg(name, dflt) {
   return i > -1 && process.argv[i + 1] ? process.argv[i + 1] : dflt;
 }
 
+/**
+ * Playwright's `storageState` silently DROPS every `__Host-`prefixed cookie, because the prefix is
+ * only honoured for a cookie with no Domain attribute and the saved jar carries one. On Figma that
+ * set (`__Host-figma.authn`, `-state`, `.mac`, …) IS the auth, so a storageState-only restore lands
+ * on the login wall with a perfectly valid session. Split the jar and inject those by url instead.
+ * (Measured: storageState alone → 0 `__Host-*`; split restore → all 9.)
+ */
+function splitJar(cookies) {
+  const byUrl = [];
+  const byDomain = [];
+  for (const c of cookies) {
+    if (c.name.startsWith('__Host-')) {
+      byUrl.push({
+        name: c.name, value: c.value,
+        url: `https://${String(c.domain).replace(/^\.+/, '')}/`,
+        httpOnly: c.httpOnly, secure: true, sameSite: c.sameSite || 'Lax',
+        ...(c.expires > 0 ? { expires: c.expires } : {}),
+      });
+    } else { byDomain.push(c); }
+  }
+  return { byUrl, byDomain };
+}
+
 /** Empty the clipboard and confirm no image survives on it. Returns true when provably image-free. */
 async function clearClipboard(page) {
   await page.evaluate(async () => {
@@ -150,15 +173,28 @@ async function captureFrame(page, spec, f, seen) {
     process.exit(3);
   }
   const raw = JSON.parse(fs.readFileSync(AUTH_PATH, 'utf8'));
+  const { byUrl, byDomain } = splitJar(raw.cookies);
 
   const browser = await chromium.launch({ headless: false, args: ['--start-maximized'] });
   const context = await browser.newContext({
-    storageState: { cookies: raw.cookies, origins: raw.origins || [] },
+    storageState: { cookies: byDomain, origins: raw.origins || [] },
     viewport: { width: 1600, height: 1000 },
     deviceScaleFactor: 1,
   });
+  await context.addCookies(byUrl);
   await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: 'https://www.figma.com' });
   const page = await context.newPage();
+
+  // A live jar restored the wrong way is indistinguishable from an expired one, so prove the session
+  // before spending a capture run on frames that will all render the login wall.
+  await page.goto('https://www.figma.com/files', { waitUntil: 'domcontentloaded', timeout: 90000 });
+  await sleep(6000);
+  if (/login|signup/i.test(page.url())) {
+    await browser.close();
+    console.error(`Figma session is not authenticated (jar savedAt ${raw.savedAt}).\n` +
+      '  -> run: node qa-workflow/bin/figma-connect.js');
+    process.exit(3);
+  }
 
   const seen = new Map();                 // sha256 -> frame name, the distinctness ledger
   const rows = [];
