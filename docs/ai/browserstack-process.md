@@ -146,7 +146,8 @@ Look for `قيد التقدم` (In Progress). Poll `sleep(2000)` up to 8× befor
 
 | OTP type | Rule | Entry method |
 |----------|------|--------------|
-| **Login OTP** | Fetch automatically from Slack `#testing-otp` (channel `C04TK0FM329`). Find latest message for the phone (+20 prefix), write to polling file (e.g. `ios_en_act_otp.txt`); `pollForOtp()` picks it up. | `typeDigitsW3C` (W3C keyboard) — never `tapDigitArabic` (fails on repeated digits). |
+| **Login OTP** | Fetch automatically from the **Google Chat `#testing-otp` space** — the framework's `OtpFactory` reads it via `GoogleChatApiClient.findMessageForOTP(phone, method)`; the Node port is [automation/mobile/otp_google_chat.js](../../automation/mobile/otp_google_chat.js). Find the latest message for the phone (+20 prefix), write to the polling file (e.g. `ios_en_act_otp.txt`); `pollForOtp()` picks it up. **Slack is deprecated and no longer works** (channel `C04TK0FM329` silent since 2026-06-24). | `typeDigitsW3C` (W3C keyboard) — never `tapDigitArabic` (fails on repeated digits). |
+| **Pay dual-authentication OTP** | The **last 4 digits of the test phone**, as the framework does (`enterOtpIfDisplayed(phone.substring(phone.length() - 4))`). **Nothing is sent to the OTP space for this gate** — reading Chat hangs, and a wide lookback returns the login OTP from earlier in the same run and gets rejected here. | Segmented field: real key events only (Android keycodes). A bulk `element/value` lands one digit and auto-submits an incomplete code. |
 | **Card application OTP (1/3)** | Last 4 digits of test phone (01012350020 → 0020). | `typeDigitsW3C(PHONE.slice(-4))` |
 | **Card activation OTP** (phone verify after "Start") | Last 4 digits of test phone — same rule. | `typeDigitsW3C` |
 

@@ -259,7 +259,8 @@ Before updating ANY documentation (CLAUDE.md, `docs/ai/**`, memory):
 | Devices | iPhone 14 / iOS 18 (`XCUITest`); Samsung Galaxy S23 / Android 13 (`UiAutomator2`) |
 | Arabic locale caps | `appium:language: ar`, `appium:locale: EG` — **top-level**, never in `bstack:options` |
 | Active session ID | `<storyDir>/current_session.txt` — **per story**, written by that story's own session script (e.g. `B10-57806/current_session.txt`). There is no global session file; the old `D:/BreadfastQA/current_session.txt` never existed at that path. |
-| Login OTP | Slack `#testing-otp` (`C04TK0FM329`); enter with `typeDigitsW3C` |
+| Login OTP | **Google Chat `#testing-otp` space** — the framework's `OtpFactory` reads it via `GoogleChatApiClient.findMessageForOTP(phone, method)`; enter with `typeDigitsW3C`. **Slack is retired** (its `#testing-otp` channel `C04TK0FM329` has carried nothing since 2026-06-24) |
+| Pay dual-authentication OTP | **Last 4 digits of the test phone** — the framework does the same (`enterOtpIfDisplayed(phone.substring(phone.length() - 4))`). **Nothing is sent to the OTP space for this gate**, so reading Chat for it hangs, and a wide lookback returns the LOGIN OTP from earlier in the same run |
 | Card application OTP (1/3) | last 4 digits of test phone |
 | Card activation OTP | last 4 digits of test phone |
 | Passcode / PIN | passcode = 6 digits; PIN = 4 digits (shared acct `01203365955` passcode `123321`) |
@@ -276,7 +277,7 @@ Full coordinate table, keypad maps, API patterns, element/locator reference: [do
 ## 8. Tooling
 - **Jira/Confluence:** Atlassian MCP (fetch story/comments, add HLS checklist, file bugs).
 - **Figma:** Figma MCP (`get_design_context`, `get_screenshot`) — fetch EN + AR frames before execution.
-- **Slack:** Slack MCP (`#testing-otp` for login OTPs).
+- **Google Chat:** the `#testing-otp` space is the **live** source for login OTPs, read by the framework's `GoogleChatApiClient` / `OtpFactory` (Node port: [automation/mobile/otp_google_chat.js](automation/mobile/otp_google_chat.js), which handles both message shapes in the space). **Slack is deprecated and no longer works** — `SlackApiClient` still exists but its channel has been silent since 2026-06-24; do not read OTPs from it.
 - **Canonical automation framework (generation target for all new automation — web→Selenium, mobile→Appium):** Java/Appium/Selenium/TestNG/Maven, default `D:\projects`, path configurable (`QA_FRAMEWORK_PATH` → `automation/config/framework.js`; unresolved → ask). Run via Maven + BrowserStack / LambdaTest HyperExecute. Config source of truth: `resources/environments/*.properties`. Contract: [docs/ai/automation/automation-generation.md](docs/ai/automation/automation-generation.md) · catalog: [docs/ai/automation/java-framework.md](docs/ai/automation/java-framework.md).
 - **Mobile WebDriver layer (ad-hoc):** BrowserStack App Automate via [bs_helper.js](bs_helper.js).
 - **Web/backend (JS) — LEGACY for new generation:** in-repo Playwright framework — shared code [automation/](automation/), imported suite + runners [automation/legacy/](automation/legacy/) (reads the Java framework's config). Runs from the repo root with no external folder: `npx playwright test --config=automation/legacy/playwright.config.js`. Existing suites maintained; new Playwright only on explicit user request (2026-07-27).
