@@ -159,6 +159,22 @@ set is the **eight-key baseline** plus any conditional artifact this story produ
 | **Implementation differs from the approved suite** | *not* a freshness rule — the sources did not change. Handled by `test-design` **Phase C** (reconciliation): add/update/remove/split/merge/obsolete, each with an **authority** (AC, design, or a recorded clarification) and evidence, logged in `testcases/reconciliation.md`, then re-reviewed, re-approved and synced. "The app does X" is a defect candidate, never an authority to rewrite an expected result. |
 | Otherwise | reuse |
 
+### 5.1a Coverage changes are never carried forward as settled
+
+`coverageChanges` (qa-state, [schema](qa-state.schema.json) `$defs.coverageChangeRecord`) records a
+decision that **reduces or changes planned validation**. The authoritative rule — what counts, why it
+needs ratification, and the B10-57764 failure it comes from — is
+[`QA_PROCESS.md`](../QA_PROCESS.md) *Coverage-changing decisions*; this section states only how it
+interacts with freshness.
+
+- A `proposed` decision **stays `proposed`** across reconciliation. Carrying `clarifications` forward
+  (§5.2) carries the *artifact*, never the ratification.
+- An `approved` decision is **re-opened** (set back to `proposed`) when the AC it `affects` changes
+  materially — the justification was for the old requirement.
+- `complete-check` **fails** on any `proposed` decision; `approve <dir> testcases` **exits non-zero**
+  while one is open. Traceability is therefore end-to-end and mechanical:
+  **requirement → clarification → coverage change → ratification → test-case coverage.**
+
 ### 5.2 Materiality gate (clarifications only)
 A Jira change flags `requirements`/`hls` stale mechanically, but **`clarifications`** should re-open (re-run grill-me) only when AC/comments introduce **new/changed requirements**, not on typo-level edits. So: the engine marks `clarifications` *candidate-stale* on any Jira change; a lightweight diff-classification decides **regenerate** (material change) vs **carry forward** (cosmetic). This keeps the interactive clarification gate from firing needlessly.
 

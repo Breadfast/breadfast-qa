@@ -116,4 +116,37 @@ function extractAcs(text) {
   return [...found].sort((a, b) => Number(a.slice(3)) - Number(b.slice(3)));
 }
 
-module.exports = { COLUMNS, C, SYSTEM_COLUMNS, parseCsv, parseTestCases, parseTags, normalizeAc, extractAcs };
+/**
+ * Extract the AC ids a requirements/AC document mentions **with the line each was stated on**, so the
+ * lint can look for clause indicators in the AC's own wording (QA_PROCESS Phase 3 — "an AC is not one
+ * assertion just because it has one id").
+ *
+ * Deliberately line-scoped and dumb: the first `AC-n` on a line owns that line's text. It is a *signal*
+ * for clause-level review, never a semantic model of the requirement — see lint `ac-possible-multi-clause`.
+ *
+ * @returns {Array<{id:string, text:string}>} one entry per distinct AC id, first mention wins.
+ */
+function extractAcTexts(text) {
+  const out = new Map();
+  for (const line of String(text).split(/\r?\n/)) {
+    const m = /\bAC[\s\-_]?([0-9]+(?:\.[0-9]+)?)\b/i.exec(line);
+    if (!m) continue;
+    const id = `AC-${m[1]}`;
+    if (out.has(id)) continue;
+    out.set(id, String(line).replace(/\|/g, ' ').replace(/\s+/g, ' ').trim());
+  }
+  return [...out.entries()]
+    .map(([id, t]) => ({ id, text: t }))
+    .sort((a, b) => Number(a.id.slice(3)) - Number(b.id.slice(3)));
+}
+
+/** The parent AC of a clause id — `AC-5.2` → `AC-5`; `AC-5` → `AC-5`. */
+function parentAc(id) {
+  const m = /^AC-([0-9]+)(?:\.[0-9]+)?$/.exec(String(id).toUpperCase());
+  return m ? `AC-${m[1]}` : String(id).toUpperCase();
+}
+
+module.exports = {
+  COLUMNS, C, SYSTEM_COLUMNS, parseCsv, parseTestCases, parseTags, normalizeAc,
+  extractAcs, extractAcTexts, parentAc,
+};

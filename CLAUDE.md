@@ -43,6 +43,9 @@ CLAUDE.md orchestrates; `docs/ai/` holds the detail. Routing:
 | **QA workflow architecture (Pre-Dev/Post-Dev split, artifact reuse contract, plugin-alignment)** | [docs/ai/architecture/adr-001-qa-workflow-independent-plugin-aligned.md](docs/ai/architecture/adr-001-qa-workflow-independent-plugin-aligned.md) · [contract](docs/ai/architecture/qa-artifact-contract.md) · [schema](docs/ai/architecture/qa-state.schema.json) · scaffold [qa-workflow/](qa-workflow/) |
 | **Which workflow to run** (pre-dev only · post-dev only · full lifecycle) | [qa-shift-left](qa-workflow/workflows/qa-shift-left.md) · [qa-implementation-validation](qa-workflow/workflows/qa-implementation-validation.md) · [qa-full](qa-workflow/workflows/qa-full.md) |
 | **Test-case review/approval gate — the checklist that must pass before ANY import** | [testcase-review](qa-workflow/skills/testcase-review/SKILL.md) · [QA_PROCESS](docs/ai/QA_PROCESS.md) Phase 3 §6 |
+| **Coverage-changing decisions — what counts, how it is recorded, why it needs ratification** | [QA_PROCESS](docs/ai/QA_PROCESS.md) *Coverage-changing decisions* · [contract](docs/ai/architecture/qa-artifact-contract.md) §5.1a · `qa-cli.js coverage-change` |
+| **Clause-level AC coverage + state/route coverage (an AC tag is not proof)** | [QA_PROCESS](docs/ai/QA_PROCESS.md) §3.0a |
+| **A rejected visual finding must not close the requirement** | [QA_PROCESS](docs/ai/QA_PROCESS.md) §5.7 · [CLAUDE_CODE_OPERATOR](docs/ai/visual-testing/CLAUDE_CODE_OPERATOR.md) §7.3 |
 | **Execution engine requirements (session/browser lifecycle for Claude Code as executor)** | [docs/ai/execution-engine.md](docs/ai/execution-engine.md) |
 | Methodology, test design, **Figma visual comparison**, screenshot strategy | [docs/ai/testing-process.md](docs/ai/testing-process.md) |
 | Mobile sessions, Appium caps, tap/OTP/keypad patterns, **CSV import**, quirks | [docs/ai/browserstack-process.md](docs/ai/browserstack-process.md) |
@@ -140,14 +143,14 @@ Generate detailed test cases in the **canonical project standard**: granular use
 > regenerating it. [qa-artifact-contract](docs/ai/architecture/qa-artifact-contract.md) §1–2 · ADR-001 §3.1.
 
 ### STEP 6b — Test Case Review + Approval  ⟵ **MANDATORY GATE, will STOP**
-Nothing is imported before it passes. Review the generated cases against nine checks — **no duplicates · no unrelated cases · no missing AC coverage · correct expected results · correct granularity · correct categorization · correct automatable classification · justified regression coverage · format conformance** — **revise and re-review until all nine pass**, then **present the counts, the AC-coverage table and every revision to the operator and STOP for approval**:
+Nothing is imported before it passes. Review the generated cases against **ten** checks — **no duplicates · no unrelated cases · no missing AC coverage (at CLAUSE level) · correct expected results · correct granularity · correct categorization · correct automatable classification · justified regression coverage · format conformance · upstream coverage changes challenged** — **revise and re-review until all ten pass**, then **present the counts, the AC-coverage table, every revision and every coverage-changing decision to the operator and STOP for approval**:
 
 **Every story hands the operator the review page** (standard 2026-08-10, operator instruction) — one case
 at a time, each with an **Accept / Needs update / Invalid-delete** verdict **and a comment field**, so a
 rejection arrives as *instructions* rather than a count. The same gate also fixes **automation scope**: an
 authored `testcases/automation-plan.json` gives each case a recommendation (layer · effort · reason ·
 blockers) and a checkbox, and **only the selected cases are automated**. Its "Copy review" block is the
-revision list *and* the automation scope: apply it, re-run lint + the nine checks from the top, log the
+revision list *and* the automation scope: apply it, re-run lint + the ten checks from the top, log the
 changes in `review.md`, set `Automation Status` to match the picks, present again.
 ```
 node automation/gen_testcase_review_page.js --story "<storyDir>"   # → <storyDir>/testcases/review-page.html
@@ -157,11 +160,35 @@ node qa-workflow/bin/qa-cli.js approve "<storyDir>" testcases --by "<operator>"
 ```
 **Reviewing is yours; approving is not.** `record browserstack-import` dies without `approvals.testcases` (`APPROVAL_DEPS` in `qa-cli.js`) — and inside `qa-full` too: invoking the full workflow authorizes the run, not the coverage it designs. The only alternative is a recorded deferral with the operator's name (`defer … testcase-review`). ([skill](qa-workflow/skills/testcase-review/SKILL.md).)
 
+> **Coverage reductions are ratified at this same gate (added 2026-08-24).** A clarification, exploration
+> or reconciliation that **removes or narrows planned validation** — drops a state or a route, turns visual
+> validation into behavioural, automated into manual, merges clauses, or declares a requirement untestable —
+> is a **coverage-changing decision**. It is recorded, and it is **not authoritative until the operator
+> ratifies it**: `approve … testcases` exits non-zero while one is `proposed`, and `complete-check` fails
+> the run. *(On **B10-57764**, clarification A-3 removed AC5's visual assertion; lint stayed green, all nine
+> checks passed, 3 manual cases and 18 automated tests passed, and two defects — **B10-59276**, **B10-59278**
+> — lived in the unasserted half of the AC.)*
+> ```
+> node qa-workflow/bin/qa-cli.js coverage-change list "<storyDir>"
+> node qa-workflow/bin/qa-cli.js coverage-change approve "<storyDir>" <id> --by "<operator>"
+> ```
+> Rule + the full "what counts" list: [docs/ai/QA_PROCESS.md](docs/ai/QA_PROCESS.md) *Coverage-changing decisions*.
+
 **Half the checklist is mechanical — run it first, it is an exit code:**
 ```
 node qa-workflow/bin/qa-cli.js testcase-lint "<storyDir>" --acs-from "<storyDir>/requirements-analysis/requirements.md" --require-screens
 ```
-Exits 1 on duplicate titles/step-sequences, a step with no Expected Result, a format or vocabulary violation, a case citing no AC, or **an AC with no case**. That last one is why every generated case carries `ac:AC-<n>` (+ `screen:<id>`) in the Tags column ([browserstack-process](docs/ai/browserstack-process.md) §10.2a): AC coverage is **computed**, not asserted — in the review *and* in the QA Summary.
+Exits 1 on duplicate titles/step-sequences, a step with no Expected Result, a format or vocabulary violation, a case citing no AC, or **an AC (or clause id) with no case**. That last one is why every generated case carries `ac:AC-<n>` (+ `screen:<id>`) in the Tags column ([browserstack-process](docs/ai/browserstack-process.md) §10.2a): AC coverage is **computed**, not asserted — in the review *and* in the QA Summary.
+
+> **But an `ac:` tag is traceability, NOT proof of complete coverage.** An AC may hold several atomic
+> requirements (`if X → Y, **otherwise** → Z`). Where it does, decompose it into **clause ids** in
+> `requirements.md` (`AC-5.1`, `AC-5.2`) — the lint parses decimal ids, so each clause is enforced by the
+> same `uncovered-ac` error with no new machinery — and reason about coverage as
+> **AC → clause → state → route → expected behaviour/visual expectation**. The lint *warns*
+> `ac-possible-multi-clause` when an AC's wording carries a clause indicator and has not been decomposed:
+> a **signal to decide**, never a semantic model. Enumerate only the states and routes the requirement
+> makes meaningful — intelligent coverage, not a Cartesian product.
+> Method: [QA_PROCESS](docs/ai/QA_PROCESS.md) §3.0a.
 
 ### STEP 7 — BrowserStack Test Management (standing workflow)
 Take the **approved** cases → generate the BrowserStack-compatible CSV → **credentials + project/folder destination are settled in Phase 0, not here** (loader: `automation/config/credentials.js`; if anything is missing the gate already asked) → upload via the **Test Management REST API v2** (`/api/v2`, Basic `username:access_key` — **not** v1, which 401s with a misleading SSO redirect) → **verify the import succeeded** (folder count matches, cases land directly with no nested folder, granular steps render) → write the `TC-xxxx` map back into the CSV so `@TmsLink` binding exists before automation. Runs automatically every story. ([docs/ai/browserstack-process.md](docs/ai/browserstack-process.md) §10.5–10.6.)
@@ -214,7 +241,7 @@ Execution detail (capabilities, OTP, taps, keypads, accumulators): [docs/ai/brow
 ---
 
 ## 5. Quality Gates (story not complete until ALL pass)
-✓ **Story branch created in BOTH repos** (`<year>/sprintQ<n>.<n>/<ticket>-<slug>`) · ✓ AC covered · ✓ HLS created (in Jira) · ✓ Test cases created · ✓ **Test cases reviewed AND operator-approved** · ✓ BrowserStack import verified · ✓ Exploratory testing done · ✓ Regression areas identified · ✓ **Automation completed** · ✓ Defects reported · ✓ HTML report generated · ✓ Documentation updated. Full criteria + report standard: [docs/ai/release-validation.md](docs/ai/release-validation.md).
+✓ **No unratified coverage-changing decision** (`qa-cli.js coverage-change list`) · ✓ **Story branch created in BOTH repos** (`<year>/sprintQ<n>.<n>/<ticket>-<slug>`) · ✓ AC covered · ✓ HLS created (in Jira) · ✓ Test cases created · ✓ **Test cases reviewed AND operator-approved** · ✓ BrowserStack import verified · ✓ Exploratory testing done · ✓ Regression areas identified · ✓ **Automation completed** · ✓ Defects reported · ✓ HTML report generated · ✓ Documentation updated. Full criteria + report standard: [docs/ai/release-validation.md](docs/ai/release-validation.md).
 
 **Deferral is the operator's call, never yours (changed 2026-07-29, operator-approved).** This gate
 previously read *"Automation completed **(or deferred with reason)**"* — the only self-granted exemption
@@ -259,7 +286,8 @@ Before updating ANY documentation (CLAUDE.md, `docs/ai/**`, memory):
 | Devices | iPhone 14 / iOS 18 (`XCUITest`); Samsung Galaxy S23 / Android 13 (`UiAutomator2`) |
 | Arabic locale caps | `appium:language: ar`, `appium:locale: EG` — **top-level**, never in `bstack:options` |
 | Active session ID | `<storyDir>/current_session.txt` — **per story**, written by that story's own session script (e.g. `B10-57806/current_session.txt`). There is no global session file; the old `D:/BreadfastQA/current_session.txt` never existed at that path. |
-| Login OTP | Slack `#testing-otp` (`C04TK0FM329`); enter with `typeDigitsW3C` |
+| Login OTP | **Google Chat `#testing-otp` space** — the framework's `OtpFactory` reads it via `GoogleChatApiClient.findMessageForOTP(phone, method)`; enter with `typeDigitsW3C`. **Slack is retired** (its `#testing-otp` channel `C04TK0FM329` has carried nothing since 2026-06-24) |
+| Pay dual-authentication OTP | **Last 4 digits of the test phone** — the framework does the same (`enterOtpIfDisplayed(phone.substring(phone.length() - 4))`). **Nothing is sent to the OTP space for this gate**, so reading Chat for it hangs, and a wide lookback returns the LOGIN OTP from earlier in the same run |
 | Card application OTP (1/3) | last 4 digits of test phone |
 | Card activation OTP | last 4 digits of test phone |
 | Passcode / PIN | passcode = 6 digits; PIN = 4 digits (shared acct `01203365955` passcode `123321`) |
@@ -276,7 +304,7 @@ Full coordinate table, keypad maps, API patterns, element/locator reference: [do
 ## 8. Tooling
 - **Jira/Confluence:** Atlassian MCP (fetch story/comments, add HLS checklist, file bugs).
 - **Figma:** Figma MCP (`get_design_context`, `get_screenshot`) — fetch EN + AR frames before execution.
-- **Slack:** Slack MCP (`#testing-otp` for login OTPs).
+- **Google Chat:** the `#testing-otp` space is the **live** source for login OTPs, read by the framework's `GoogleChatApiClient` / `OtpFactory` (Node port: [automation/mobile/otp_google_chat.js](automation/mobile/otp_google_chat.js), which handles both message shapes in the space). **Slack is deprecated and no longer works** — `SlackApiClient` still exists but its channel has been silent since 2026-06-24; do not read OTPs from it.
 - **Canonical automation framework (generation target for all new automation — web→Selenium, mobile→Appium):** Java/Appium/Selenium/TestNG/Maven, default `D:\projects`, path configurable (`QA_FRAMEWORK_PATH` → `automation/config/framework.js`; unresolved → ask). Run via Maven + BrowserStack / LambdaTest HyperExecute. Config source of truth: `resources/environments/*.properties`. Contract: [docs/ai/automation/automation-generation.md](docs/ai/automation/automation-generation.md) · catalog: [docs/ai/automation/java-framework.md](docs/ai/automation/java-framework.md).
 - **Mobile WebDriver layer (ad-hoc):** BrowserStack App Automate via [bs_helper.js](bs_helper.js).
 - **Web/backend (JS) — LEGACY for new generation:** in-repo Playwright framework — shared code [automation/](automation/), imported suite + runners [automation/legacy/](automation/legacy/) (reads the Java framework's config). Runs from the repo root with no external folder: `npx playwright test --config=automation/legacy/playwright.config.js`. Existing suites maintained; new Playwright only on explicit user request (2026-07-27).
@@ -285,7 +313,7 @@ Full coordinate table, keypad maps, API patterns, element/locator reference: [do
 - **BrowserStack Test Management:** REST **API v2** (`https://test-management.browserstack.com/api/v2`, Basic `username:access_key`). **v1 does not exist and returns a misleading `401` + SSO redirect for valid keys.** Create cases individually via `POST /projects/{PR-x}/folders/{id}/test-cases`; steps go in **`test_case_steps`** (a `steps` payload returns 200 and saves none). Details + traps: [docs/ai/browserstack-process.md](docs/ai/browserstack-process.md) §10.6. Reference impl (shared, any story): [`automation/browserstack/upload_browserstack.js`](automation/browserstack/upload_browserstack.js) — `--cases <story>/automation/gen_browserstack_csv.js --project PR-x --folder <id>`. Tooling index: [`automation/browserstack/README.md`](automation/browserstack/README.md).
 - **BrowserStack test runs + `automation_status` (standard step, any story):** [automation/browserstack_test_run.js](automation/browserstack_test_run.js) — takes the shared **test-case folder link** and does the rest (§10.8). Results are sourced from **App Automate** when the suite ran without `targetRunId`, because `target/surefire-reports` and `logs/test.log` are overwritten by the next run; take the **latest session per test name** and **filter by session `os`**, or the Android leg silently gets filled from an iOS build.
 - **QA workflow entrypoints:** `/qa-shift-left` (pre-dev — analysis **+ the approved, imported coverage baseline**) · `/qa-validate` (post-dev only; reconciles + reuses that baseline, **maintaining** the suite rather than regenerating it) · `/qa-full` (both, end-to-end — use when no baseline exists). Definitions: [qa-workflow/workflows/](qa-workflow/workflows/).
-- **`qa-cli.js` at a glance** — `init` · `fingerprint-jira/-figma` · `record` · **`status`** (where is this story, what is next, what blocks it — always exits 0) · **`testcase-lint`** (the mechanical review checks; exits 1) · `approve` (operator sign-off + snapshot) · `defer` (postpone what is owed) · **`skip`** (a *conditional* phase deliberately not needed) · `reconcile` (`--ignore-lock` to carry a superseded methodology forward) · `branch-check` · `complete-check --profile shift-left|validate|full`. Full usage: the header of [qa-workflow/bin/qa-cli.js](qa-workflow/bin/qa-cli.js).
+- **`qa-cli.js` at a glance** — `init` · `fingerprint-jira/-figma` · `record` · **`status`** (where is this story, what is next, what blocks it — always exits 0) · **`testcase-lint`** (the mechanical review checks; exits 1) · `approve` (operator sign-off + snapshot) · `defer` (postpone what is owed) · **`skip`** (a *conditional* phase deliberately not needed) · **`coverage-change add/approve/reject/list`** (a decision that reduces planned validation — blocks `approve testcases` until ratified) · `reconcile` (`--ignore-lock` to carry a superseded methodology forward) · `branch-check` · `complete-check --profile shift-left|validate|full`. Full usage: the header of [qa-workflow/bin/qa-cli.js](qa-workflow/bin/qa-cli.js).
 
 ---
 

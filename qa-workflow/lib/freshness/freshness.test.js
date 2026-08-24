@@ -112,7 +112,7 @@ test('exploratory-notes is conditional: absent → not reconciled; present → r
 
   const b = baseState();
   b.state.artifacts['exploratory-notes'] = {
-    path: 'exploratory-notes.md', status: 'complete', generator: 'exploratory-testing@2.0',
+    path: 'exploratory-notes.md', status: 'complete', generator: 'exploratory-testing@2.1',
     derivedFrom: { requirements: b.cs('requirements') }, checksum: b.cs('exploratory-notes'),
   };
   const r = reconcile(b.state, liveFresh(b), ioFor(b.state));
@@ -123,7 +123,7 @@ test('exploratory-notes is conditional: absent → not reconciled; present → r
 test('exploratory-notes is context for testcases — it informs them, it does not invalidate them', () => {
   const b = baseState();
   b.state.artifacts['exploratory-notes'] = {
-    path: 'exploratory-notes.md', status: 'partial', generator: 'exploratory-testing@2.0',
+    path: 'exploratory-notes.md', status: 'partial', generator: 'exploratory-testing@2.1',
     derivedFrom: {}, checksum: b.cs('exploratory-notes'),
   };
   const r = reconcile(b.state, liveFresh(b), ioFor(b.state));

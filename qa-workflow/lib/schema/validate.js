@@ -16,6 +16,12 @@ const GEN = /^[a-z0-9-]+@[0-9]+\.[0-9]+$/;
 const NODE = /^[0-9]+[:-][0-9]+$/;
 const VER = /^[0-9]+\.[0-9]+$/;
 const STATUS = ['complete', 'partial', 'missing', 'stale', 'modified'];
+const CC_ID = /^[a-z0-9][a-z0-9-]*$/;
+const CC_SOURCES = ['clarification', 'exploratory', 'test-design', 'testcase-review', 'reconciliation', 'figma-analysis', 'prerequisites', 'operator'];
+const CC_KINDS = ['removes-ac-coverage', 'narrows-ac-coverage', 'removes-state', 'removes-route',
+  'removes-visual-validation', 'visual-to-behavioural', 'automated-to-manual', 'merges-requirements',
+  'declared-not-testable', 'other'];
+const CC_STATUSES = ['proposed', 'approved', 'rejected'];
 const FIELDS = ['summary', 'description', 'ac', 'comments', 'attachments', 'links'];
 
 function validateQaState(s) {
@@ -87,6 +93,26 @@ function validateQaState(s) {
       }
     }
   }
+  // coverageChanges (optional) — decisions that REDUCE or CHANGE planned validation.
+  // Authoritative only once approved; `proposed` blocks `approve <dir> testcases`.
+  // Spec: docs/ai/QA_PROCESS.md Principles — "Coverage-changing decisions".
+  if (s.coverageChanges != null) {
+    if (!isObj(s.coverageChanges)) err('coverageChanges', 'must be an object');
+    else for (const [id, c] of Object.entries(s.coverageChanges)) {
+      if (!CC_ID.test(id)) err(`coverageChanges.${id}`, 'id must match ' + CC_ID);
+      if (!isObj(c)) { err(`coverageChanges.${id}`, 'must be an object'); continue; }
+      if (!CC_SOURCES.includes(String(c.source))) err(`coverageChanges.${id}.source`, 'must be one of ' + CC_SOURCES.join('|'));
+      if (!Array.isArray(c.affects) || !c.affects.length || !c.affects.every((a) => typeof a === 'string' && a))
+        err(`coverageChanges.${id}.affects`, 'required non-empty array of strings');
+      if (!Array.isArray(c.kind) || !c.kind.length || !c.kind.every((k) => CC_KINDS.includes(String(k))))
+        err(`coverageChanges.${id}.kind`, 'required non-empty array, each one of ' + CC_KINDS.join('|'));
+      if (typeof c.reason !== 'string' || !c.reason) err(`coverageChanges.${id}.reason`, 'required string');
+      if (!CC_STATUSES.includes(String(c.status))) err(`coverageChanges.${id}.status`, 'must be one of ' + CC_STATUSES.join('|'));
+      if (c.status !== 'proposed' && (typeof c.approvedBy !== 'string' || !c.approvedBy))
+        err(`coverageChanges.${id}.approvedBy`, 'required once the decision is approved or rejected');
+    }
+  }
+
   if (s.skips != null) {
     if (!isObj(s.skips)) err('skips', 'must be an object');
     else for (const [key, k] of Object.entries(s.skips)) {
@@ -121,4 +147,4 @@ function validateQaState(s) {
   return { valid: errors.length === 0, errors };
 }
 
-module.exports = { validateQaState };
+module.exports = { validateQaState, CC_SOURCES, CC_KINDS, CC_STATUSES };

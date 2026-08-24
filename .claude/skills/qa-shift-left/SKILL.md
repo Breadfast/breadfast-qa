@@ -21,7 +21,7 @@ description: >-
    - Run each phase skill from `qa-workflow/skills/<name>/SKILL.md` — read-heavy ones as **subagents** returning artifacts by path.
    - **Clarification is a gate** (grill-me): STOP and ask until scope is locked; do not generate HLS before then.
    - **Exploratory analysis (Step 5) is conditional** — run it when it will change the cases; if you skip it, say so and why.
-   - **Test-case review (Step 8) is the second gate:** review → revise → re-review until the nine checks
+   - **Test-case review (Step 8) is the second gate:** review → revise → re-review until the ten checks
      pass, then **STOP for the operator's approval**. Do not import before it.
    - Fingerprint + `record` each artifact, and validate `qa-state.json`.
 3. On completion, `qa-cli.js complete-check <storyDir> --profile shift-left` and report the reusable baseline.

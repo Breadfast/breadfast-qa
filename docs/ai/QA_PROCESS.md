@@ -15,6 +15,64 @@
 4. **Explainable.** Severity and root cause are derived by rule from the evidence, so the same evidence always yields the same verdict.
 5. **Default scope = four combos.** Mobile stories are validated on **iOS + Android** in **English (en) + Arabic (ar)** — all four — unless a story explicitly narrows scope. Web stories are validated per supported browser/locale.
 6. **Coverage gap ≠ defect.** "We could not check this screen" is reported as a *coverage gap*, never as a UI failure.
+7. **A decision that reduces coverage is reviewable, never inherited** — see below.
+8. **Rejecting a claim is not proving the requirement** — see Phase 5 §5.7.
+
+---
+
+## Coverage-changing decisions (cross-phase — the authoritative rule)
+
+**A clarification, exploration or reconciliation does not become authoritative just because downstream
+phases implemented it faithfully.** A test suite can be perfectly conformant to a wrong premise: lint
+green, every check passing, every case tracing to an AC — and still blind to half the requirement.
+
+A decision is **coverage-changing** when it does any of:
+
+| | |
+|---|---|
+| removes AC coverage | narrows AC coverage to a subset of its states/inputs |
+| removes a **state** from scope | removes a **route** into a state |
+| removes visual validation | converts **visual → behavioural** validation |
+| converts **automated → manual** | merges several requirements/clauses into one assertion |
+| declares a requirement **not testable** | otherwise materially reduces or changes planned validation |
+
+Such a decision **must be recorded as a coverage change and explicitly ratified by the operator before
+the reduced coverage becomes authoritative**:
+
+```
+node qa-workflow/bin/qa-cli.js coverage-change add <storyDir> <id> \
+     --source clarification --source-ref "clarification/clarifications.md#A-3" \
+     --affects AC-5 --kind removes-visual-validation,visual-to-behavioural \
+     --was "…" --now "…" --reason "…" --evidence "…" --scope-checked "…"
+node qa-workflow/bin/qa-cli.js coverage-change approve <storyDir> <id> --by "<operator>"
+```
+
+**Mechanically enforced, so the wording cannot be routed around:**
+- `approve <storyDir> testcases` **exits non-zero** while any coverage change is `proposed`.
+- `complete-check` **fails** the run on any coverage change still `proposed`.
+- `status` lists them and names what they block.
+- **`reject`** means the coverage *stays*: the suite must cover it, and test design re-opens.
+
+**`--scope-checked` is the field that matters most.** It records *which states, routes and variants the
+evidence actually covers*. Generalising a correct measurement of **one** state into a decision about a
+**whole requirement** is the specific failure this whole rule exists to prevent.
+
+> **Motivating failure — B10-57764 (2026-08-24).** Clarification **A-3** pixel-diffed the design's
+> *unchecked* disabled checkbox against the enabled one, correctly found them byte-identical, and
+> concluded *"'the box is dimmed' has no visual oracle"*. The **checked** box differed plainly in the same
+> two frames (`#F3F4F5`/`#D8D8D8` vs `#AA0082`/white). That inference removed **all** visual assertion
+> from AC5 and replaced it with a behavioural model asserted in **one direction only**. Lint stayed green
+> (four cases carried `ac:AC-5`), the nine review checks passed, 3 manual cases and 18 automated tests
+> passed — and two defects (**B10-59276**, **B10-59278**) lived in the unasserted half until the operator
+> found them by hand on a build already signed off PASS 6/6.
+
+**Interaction with the clarifications materiality gate** ([contract](architecture/qa-artifact-contract.md)
+§5.2): a *cosmetic* Jira change carries `clarifications` forward, but **never carries an open coverage
+change forward as settled** — a `proposed` decision stays `proposed` across reconciliation, and an
+`approved` one is re-opened when the AC it affects materially changes.
+
+Where each phase's duty sits: **emit** — `grill-me` (clarification), `exploratory-testing`,
+`test-design` Phase C · **challenge** — `testcase-review` check 10 · **record/gate** — `qa-cli.js`.
 
 ---
 
@@ -185,6 +243,58 @@ upcoming scope, or an impacted area nobody has looked at. It improves **observab
 change**; it produces no verdicts and files no defects (nothing has been delivered to be wrong). Its
 output feeds case generation. **Skipping is a stated decision with a reason — never a silent omission.**
 
+### 3.0a Decompose the requirement before designing cases
+
+Two decompositions precede case writing. Both are **judgement exercised deliberately**, and both are
+bounded by the design principle at the end of this section — the goal is intentional coverage, **not**
+a Cartesian product.
+
+**(a) An AC is not one assertion just because it has one id.** An AC may carry several atomic
+requirements — most commonly `if X → Y, otherwise → Z`, but also several states, conditions or
+transitions under one sentence. Where an AC carries more than one, **decompose it into clause ids in the
+requirements artifact** (`AC-5.1`, `AC-5.2`, …). This needs no new coverage model: `testcase-lint`
+already parses decimal ids, so each clause becomes independently traceable and the existing
+`uncovered-ac` error enforces that **every clause has a case**.
+
+`testcase-lint` emits a **warning** (`ac-possible-multi-clause`) when an AC's own wording contains a
+clause indicator (`otherwise`, `unless`, `except`, `but`, `however`, …) and it has not been decomposed.
+That is a **signal asking for a clause-level decision — never a semantic model**: a hit does not prove
+the AC is multi-clause, and the absence of one does not prove it is not. Resolve it either by
+decomposing or by recording, in `coverage-notes.md`, why one id is enough.
+
+**The AC tag remains exactly as it is.** `ac:AC-5` is still mandatory and still traced. What changes is
+that **a tag is no longer read as proof that the AC is fully covered.**
+
+**(b) Reason about coverage at four levels, not one:**
+
+```
+AC → atomic clause/requirement → relevant state → relevant route/transition → expected behaviour + visual expectation
+```
+
+**States and routes are different questions, and a route can break what a state test proves.** For
+stateful UI, ask explicitly:
+
+> *"What are the meaningful ways the system can reach this state, and can behaviour differ depending on
+> how we got there?"*
+
+Routes worth considering (story-dependent — take what applies, not the list): fresh load · apply a
+filter/mode · remove it **with** the submit action · remove it **without** it · navigate away and
+return · browser Back · enabled → disabled and disabled → enabled transitions · a value changed
+in-session versus loaded from the server.
+
+> **Motivating failure — B10-59278.** On the card panel the perks list re-queries only on **Search**, so
+> `Category → All` **with** Search and `Category → All` **without** Search are genuinely different
+> routes into the same *displayed* state. Three routes were tested; the fourth held the defect. The
+> automated suite touched the Category filter in only two ways across all 18 tests — read as `"All"` on
+> a fresh load, or set to a category — and **never set it back to `"All"`**, so the state was unreachable
+> by construction rather than merely untested.
+
+**Design principle — intelligent coverage, not combinatorial explosion.** Enumerate only the clauses,
+states and routes the requirement actually makes meaningful; a state nothing distinguishes and a route
+that cannot alter behaviour are not coverage, they are padding. If enumerating honestly produces a large
+matrix, that is information about the requirement's risk — take it to the review gate, do not silently
+prune it *(and if you do prune, that is a **coverage-changing decision**, see Principles)*.
+
 ### Activities
 1. **High-Level Scenarios (HLS)** — enumerate the highest-risk coverage as a concise, risk-ranked outline: happy paths, negatives, edge cases, state transitions, validations, navigation, permissions, localization, error handling, and regression risks. Consolidate — do not pad.
 2. **Functional test cases** — expand HLS into granular, step-by-step cases. **Every step has its own expected result.** Never combine actions; navigation/validation/verification are explicit steps. Cover the ACs, functional requirements, validation rules, error states, empty states, in-scope localization, permissions/state transitions, the **regression coverage identified in Phase 1's impact note**, and whatever the exploratory analysis surfaced.
@@ -192,10 +302,12 @@ output feeds case generation. **Skipping is a stated decision with a reason — 
 4. **Negative cases** — invalid input, unauthorized access, missing prerequisites, failure/error states, and cancellation paths.
 5. **Map cases to screens** — tag each case with the `screenId`(s) it exercises, so visual validation and functional execution share identity. Classify each case **automatable / not-automatable**.
 6. **Review the cases (mandatory gate)** — before anything is committed to test management, verify: no
-   duplicates · no unrelated cases · no missing AC coverage · correct expected results · correct
-   granularity · correct categorization · correct automatable classification · justified regression
-   coverage · format conformance. **Revise and re-review until every check passes, then obtain explicit
-   approval.** Only approved cases are imported.
+   duplicates · no unrelated cases · no missing AC coverage **(at clause level, per 3.0a)** · correct
+   expected results · correct granularity · correct categorization · correct automatable classification ·
+   justified regression coverage · format conformance · **upstream coverage changes challenged and
+   ratified**. **Revise and re-review until every check passes, then obtain explicit approval.** Only
+   approved cases are imported. The tenth check exists because *"do the cases implement the
+   clarification?"* is not a sufficient question — see Principles, *Coverage-changing decisions*.
 7. **Import the approved cases** into test management and verify the import.
 
 ### 3.6 Reconciliation (post-development)
@@ -217,7 +329,9 @@ does X"* is not an authority — that is a defect candidate (Phase 4's defect-gr
 - *(Post-development)* the reconciliation log.
 
 ### Exit gate ✅
-- [ ] Every AC is covered by at least one case.
+- [ ] Every AC — **and every atomic clause of a multi-clause AC (3.0a)** — is covered by at least one case.
+- [ ] The meaningful **states and routes** for each requirement are covered, or their omission is a recorded coverage change.
+- [ ] **No coverage-changing decision is left unratified** (`qa-cli.js coverage-change list`).
 - [ ] Happy, edge, and negative paths are represented.
 - [ ] Each case is executable and has expected results per step.
 - [ ] Cases are mapped to `screenId`s and classified automatable/manual.
@@ -324,8 +438,32 @@ Each finding records: layer, category/dimension, **severity** (critical/major/mi
 ### 5.6 Produce the visual report
 Assemble a visual report: per-screen verdict (pass / minor / major / no-frame / coverage-gap), findings by severity and category, recurring-pattern summary, coverage gaps (listed separately, non-penalizing), and an expected-vs-actual view per screen.
 
+### 5.7 Rejecting a finding does not close the requirement
+
+**Disproving a specific *claim* proves nothing about the underlying visual *requirement*.** A finding is
+an observation plus a claim about it; the claim can be wrong for reasons that leave the requirement
+entirely unexamined — a wrong colour measurement, a stale or below-the-fold capture, the wrong fixture,
+the wrong route into the state, a browser-context artifact, or simply insufficient evidence.
+
+So a rejection is **never** recorded as *"the requirement is satisfied"*. It records six things — **what
+was disproved · what remains unresolved · why it was rejected · the evidence used · who owns the surviving
+question · whether further validation is required.** The field labels and their exact contents are defined
+once, in [`visual-testing/CLAUDE_CODE_OPERATOR.md`](visual-testing/CLAUDE_CODE_OPERATOR.md) §7.3; this
+section owns the **rule**, that section owns the **shape**.
+
+If the surviving question is *"is this requirement actually met?"*, the requirement stays **open**, not
+passed. If it is closed instead, that is a **coverage-changing decision** (Principles) and needs
+ratification like any other.
+
+> **Motivating failure — B10-57764 V-01.** The finding claimed the disabled checkbox rendered `#AA0082`
+> magenta. That claim was false — the build paints `#B0B0B0` — and it was rejected on gate checks 3/4
+> with a mechanism that was also unsound. But its **substance** — *this is not the dimmed state the
+> design specifies* — was never re-tested against the design, and the rejection was read by every later
+> phase as *settled*. It was true, and became **B10-59276**.
+
+
 ### Outputs / Artifacts
-- Evidence Manifest · Structured dumps · Visual findings · Visual report.
+- Evidence Manifest · Structured dumps · Visual findings · Visual report · **rejection records (§5.7)**.
 
 ### Exit gate ✅
 - [ ] A manifest row exists for every captured screen (with identity).

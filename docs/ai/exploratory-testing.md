@@ -86,3 +86,32 @@ For **web** stories: if no URL is provided, ask for it. Explore navigation, exis
 
 ## 7. Android-Specific Quirks
 Slower startup (8–10s) · element types `android.widget.*` · system back = keycode 4 · custom Arabic numpad may render differently (dump elements first) · RTL mirroring differs slightly · dismiss keyboard via `hide_keyboard`/keycode 4 · Arabic font metrics differ (not bugs) · gesture-nav edge swipe may conflict with app swipes (use keycode 4 instead).
+
+---
+
+## Challenging assumptions (Mode A's second job)
+
+Exploratory analysis is not only for what nobody knows yet — it is the one phase positioned to **falsify
+an assumption before it hardens into coverage**. Whenever the plan rests on a belief rather than an
+observation, charter it:
+
+| Assumption in play | What the charter must establish |
+|---|---|
+| "behaviour is the same in every state" | measure each **relevant** state; do not sample one |
+| "the state is reached one way" | enumerate **routes** — fresh load · apply · un-apply **with** the submit action · un-apply **without** it · navigate away and back · Back |
+| "this control is always/never conditional" | what actually makes it appear, enable, dim, disappear |
+| "these two design states look identical" | re-check in the **other** configuration; identical in one is not identical in all |
+| "there is no visual oracle" / "not visually testable" | build the state matrix and read **every cell** before concluding |
+| "visual validation was replaced by behavioural" | re-derive that conclusion against the real states |
+
+**Never generalise from one state to a whole requirement.** A property measured on one cell of a matrix
+says nothing about the others, and that generalisation is what turns a correct measurement into removed
+coverage. If the exploration *does* justify narrowing the plan, that is a **coverage-changing decision**
+— record it (`qa-cli.js coverage-change add … --source exploratory`) with `--scope-checked` naming the
+states and routes actually inspected. Authoritative rule: [`QA_PROCESS.md`](QA_PROCESS.md)
+*Coverage-changing decisions*.
+
+> **Motivating failure — B10-57764.** The design's *unchecked* disabled checkbox was correctly measured
+> as byte-identical to the enabled one, and the conclusion *"'dimmed' has no visual oracle"* was applied
+> to the **whole** control. The **checked** box differed plainly in the same frames. One cell decided a
+> matrix, and two defects lived in the cells nobody looked at (B10-59276, B10-59278).

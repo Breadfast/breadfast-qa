@@ -149,3 +149,20 @@ and the plan says so.
 ## Outputs
 `prerequisites.md` + reconciled baseline (incl. `testcases` · `testcase-review` · `browserstack-import`)
 + *(`testcase-reconciliation`)* · `automation` · `execution` · `visual-findings` · `defects` · `qa-summary`.
+
+---
+
+## Coverage-changing decisions apply to this workflow too
+
+Any decision here that **reduces or changes planned validation** — a reconciliation delta that removes a
+case, an exploratory conclusion that narrows scope, a requirement declared untestable — is recorded and
+ratified like any other:
+
+```
+node qa-workflow/bin/qa-cli.js coverage-change add    "<storyDir>" <id> --source reconciliation ...
+node qa-workflow/bin/qa-cli.js coverage-change list   "<storyDir>"
+node qa-workflow/bin/qa-cli.js coverage-change approve "<storyDir>" <id> --by "<operator>"
+```
+
+Re-approval of the suite and `complete-check` both **fail** while one is `proposed`. Authoritative rule:
+[`../../docs/ai/QA_PROCESS.md`](../../docs/ai/QA_PROCESS.md) *Coverage-changing decisions*.

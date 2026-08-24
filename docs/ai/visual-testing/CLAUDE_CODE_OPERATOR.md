@@ -142,6 +142,38 @@ A **pure casing / whitespace / punctuation-spacing** difference is **minor**:
 
 A difference that changes a **word, meaning, number, or localized string** is **major**. Missing/empty required copy remains **major**. (This sub-class is mirrored in `QA_PROCESS.md` Phase 5 L5.)
 
+### 7.3 Rejection record — a rejected finding must not create false closure
+
+Authoritative rule: [`QA_PROCESS.md`](../QA_PROCESS.md) §5.7. This is its record shape.
+
+**A finding is an observation plus a claim.** Killing the claim does not clear the requirement. Record a
+rejection with all six fields — a rejection missing *Unresolved* and *Owner* is the failure mode itself:
+
+| Field | Notes |
+|---|---|
+| **Claim rejected** | the specific assertion, quoted as it was made (e.g. *"the disabled checkbox renders `#AA0082`"*) |
+| **Disproved by** | the measurement that killed it, with its value and context (headed/headless, viewport, route, fixture) |
+| **Gate check failed** | which of `bug-reporting.md` §1.1 checks 1–8 it failed |
+| **Still unresolved** | the substantive question the claim was *about*, if it survives — **write `none` only when the requirement itself was verified, not merely the claim** |
+| **Owner** | the phase or person who owns the surviving question |
+| **Further validation** | `none` \| what would settle it |
+
+**Reasons a claim dies while the requirement stays open** — treat every one of these as leaving
+*Unresolved* populated by default: wrong colour/value measured · capture taken scrolled away, stale, or
+before render settled · wrong fixture (an element not in the asserted state) · wrong **route** into the
+state · browser-context artifact (headless vs headed) · insufficient evidence.
+
+Two things follow, and neither is optional:
+- **Never write a rejection as "the requirement is satisfied."** Write what was disproved.
+- If the surviving question is closed anyway, that is a **coverage-changing decision** — record and
+  ratify it (`qa-cli.js coverage-change add …`, [`QA_PROCESS.md`](../QA_PROCESS.md) Principles).
+
+> **Why this exists — B10-57764 V-01.** The claim *"the disabled checkbox is `#AA0082` magenta"* was
+> false; the build paints `#B0B0B0`. It was rejected on checks 3/4, with a stated CSS-cascade mechanism
+> that was also wrong. Its substance — *this is not the `#F3F4F5`/`#D8D8D8` dimmed state the design
+> specifies* — was never re-tested, and the rejection read to every later phase as settled. Four days
+> later it was filed as **B10-59276**.
+
 ---
 
 ## 8. Grouping recurring defects

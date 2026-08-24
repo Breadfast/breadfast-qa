@@ -53,9 +53,9 @@ test('frontmatter helpers', () => {
 test('the repo skills map every artifact a skill claims to produce', () => {
   const gens = loadGenerators(SKILLS);
   // Coverage definition moved to shift-left: test-design owns hls AND testcases.
-  assert.equal(gens.hls, 'test-design@2.0');
-  assert.equal(gens.testcases, 'test-design@2.0');
-  assert.equal(gens['testcase-review'], 'testcase-review@1.0');
+  assert.equal(gens.hls, 'test-design@2.1');
+  assert.equal(gens.testcases, 'test-design@2.1');
+  assert.equal(gens['testcase-review'], 'testcase-review@1.1');
   assert.equal(gens['browserstack-import'], 'browserstack-mgmt@2.0');
   assert.equal(gens.requirements, 'story-analysis@1.0');
   // Artifacts no skill produces stay unmapped, so rule (d) simply does not apply to them.

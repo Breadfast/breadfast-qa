@@ -29,6 +29,17 @@
  *   node qa-workflow/bin/qa-cli.js skip <storyDir> <key> --by "<operator>" --reason "<why>"
  *          # Records that a CONDITIONAL phase (exploratory-notes, testcase-reconciliation) was
  *          #   deliberately not needed — so "decided against" never looks like "never considered".
+ *   node qa-workflow/bin/qa-cli.js coverage-change add <storyDir> <id> --source <s> --affects AC-5[,AC-5.2]
+ *          --kind <k>[,<k>] --reason "<why>" [--was ..] [--now ..] [--evidence ..] [--scope-checked ..] [--source-ref ..]
+ *   node qa-workflow/bin/qa-cli.js coverage-change approve|reject <storyDir> <id> --by "<operator>" [--reason "<why>"]
+ *   node qa-workflow/bin/qa-cli.js coverage-change list <storyDir> [--json]
+ *          # A decision that REDUCES or CHANGES planned validation (removes/narrows an AC, drops a state
+ *          #   or a route, visual→behavioural, automated→manual, merges clauses, declares untestable).
+ *          #   It is NOT authoritative until an operator ratifies it: `approve <dir> testcases` exits
+ *          #   non-zero and `complete-check` fails while any is `proposed`. `reject` means the coverage
+ *          #   STAYS and test design re-opens. Rule: docs/ai/QA_PROCESS.md "Coverage-changing decisions".
+ *          #   (B10-57764: clarification A-3 removed AC5's visual assertion, every gate passed, and two
+ *          #   defects — B10-59276/B10-59278 — lived in the half nobody asserted.)
  *   node qa-workflow/bin/qa-cli.js status <storyDir> [--profile shift-left|validate|full] [--json]
  *          # Where is this story? Per-artifact state, approvals, conditional phases, the NEXT phase and
  *          #   what blocks it, and any artifact whose generator predates the current methodology.
@@ -305,6 +316,21 @@ async function main() {
       if (!rec) die(`cannot approve "${key}": it has not been recorded yet.`);
       if (rec.status !== 'complete' && rec.status !== 'modified') die(`cannot approve "${key}": status is "${rec.status}".`);
 
+      // A coverage-changing decision is authoritative only once the operator ratifies it. Approving the
+      // suite while one is still `proposed` is exactly how reduced coverage becomes the baseline without
+      // anyone deciding to reduce it — on B10-57764 clarification A-3 removed AC5's visual assertion and
+      // no later phase re-opened it, so two defects lived in the unasserted half (B10-59276/B10-59278).
+      if (key === 'testcases') {
+        const open = Object.entries(state.coverageChanges || {}).filter(([, c]) => c.status === 'proposed');
+        if (open.length) {
+          die(`cannot approve "testcases": ${open.length} coverage-changing decision(s) still proposed —\n`
+            + open.map(([id, c]) => `       ${id}  [${c.source}] ${(c.affects || []).join(',')}  ${(c.kind || []).join(',')}`).join('\n')
+            + `\n     These reduce or change planned validation and must be ratified or rejected FIRST:\n`
+            + `       node qa-workflow/bin/qa-cli.js coverage-change approve <storyDir> <id> --by "<operator>"\n`
+            + `       node qa-workflow/bin/qa-cli.js coverage-change reject  <storyDir> <id> --by "<operator>" --reason "<why>"`);
+        }
+      }
+
       const src = path.join(dir, rec.path);
       const ext = path.extname(rec.path);
       const snapshotRel = rec.path.slice(0, rec.path.length - ext.length) + '.approved' + ext;
@@ -327,6 +353,87 @@ async function main() {
       };
       qs.save(dir, state);
       process.stdout.write(JSON.stringify({ approved: key, ...state.approvals[key] }, null, 2) + '\n');
+      break;
+    }
+    case 'coverage-change': {
+      // A decision that REDUCES or CHANGES planned validation. It does not become authoritative just
+      // because downstream phases implemented it faithfully — a suite can be perfectly conformant to a
+      // wrong premise. Spec: docs/ai/QA_PROCESS.md Principles ("Coverage-changing decisions").
+      //
+      //   coverage-change add     <storyDir> <id> --source <s> --affects AC-5[,AC-5.2] --kind <k>[,<k>]
+      //                                           --reason "<why>" [--was ..] [--now ..] [--evidence ..]
+      //                                           [--scope-checked ..] [--source-ref ..]
+      //   coverage-change approve <storyDir> <id> --by "<operator>" [--note ..]
+      //   coverage-change reject  <storyDir> <id> --by "<operator>" --reason "<why>"
+      //   coverage-change list    <storyDir> [--json]        (always exits 0)
+      const { CC_KINDS, CC_SOURCES } = require('../lib/schema/validate');
+      const [sub, dir, id] = positional;
+      if (!sub || !dir) die('coverage-change <add|approve|reject|list> <storyDir> [<id>] ...');
+
+      if (sub === 'list') {
+        const state = loadOrInit(dir);
+        const all = Object.entries(state.coverageChanges || {});
+        if (flags.json) { process.stdout.write(JSON.stringify(state.coverageChanges || {}, null, 2) + '\n'); break; }
+        if (!all.length) { process.stdout.write('coverage-change: none recorded\n'); break; }
+        for (const [k, c] of all) {
+          const mark = c.status === 'approved' ? 'OK  ' : c.status === 'rejected' ? 'REJ ' : 'OPEN';
+          process.stdout.write(`  ${mark} ${k.padEnd(18)} [${c.source}] affects ${(c.affects || []).join(',')} · ${(c.kind || []).join(',')}\n`);
+          process.stdout.write(`       was:  ${c.was || '—'}\n       now:  ${c.now || '—'}\n       why:  ${c.reason}\n`);
+          if (c.scopeChecked) process.stdout.write(`       scope checked: ${c.scopeChecked}\n`);
+          if (c.approvedBy) process.stdout.write(`       ${c.status} by ${c.approvedBy} at ${c.at}${c.note ? ' — ' + c.note : ''}\n`);
+        }
+        const open = all.filter(([, c]) => c.status === 'proposed').length;
+        process.stdout.write(`  => ${all.length} decision(s), ${open} awaiting review\n`);
+        break;
+      }
+
+      if (!id) die(`coverage-change ${sub} <storyDir> <id> ...`);
+      const state = loadOrInit(dir);
+      state.coverageChanges = state.coverageChanges || {};
+
+      if (sub === 'add') {
+        if (!flags.source || !flags.affects || !flags.kind || !flags.reason) {
+          die('coverage-change add <storyDir> <id> --source <' + CC_SOURCES.join('|') + '>\n'
+            + '       --affects AC-5[,AC-5.2] --kind <' + CC_KINDS.join('|') + '>[,...] --reason "<why>"\n'
+            + '       [--was "<planned validation>"] [--now "<what remains>"] [--evidence "<what the reason rests on>"]\n'
+            + '       [--scope-checked "<which states/routes the evidence covers>"] [--source-ref "<file#anchor>"]');
+        }
+        state.coverageChanges[id] = {
+          source: String(flags.source),
+          ...(flags['source-ref'] ? { sourceRef: String(flags['source-ref']) } : {}),
+          affects: csv(flags.affects),
+          kind: csv(flags.kind),
+          ...(flags.was ? { was: String(flags.was) } : {}),
+          ...(flags.now ? { now: String(flags.now) } : {}),
+          reason: String(flags.reason),
+          ...(flags.evidence ? { evidence: String(flags.evidence) } : {}),
+          ...(flags['scope-checked'] ? { scopeChecked: String(flags['scope-checked']) } : {}),
+          status: 'proposed',
+        };
+      } else if (sub === 'approve' || sub === 'reject') {
+        const cur = state.coverageChanges[id];
+        if (!cur) die(`coverage-change ${sub}: "${id}" has not been recorded.`);
+        if (!flags.by) die(`coverage-change ${sub} <storyDir> ${id} --by "<operator>"` + (sub === 'reject' ? ' --reason "<why>"' : ''));
+        if (sub === 'reject' && !flags.reason) die(`coverage-change reject <storyDir> ${id} --by "<operator>" --reason "<why>"`);
+        // Ratifying is the operator's act, exactly like `approve` and `defer`. Never self-granted.
+        state.coverageChanges[id] = {
+          ...cur,
+          status: sub === 'approve' ? 'approved' : 'rejected',
+          approvedBy: String(flags.by),
+          at: new Date().toISOString(),
+          ...(flags.note ? { note: String(flags.note) } : {}),
+          ...(sub === 'reject' ? { note: String(flags.reason) } : {}),
+        };
+      } else {
+        die('coverage-change <add|approve|reject|list> ...');
+      }
+
+      qs.save(dir, state);
+      process.stdout.write(JSON.stringify({ id, ...state.coverageChanges[id] }, null, 2) + '\n');
+      if (state.coverageChanges[id].status === 'rejected') {
+        process.stdout.write('\n  Rejected: the coverage STAYS. The suite must cover ' + (state.coverageChanges[id].affects || []).join(', ')
+          + ' — re-open test-design and re-run the review gate.\n');
+      }
       break;
     }
     case 'skip': {
@@ -352,7 +459,7 @@ async function main() {
       // self-assessment. The judgement checks stay with the reviewer.
       const [dirOrFile] = positional;
       if (!dirOrFile) die('testcase-lint <storyDir|csvFile> [--acs AC-1,AC-2] [--acs-from <file>] [--require-screens] [--new] [--json]');
-      const { parseTestCases, extractAcs } = require('../lib/testcases/parse');
+      const { parseTestCases, extractAcs, extractAcTexts } = require('../lib/testcases/parse');
       const { lintTestCases } = require('../lib/testcases/lint');
 
       let file = dirOrFile;
@@ -364,18 +471,23 @@ async function main() {
       if (!fs.existsSync(file)) die('testcase-lint: cannot find the test-case CSV: ' + file);
 
       let acs = csv(flags.acs);
-      if (!acs.length && flags['acs-from']) {
+      let acTexts = [];
+      if (flags['acs-from']) {
         if (!fs.existsSync(String(flags['acs-from']))) die('testcase-lint: --acs-from file not found: ' + flags['acs-from']);
-        acs = extractAcs(fs.readFileSync(String(flags['acs-from']), 'utf8'));
+        const acDoc = fs.readFileSync(String(flags['acs-from']), 'utf8');
+        if (!acs.length) acs = extractAcs(acDoc);
+        // The AC's own WORDING is what the clause signal reads — an AC is not one assertion just
+        // because it has one id (QA_PROCESS Phase 3).
+        acTexts = extractAcTexts(acDoc);
       }
       const parsed = parseTestCases(fs.readFileSync(file, 'utf8'));
-      const result = lintTestCases(parsed, { acs, requireScreens: !!flags['require-screens'], newImport: !!flags.new });
+      const result = lintTestCases(parsed, { acs, acTexts, requireScreens: !!flags['require-screens'], newImport: !!flags.new });
 
       if (flags.json) process.stdout.write(JSON.stringify({ file, ...result }, null, 2) + '\n');
       else {
         const s = result.summary;
         process.stdout.write(`testcase-lint  ${file}\n`);
-        process.stdout.write(`  ${s.cases} cases · ${s.steps} steps · AC declared ${s.acs.declared}, covered ${s.acs.covered.length}${s.acs.uncovered.length ? ', UNCOVERED ' + s.acs.uncovered.join(',') : ''}\n`);
+        process.stdout.write(`  ${s.cases} cases · ${s.steps} steps · AC declared ${s.acs.declared}, covered ${s.acs.covered.length}${s.acs.uncovered.length ? ', UNCOVERED ' + s.acs.uncovered.join(',') : ''}${s.acs.clauses && s.acs.clauses.length ? ' · clauses ' + s.acs.clauses.join(',') : ''}\n`);
         process.stdout.write(`  types: ${Object.entries(s.byType).filter(([, n]) => n).map(([t, n]) => `${t}=${n}`).join(' ') || '—'}\n`);
         for (const f of result.findings) {
           process.stdout.write(`  ${f.severity === 'error' ? 'ERROR' : 'warn '}  ${f.code.padEnd(24)} ${f.line ? 'line ' + String(f.line).padEnd(5) : '           '} ${f.message}\n`);
@@ -452,6 +564,16 @@ async function main() {
         process.stdout.write(`\n  → next: ${next}\n`);
         for (const b of blockers) process.stdout.write(`      blocked: ${b}\n`);
       } else process.stdout.write(`\n  → all ${profile} artifacts recorded. Run: qa-cli.js complete-check "${dir}" --profile ${profile}\n`);
+      const ccAll = Object.entries(state.coverageChanges || {});
+      if (ccAll.length) {
+        const ccOpen = ccAll.filter(([, c]) => c.status === 'proposed');
+        process.stdout.write(`\n  coverage changes: ${ccAll.length} recorded, ${ccOpen.length} awaiting review\n`);
+        for (const [ccId, c] of ccAll) {
+          const mark = c.status === 'approved' ? 'OK  ' : c.status === 'rejected' ? 'REJ ' : 'OPEN';
+          process.stdout.write(`    ${mark} ${ccId} - ${(c.kind || []).join(',')} on ${(c.affects || []).join(',')}\n`);
+        }
+        if (ccOpen.length) process.stdout.write('    -> blocks: approve <storyDir> testcases. Ratify: coverage-change approve <storyDir> <id> --by "<operator>"\n');
+      }
       if (outdatedKeys.length) process.stdout.write(`\n  ! ${outdatedKeys.length} artifact(s) predate the current methodology — reconcile will mark them stale (rule d).\n`);
       break;
     }
@@ -509,6 +631,14 @@ async function main() {
         const now = qs.checksumArtifact(dir, a.path);
         if (now && now !== ap.checksum && !(state.artifacts['testcase-reconciliation'])) {
           problems.push({ key, issue: `changed after approval by ${ap.approvedBy} with no recorded testcase-reconciliation` });
+        }
+      }
+
+      // An unratified coverage-changing decision means the run's coverage was reduced by a decision
+      // nobody signed off. That is not "complete" — it is the B10-57764 failure mode with a paper trail.
+      for (const [id, c] of Object.entries(state.coverageChanges || {})) {
+        if (c.status === 'proposed') {
+          problems.push({ key: `coverage-change:${id}`, issue: `still proposed - affects ${(c.affects || []).join(',')} (${(c.kind || []).join(',')})` });
         }
       }
 
