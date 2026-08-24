@@ -1,9 +1,9 @@
 ---
 name: testcase-review
-description: Test Case Review Gate (QA_PROCESS Phase 3 exit). Reviews generated test cases against the AC map, the design and the format standard; revises until clean; then stops for operator approval. Nothing is imported to BrowserStack before it passes. Runs as a subagent, ends inline at the approval stop.
+description: Test Case Review Gate (QA_PROCESS Phase 3 exit). Reviews generated test cases against the AC map (at clause level), the design and the format standard, challenges upstream coverage-reducing decisions, revises until clean, then stops for operator approval. Nothing is imported to BrowserStack before it passes. Runs as a subagent, ends inline at the approval stop.
 metadata:
   type: task
-  version: 1.0
+  version: 1.1
   phase: Test Case Review / Approval
   workflow: [qa-shift-left]
   runsAs: subagent
@@ -50,6 +50,13 @@ every step having its own Expected Result, the canonical 24-column format, the
 Priority/Type/Automation-Status vocabulary, `ac:` tags and **AC coverage** (computed from the AC list,
 not asserted). Convention for the tags: [`browserstack-process.md`](../../../docs/ai/browserstack-process.md) §10.2a.
 
+It also emits **`ac-possible-multi-clause`** (a *warning*): an AC whose wording contains a clause
+indicator (`otherwise`, `unless`, `except`, `but`, …) and that has not been decomposed into clause ids.
+**A warning here is a question, not a verdict** — resolve every one at check 3 by decomposing the AC in
+the requirements artifact (`AC-5.1`, `AC-5.2`) or by recording in `coverage-notes.md` why one id suffices.
+Do not treat a clean lint as proof of clause coverage; keyword detection is a prompt to think, never the
+coverage model (QA_PROCESS §3.0a).
+
 ## Step 2 — the checklist — every item gets an explicit verdict
 Run it as a written pass over the actual file, not from memory of having generated it. **M** = the lint
 proves it; **J** = your judgement, and the reason this gate is not just a script.
@@ -58,24 +65,57 @@ proves it; **J** = your judgement, and the reason this gate is not just a script
 |---|---|---|---|
 | 1 | **No duplicates** | **M**+J | two cases assert the same behaviour on the same screen/state, or differ only in wording (the lint catches identical titles and identical step-sequences; near-duplicates are yours) |
 | 2 | **No unrelated cases** | J | a case tests something this story neither changes nor puts at risk (padding, or a dimension outside the ACs) |
-| 3 | **No missing AC coverage** | **M**+J | an AC has no case (lint: `uncovered-ac`); **or** an AC's *negative*/boundary side has none — that half is yours. Every AC → ≥ 1 case, stated in `coverage-notes.md` |
+| 3 | **No missing AC coverage — at CLAUSE level** | **M**+J | an AC or clause id has no case (lint: `uncovered-ac`); an AC's *negative*/boundary side has none; **a multi-clause AC has only one of its clauses asserted** (lint signals it as `ac-possible-multi-clause`; deciding is yours); or a **meaningful state or route** for the requirement is unexercised. An `ac:` tag is traceability, **not proof of complete coverage** — QA_PROCESS §3.0a |
 | 4 | **Correct expected results** | J | an expected result restates the action, is vague ("works correctly"), or contradicts the AC/design. **AC wins over design on conflict** |
 | 5 | **Correct granularity** | **M**+J | a step has no expected result (lint); steps combine actions, or navigation/verification are implied rather than explicit (§3.7 — yours) |
 | 6 | **Correct categorization** | **M**+J | value outside the Priority/Type/Automation-Status vocabulary or a missing `screen:` tag (lint); the *right* type/priority for this case is yours |
 | 7 | **Correct automatable classification** | J | a case marked automatable depends on something the framework cannot drive (external OTP-free assumption, manual backend state, visual judgement) — or a plainly automatable case is marked manual |
 | 8 | **Regression coverage justified** | J | a regression case cites no impacted area from `impact`; or an impacted area from `impact` has no case |
 | 9 | **Format conformance** | **M** | the CSV will not import cleanly: header, required author fields, orphan step rows, per-step structure. Encoding/RTL round-trip of `*_ar` content is yours to eyeball |
+| 10 | **Upstream coverage changes challenged** | J | an upstream decision (clarification, exploratory, reconciliation) **removed or narrowed** planned validation and is unrecorded, unjustified, or unratified — see below |
 
 **Scope check (before all of the above):** confirm the platform/locale scope the cases assume matches
 what `prerequisites.md` established about the surface under test. Cases that sweep AR/RTL on a surface
 with no Arabic UI are check-2 failures, not coverage.
 
+### Check 10 in practice — challenge the upstream decisions, do not just implement them
+
+Checks 1–9 ask *"do the cases correctly implement the requirements and the clarification?"* **That is not
+sufficient.** A suite can be internally consistent, fully traced and entirely conformant, and still be
+incomplete because it faithfully implemented an incorrect or over-broad upstream assumption. This gate is
+the **last** point where such a decision is re-openable — nothing downstream revisits it.
+
+So read `clarifications`, `exploratory-notes` and (post-dev) `reconciliation.md` **as decisions to audit**,
+not as settled inputs, and ask of each:
+
+1. **Did it reduce or change planned validation?** (removed/narrowed an AC, dropped a state or a route,
+   turned visual into behavioural, automated into manual, merged clauses, declared something untestable —
+   the full list is in [`QA_PROCESS.md`](../../../docs/ai/QA_PROCESS.md) Principles.)
+2. **Is it recorded as a coverage change?** `node qa-workflow/bin/qa-cli.js coverage-change list "<storyDir>"`
+   — if the reduction is real and unrecorded, **record it now**, before approval, and say so in `review.md`.
+3. **Does its evidence actually cover its scope?** This is the check that does the work. A decision
+   generalised from **one** state, route, fixture or locale to a **whole** requirement is the failure mode
+   — compare the decision's `--scope-checked` against the state/route matrix from
+   [`QA_PROCESS.md`](../../../docs/ai/QA_PROCESS.md) §3.0a. *"No visual oracle exists"* derived from the
+   unchecked box says nothing about the checked one.
+4. **Is it ratified?** An unratified coverage change **blocks approval mechanically** — `approve …
+   testcases` exits non-zero — so surface it at the approval stop with the counts, not afterwards.
+
+Record each verdict in `review.md`, and put every coverage change in front of the operator **at the
+approval stop, as its own list**: id · what it removes · why · what evidence it rests on · what is no
+longer asserted. Approving the suite and ratifying its coverage reductions are one decision, taken with
+both facts visible.
+
+> **Why this check exists.** On **B10-57764** clarification A-3 removed AC5's visual assertion. Checks
+> 1–9 all passed — the cases implemented A-3 exactly. Two defects (B10-59276, B10-59278) lived in the
+> half nobody asserted, and no phase after clarification ever re-opened the decision.
+
 ## Steps
 1. Read the cases and every input artifact.
-2. Run `testcase-lint` until it exits 0, then run all nine checks; record **pass / fail + evidence
+2. Run `testcase-lint` until it exits 0, then run all **ten** checks; record **pass / fail + evidence
    (case ids)** for each.
 3. **Revise:** fix every failure by editing `testcases/testcases.csv` (re-invoke `test-design` Phase B for
-   substantial regeneration), then **re-run lint + the checklist from the top**. Loop until all nine pass.
+   substantial regeneration), then **re-run lint + the checklist from the top**. Loop until all ten pass.
 4. Write `testcases/review.md`: the lint output (final, clean), the checklist with verdicts, every
    revision made and why, the AC→case coverage table, the automatable/manual split, and the counts
    (`before → after`).
@@ -86,7 +126,7 @@ with no Arabic UI are check-2 failures, not coverage.
    and in `qa-full`.
 7. **Apply what comes back.** The page returns a structured block — `NEEDS UPDATE` / `INVALID (DELETE)`
    / `ACCEPTED, WITH A NOTE` / `AUTOMATE` / `DO NOT AUTOMATE` / `OVERRIDES`, each entry carrying the
-   operator's comment. Treat it as the revision list: edit `testcases.csv`, **re-run lint and the nine
+   operator's comment. Treat it as the revision list: edit `testcases.csv`, **re-run lint and the ten
    checks from the top**, and append an *Operator-requested revisions* table to `review.md` recording
    case id → instruction → what changed. Then present again. Only when nothing is left in the update and
    delete sections is the suite ready to approve. Carry the `AUTOMATE` selection into the automation
@@ -94,7 +134,7 @@ with no Arabic UI are check-2 failures, not coverage.
 
 ## Operator review page (standard for every story)
 
-The nine checks are the *reviewer's* pass. This is the **operator's** pass, and it is not optional —
+The ten checks are the *reviewer's* pass. This is the **operator's** pass, and it is not optional —
 a suite reaches the approval stop with a link to it.
 
 ```
@@ -204,8 +244,13 @@ substitute for the command below carrying their name.
 
 ## Recording
 ```
+# Any coverage-reducing upstream decision found at check 10 — record it BEFORE approval,
+# because `approve <storyDir> testcases` exits non-zero while one is still `proposed`:
+node qa-workflow/bin/qa-cli.js coverage-change add "<storyDir>" <id> --source clarification      --source-ref "clarification/clarifications.md#<anchor>" --affects AC-<n> --kind <kind>[,<kind>]      --reason "<why>" --evidence "<what it rests on>" --scope-checked "<states/routes covered>"
+node qa-workflow/bin/qa-cli.js coverage-change list "<storyDir>"
+
 node qa-workflow/bin/qa-cli.js record "<storyDir>" testcase-review \
-     --path testcases/review.md --generator testcase-review@1.0 --derive-artifacts testcases
+     --path testcases/review.md --generator testcase-review@1.1 --derive-artifacts testcases
 # ...then, and only then, on the operator's explicit word:
 node qa-workflow/bin/qa-cli.js approve "<storyDir>" testcases --by "<operator>" [--note "<note>"]
 ```
@@ -218,4 +263,4 @@ node qa-workflow/bin/qa-cli.js approve "<storyDir>" testcases --by "<operator>" 
 > `qa-cli.js defer "<storyDir>" testcase-review --by "<operator>" --reason "<why>"`.
 
 ## Output
-Returns `{ artifactPath, reviewPagePath, checks: {passed, failed}, revisions, operatorRevisions, before, after, acCoverage, awaitingApproval: true }`.
+Returns `{ artifactPath, reviewPagePath, checks: {passed, failed}, revisions, operatorRevisions, before, after, acCoverage, coverageChanges: {recorded, awaitingRatification}, awaitingApproval: true }`.

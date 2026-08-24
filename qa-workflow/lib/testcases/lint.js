@@ -12,7 +12,22 @@
  * Contract: docs/ai/browserstack-process.md §10.1–10.4 (format) + §10.2a (traceability tags).
  * Severity: `error` fails the gate, `warn` is reported and does not.
  */
-const { COLUMNS } = require('./parse');
+const { COLUMNS, parentAc } = require('./parse');
+
+/**
+ * Words that commonly join a SECOND requirement onto an AC ("…, otherwise the box is dimmed").
+ *
+ * This is a **signal that asks for clause-level review**, never a semantic model — a hit is a `warn`,
+ * never an error, and the absence of a hit proves nothing. It exists because on B10-57764 AC5 read
+ * *"checking is only allowed when filtered by a category, **otherwise** the feature column is visible
+ * but the featured box is **dimmed**"* — two requirements under one id. Four cases carried `ac:AC-5`,
+ * the AC reported as covered, and the second clause was never asserted; two defects (B10-59276,
+ * B10-59278) lived in the unasserted half. See QA_PROCESS.md Phase 3.
+ */
+const CLAUSE_INDICATORS = [
+  'otherwise', 'unless', 'except', 'but ', 'however', 'while ',
+  'if not', 'when not', 'in which case', 'and also', 'as well as',
+];
 
 const PRIORITIES = ['Critical', 'High', 'Medium', 'Low'];
 const TYPES = ['Acceptance', 'Regression', 'Functional', 'Usability', 'Smoke & Sanity'];
@@ -29,7 +44,7 @@ const norm = (s) => String(s || '').toLowerCase().replace(/\s+/g, ' ').replace(/
 
 /**
  * @param {object} parsed        output of parse.parseTestCases()
- * @param {object} [opts]        { acs?:string[], requireScreens?:boolean, newImport?:boolean }
+ * @param {object} [opts]        { acs?:string[], acTexts?:Array<{id,text}>, requireScreens?:boolean, newImport?:boolean }
  * @returns {{findings:Array, errors:number, warnings:number, summary:object}}
  */
 function lintTestCases(parsed, opts = {}) {
@@ -106,10 +121,31 @@ function lintTestCases(parsed, opts = {}) {
     }
   }
 
-  // AC coverage — the check the review gate calls "no missing AC coverage"
+  // AC coverage — the check the review gate calls "no missing AC coverage".
+  // A declared id may be a whole AC (`AC-5`) or a decomposed clause (`AC-5.2`); both are covered the
+  // same way, by a case tagging that exact id. Decomposition happens in the requirements artifact, so
+  // this needs no separate coverage model (QA_PROCESS Phase 3).
   const covered = new Set(cases.flatMap((c) => c.acs));
   const uncovered = acs.filter((a) => !covered.has(a));
   for (const a of uncovered) add('error', 'uncovered-ac', `${a} has no test case`, { ac: a });
+
+  // Clause signal — an AC whose own wording suggests it carries more than one requirement, while it
+  // has NOT been decomposed into clause ids. Warn-only, by design: it asks for a clause-level review
+  // decision, it does not assert that the AC is multi-clause.
+  const declaredSet = new Set(acs);
+  const hasClauses = new Set(acs.filter((a) => a.includes('.')).map(parentAc));
+  for (const { id, text } of opts.acTexts || []) {
+    const idU = String(id).toUpperCase();
+    if (!declaredSet.has(idU) || idU.includes('.')) continue;   // only whole, declared ACs
+    if (hasClauses.has(idU)) continue;                          // already decomposed
+    const hit = CLAUSE_INDICATORS.find((w) => String(text).toLowerCase().includes(w));
+    if (!hit) continue;
+    add('warn', 'ac-possible-multi-clause',
+      `${idU} reads as more than one requirement (found "${hit.trim()}") and is not decomposed into `
+      + `clause ids (${idU}.1, ${idU}.2, …). Confirm at the review gate that EVERY clause is asserted, `
+      + `then either decompose it or record why one id is enough.`,
+      { ac: idU, indicator: hit.trim() });
+  }
 
   const errors = findings.filter((f) => f.severity === 'error').length;
   const warnings = findings.filter((f) => f.severity === 'warn').length;
@@ -122,10 +158,16 @@ function lintTestCases(parsed, opts = {}) {
       steps: cases.reduce((n, c) => n + c.steps.filter((s) => s.step || s.expected).length, 0),
       automatable: cases.filter((c) => c.automationStatus !== 'Automation Not Required').length,
       byType: TYPES.reduce((m, t) => (m[t] = cases.filter((c) => c.type === t).length, m), {}),
-      acs: { declared: acs.length, covered: [...covered].sort(), uncovered },
+      acs: {
+        declared: acs.length,
+        covered: [...covered].sort(),
+        uncovered,
+        clauses: acs.filter((a) => a.includes('.')).sort(),
+        possibleMultiClause: findings.filter((f) => f.code === 'ac-possible-multi-clause').map((f) => f.ac),
+      },
       screens: [...new Set(cases.flatMap((c) => c.screens))].sort(),
     },
   };
 }
 
-module.exports = { lintTestCases, PRIORITIES, TYPES, AUTOMATION_STATUSES, STATES };
+module.exports = { lintTestCases, PRIORITIES, TYPES, AUTOMATION_STATUSES, STATES, CLAUSE_INDICATORS };

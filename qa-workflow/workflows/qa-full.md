@@ -102,11 +102,11 @@ Execute [`qa-shift-left.md`](qa-shift-left.md) **Steps 0–9 exactly as written*
 
 At step 8 the operator gets the **review page** (standard for every story since 2026-08-10): one case at a
 time with a per-case **Accept / Needs update / Invalid-delete** verdict **and a comment**. Apply whatever
-its "Copy review" block returns, re-run lint + the nine checks from the top, then present again.
+its "Copy review" block returns, re-run lint + the ten checks from the top, then present again.
 
 Fingerprint + `record` each artifact with the commands given in `qa-shift-left.md` — **use the same
 per-skill `--generator` values** (`story-analysis@1.0`, `figma-analysis@1.0`, `clarification@1.0`,
-`impact-analysis@1.0`, `exploratory-testing@2.0`, `test-design@2.0`, `testcase-review@1.0`,
+`impact-analysis@1.0`, `exploratory-testing@2.1`, `test-design@2.1`, `testcase-review@1.1`,
 `browserstack-mgmt@2.0`). Do **not** stamp artifacts with `qa-full@2.0`: generators are
 skill-scoped so `version:` bumps invalidate the right artifacts and a later reconcile behaves identically
 regardless of which workflow produced the baseline. Only the state-level `generatedBy` records the
@@ -216,3 +216,20 @@ There is no `qa-full`-only state, so nothing is stranded by resuming through a d
 `testcases` · `testcase-review` · `browserstack-import` · *(`testcase-reconciliation`)* · `automation` ·
 `execution` · `visual-findings` · `defects` · `qa-summary`
 — under `<storyDir>/`, each recorded in `qa-state.json` (`generatedBy: qa-full@2.0`).
+
+---
+
+## Coverage-changing decisions apply to this workflow too
+
+Any decision here that **reduces or changes planned validation** — a reconciliation delta that removes a
+case, an exploratory conclusion that narrows scope, a requirement declared untestable — is recorded and
+ratified like any other:
+
+```
+node qa-workflow/bin/qa-cli.js coverage-change add    "<storyDir>" <id> --source reconciliation ...
+node qa-workflow/bin/qa-cli.js coverage-change list   "<storyDir>"
+node qa-workflow/bin/qa-cli.js coverage-change approve "<storyDir>" <id> --by "<operator>"
+```
+
+Re-approval of the suite and `complete-check` both **fail** while one is `proposed`. Authoritative rule:
+[`../../docs/ai/QA_PROCESS.md`](../../docs/ai/QA_PROCESS.md) *Coverage-changing decisions*.

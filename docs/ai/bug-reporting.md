@@ -60,6 +60,16 @@ A finding becomes a **filed Defect only if it passes ALL of the checks below**. 
    state, focus before reading focus-dependent attributes, and re-check a negative before reporting it.
    See [automation/playwright-framework.md](automation/playwright-framework.md) *Authoring traps*.
 
+**Rejecting a candidate closes the CLAIM, not the REQUIREMENT.** These eight checks test whether *this
+finding, as stated* is filable. A candidate can fail check 3 or 4 because the measurement, the fixture,
+the capture or the route was wrong — none of which says the underlying requirement is met. So a rejection
+records **what was disproved, what remains unresolved, and who owns the surviving question**; it never
+records "the requirement is satisfied", and it never counts as verification.
+Record shape: [`visual-testing/CLAUDE_CODE_OPERATOR.md`](visual-testing/CLAUDE_CODE_OPERATOR.md) §7.3 ·
+rule: [`QA_PROCESS.md`](QA_PROCESS.md) §5.7. *(Added after B10-57764 V-01: a false colour claim was
+correctly rejected, its true substance was never re-tested, and the rejection read as settled for four
+days until the operator found the defect by hand — B10-59276.)*
+
 Enforced in the QA Platform execution node (`apps/worker/src/nodes.ts`) as a mandatory pre-filing gate in the execution prompt.
 
 ---

@@ -1,9 +1,9 @@
 ---
 name: visual-testing
-description: Visual Testing (QA_PROCESS Phase 5). Compare each actual screen to its Figma design, apply the dynamic-vs-defect rules, and produce annotated Design-Bug evidence. Runs as a subagent.
+description: Visual Testing (QA_PROCESS Phase 5). Compare each actual screen to its Figma design, apply the dynamic-vs-defect rules, produce annotated Design-Bug evidence, and record rejected findings without closing the requirement behind them. Runs as a subagent.
 metadata:
   type: task
-  version: 1.1
+  version: 1.2
   phase: Phase 5 — Visual Testing
   workflow: [qa-implementation-validation]
   runsAs: subagent
@@ -68,12 +68,22 @@ comparison rules (dynamic-content exclusion taxonomy + tolerances, per the opera
    Actual · Root Cause · Recommendation); group recurring by shared component/token.
 5. Generate annotated side-by-side evidence via `automation/helpers/VisualComparisonHelper.js`
    (`compareScreenWithFindings` → red-annotated PNGs for Jira). Only confirmed defects are annotated.
+5a. **Record every REJECTED finding with the rejection schema — rejecting a claim never closes the
+   requirement.** A finding is an observation *plus a claim*; a wrong colour reading, a stale or
+   below-the-fold capture, the wrong fixture, the wrong route into the state, a headless-vs-headed
+   artifact or thin evidence all kill the claim while leaving the requirement untouched. Record what was
+   disproved · what remains unresolved · why it was rejected · the evidence used · who owns the surviving
+   question · whether further validation is required. **Never write a rejection as "the requirement is
+   satisfied."** If the surviving question is closed anyway, that is a coverage-changing decision —
+   `qa-cli.js coverage-change add … --source test-design` — not a verdict this phase may issue alone.
+   Schema: [`CLAUDE_CODE_OPERATOR.md`](../../../docs/ai/visual-testing/CLAUDE_CODE_OPERATOR.md) §7.3 ·
+   rule: [`QA_PROCESS.md`](../../../docs/ai/QA_PROCESS.md) §5.7.
 6. Write `evidence/visual-findings.md` (+ evidence files).
 
 ## Recording
 ```
 node qa-workflow/bin/qa-cli.js record "<storyDir>" visual-findings \
-     --path evidence/visual-findings.md --generator visual-testing@1.1 \
+     --path evidence/visual-findings.md --generator visual-testing@1.2 \
      --derive-artifacts figma-analysis
 ```
-Returns `{ screens, confirmedDefects, excludedStateDiffs }` (compact).
+Returns `{ screens, confirmedDefects, excludedStateDiffs, rejectedFindings, unresolvedQuestions }` (compact).

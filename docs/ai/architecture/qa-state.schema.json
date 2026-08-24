@@ -5,7 +5,12 @@
   "description": "Per-story reuse/freshness ledger written by Workflow 1 and reconciled by Workflow 2. One file per story at <TICKET>/qa-state.json. See qa-artifact-contract.md.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "ticket", "sources", "artifacts"],
+  "required": [
+    "schemaVersion",
+    "ticket",
+    "sources",
+    "artifacts"
+  ],
   "properties": {
     "schemaVersion": {
       "type": "integer",
@@ -30,42 +35,78 @@
     "sources": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["jira"],
+      "required": [
+        "jira"
+      ],
       "description": "Current known fingerprints of the story's inputs.",
       "properties": {
-        "jira": { "$ref": "#/$defs/jiraSource" },
-        "figma": { "$ref": "#/$defs/figmaSource" }
+        "jira": {
+          "$ref": "#/$defs/jiraSource"
+        },
+        "figma": {
+          "$ref": "#/$defs/figmaSource"
+        }
       }
     },
     "domains": {
       "type": "object",
       "description": "Consumed business-domain fingerprints, keyed by domain id (card, payment, marketing, ...).",
-      "propertyNames": { "$ref": "#/$defs/domainId" },
-      "additionalProperties": { "$ref": "#/$defs/domainFingerprint" }
+      "propertyNames": {
+        "$ref": "#/$defs/domainId"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/domainFingerprint"
+      }
     },
     "artifacts": {
       "type": "object",
       "description": "One record per artifact, keyed by artifact key (the shift-left baseline: requirements, figma-analysis, clarifications, impact, hls, testcases, testcase-review, browserstack-import — plus optional/conditional and Workflow-2 outputs).",
-      "propertyNames": { "$ref": "#/$defs/artifactKey" },
-      "additionalProperties": { "$ref": "#/$defs/artifactRecord" }
+      "propertyNames": {
+        "$ref": "#/$defs/artifactKey"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/artifactRecord"
+      }
     },
     "deferrals": {
       "type": "object",
       "description": "Operator-approved phase deferrals, keyed by artifact key. The only way past PHASE_DEPS, APPROVAL_DEPS and complete-check. A deferral always carries a name and a reason.",
-      "propertyNames": { "$ref": "#/$defs/artifactKey" },
-      "additionalProperties": { "$ref": "#/$defs/deferralRecord" }
+      "propertyNames": {
+        "$ref": "#/$defs/artifactKey"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/deferralRecord"
+      }
     },
     "approvals": {
       "type": "object",
       "description": "Operator approvals, keyed by artifact key. `testcases` must be approved before browserstack-import may be recorded — reviewing is the agent's job, approving is the operator's.",
-      "propertyNames": { "$ref": "#/$defs/artifactKey" },
-      "additionalProperties": { "$ref": "#/$defs/approvalRecord" }
+      "propertyNames": {
+        "$ref": "#/$defs/artifactKey"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/approvalRecord"
+      }
     },
     "skips": {
       "type": "object",
       "description": "Conditional phases (optional DAG members) deliberately not run, keyed by artifact key. Distinct from a deferral: a deferral postpones something owed, a skip states it was not needed. Both carry a name, so 'decided against' never looks like 'never considered'.",
-      "propertyNames": { "$ref": "#/$defs/artifactKey" },
-      "additionalProperties": { "$ref": "#/$defs/skipRecord" }
+      "propertyNames": {
+        "$ref": "#/$defs/artifactKey"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/skipRecord"
+      }
+    },
+    "coverageChanges": {
+      "type": "object",
+      "description": "Decisions that REDUCE or CHANGE planned validation, keyed by a short id. A coverage change is authoritative only once an operator approves it — see docs/ai/QA_PROCESS.md Principles (Coverage-changing decisions). Emitted by clarification/exploratory/reconciliation; reviewed at the test-case review gate; blocks `approve <dir> testcases` while still proposed.",
+      "propertyNames": {
+        "pattern": "^[a-z0-9][a-z0-9-]*$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/coverageChangeRecord"
+      }
     }
   },
   "$defs": {
@@ -82,38 +123,86 @@
     "deferralRecord": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["approvedBy", "reason", "at"],
+      "required": [
+        "approvedBy",
+        "reason",
+        "at"
+      ],
       "properties": {
-        "approvedBy": { "type": "string", "description": "The operator who approved skipping this phase." },
-        "reason": { "type": "string", "description": "Why it was skipped." },
-        "at": { "type": "string", "format": "date-time" }
+        "approvedBy": {
+          "type": "string",
+          "description": "The operator who approved skipping this phase."
+        },
+        "reason": {
+          "type": "string",
+          "description": "Why it was skipped."
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        }
       }
     },
     "skipRecord": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["decidedBy", "reason", "at"],
+      "required": [
+        "decidedBy",
+        "reason",
+        "at"
+      ],
       "properties": {
-        "decidedBy": { "type": "string", "description": "Who decided the conditional phase was not needed." },
-        "reason": { "type": "string", "description": "Why it was not needed." },
-        "at": { "type": "string", "format": "date-time" }
+        "decidedBy": {
+          "type": "string",
+          "description": "Who decided the conditional phase was not needed."
+        },
+        "reason": {
+          "type": "string",
+          "description": "Why it was not needed."
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        }
       }
     },
     "approvalRecord": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["approvedBy", "at"],
+      "required": [
+        "approvedBy",
+        "at"
+      ],
       "properties": {
-        "approvedBy": { "type": "string", "description": "The operator who approved the artifact." },
-        "at": { "type": "string", "format": "date-time" },
-        "artifact": { "type": "string", "description": "Artifact path approved, relative to the story folder." },
-        "snapshot": { "type": "string", "description": "Immutable copy of the approved content (<name>.approved<ext>), so later edits can never overwrite the approved baseline." },
-        "checksum": { "$ref": "#/$defs/sha256", "description": "sha256 of the content at approval time; a later mismatch requires a recorded testcase-reconciliation." },
-        "note": { "type": "string" },
+        "approvedBy": {
+          "type": "string",
+          "description": "The operator who approved the artifact."
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "artifact": {
+          "type": "string",
+          "description": "Artifact path approved, relative to the story folder."
+        },
+        "snapshot": {
+          "type": "string",
+          "description": "Immutable copy of the approved content (<name>.approved<ext>), so later edits can never overwrite the approved baseline."
+        },
+        "checksum": {
+          "$ref": "#/$defs/sha256",
+          "description": "sha256 of the content at approval time; a later mismatch requires a recorded testcase-reconciliation."
+        },
+        "note": {
+          "type": "string"
+        },
         "history": {
           "type": "array",
           "description": "Prior approvals of the same artifact, oldest first. A re-approval (e.g. after a post-development reconciliation) never erases who signed off the original.",
-          "items": { "$ref": "#/$defs/approvalRecord" }
+          "items": {
+            "$ref": "#/$defs/approvalRecord"
+          }
         }
       }
     },
@@ -129,13 +218,33 @@
     "jiraSource": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["updated", "hash"],
+      "required": [
+        "updated",
+        "hash"
+      ],
       "properties": {
-        "updated": { "type": "string", "format": "date-time", "description": "Jira issue `updated` at last reconcile." },
-        "hash": { "$ref": "#/$defs/sha256", "description": "sha256(normalize(hashed Jira fields))." },
+        "updated": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Jira issue `updated` at last reconcile."
+        },
+        "hash": {
+          "$ref": "#/$defs/sha256",
+          "description": "sha256(normalize(hashed Jira fields))."
+        },
         "fieldsHashed": {
           "type": "array",
-          "items": { "type": "string", "enum": ["summary", "description", "ac", "comments", "attachments", "links"] },
+          "items": {
+            "type": "string",
+            "enum": [
+              "summary",
+              "description",
+              "ac",
+              "comments",
+              "attachments",
+              "links"
+            ]
+          },
           "uniqueItems": true,
           "description": "Exactly which fields fed the hash."
         }
@@ -144,19 +253,41 @@
     "figmaSource": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["fileKey"],
+      "required": [
+        "fileKey"
+      ],
       "properties": {
-        "fileKey": { "type": "string", "description": "Per-story Figma file key from the ticket's Figma URL." },
+        "fileKey": {
+          "type": "string",
+          "description": "Per-story Figma file key from the ticket's Figma URL."
+        },
         "nodeIds": {
           "type": "array",
-          "items": { "type": "string", "pattern": "^[0-9]+[:-][0-9]+$" },
+          "items": {
+            "type": "string",
+            "pattern": "^[0-9]+[:-][0-9]+$"
+          },
           "uniqueItems": true,
           "description": "Frame node ids compared (accepts 1:211 or 1-211 forms)."
         },
-        "lastModified": { "type": "string", "format": "date-time", "description": "Figma file `lastModified`." },
-        "version": { "type": "string", "description": "Figma file `version` id." },
+        "lastModified": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Figma file `lastModified`."
+        },
+        "version": {
+          "type": "string",
+          "description": "Figma file `version` id."
+        },
         "framesHash": {
-          "oneOf": [ { "$ref": "#/$defs/sha256" }, { "type": "null" } ],
+          "oneOf": [
+            {
+              "$ref": "#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ],
           "description": "sha256 over exported frame PNGs; null until frames are exported."
         }
       }
@@ -164,16 +295,29 @@
     "domainFingerprint": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["version"],
+      "required": [
+        "version"
+      ],
       "properties": {
-        "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+$", "description": "Domain skill version consumed." },
-        "checksum": { "$ref": "#/$defs/sha256", "description": "sha256 of the domain skill content." }
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+$",
+          "description": "Domain skill version consumed."
+        },
+        "checksum": {
+          "$ref": "#/$defs/sha256",
+          "description": "sha256 of the domain skill content."
+        }
       }
     },
     "artifactRecord": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["path", "status", "generator"],
+      "required": [
+        "path",
+        "status",
+        "generator"
+      ],
       "properties": {
         "path": {
           "type": "string",
@@ -181,25 +325,146 @@
         },
         "status": {
           "type": "string",
-          "enum": ["complete", "partial", "missing", "stale", "modified"],
+          "enum": [
+            "complete",
+            "partial",
+            "missing",
+            "stale",
+            "modified"
+          ],
           "description": "complete = reusable; modified = hand-edited after generation, authoritative & reused (human edit wins); partial/missing/stale force regeneration. See qa-artifact-contract.md Reconcile steps 3 & 5."
         },
-        "generatedAt": { "type": "string", "format": "date-time" },
-        "generator": { "$ref": "#/$defs/generatorRef" },
+        "generatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "generator": {
+          "$ref": "#/$defs/generatorRef"
+        },
         "derivedFrom": {
           "type": "object",
           "description": "Fingerprints of the sources/upstream-artifacts used at generation time, keyed by name (jira | figma | <artifactKey>). Values are the sha256 that were current when this artifact was produced; a mismatch vs. the live fingerprint marks it stale.",
-          "propertyNames": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
-          "additionalProperties": { "$ref": "#/$defs/sha256" }
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/sha256"
+          }
         },
-        "checksum": { "$ref": "#/$defs/sha256", "description": "sha256 of the artifact file content (detects on-disk drift/tamper)." },
+        "checksum": {
+          "$ref": "#/$defs/sha256",
+          "description": "sha256 of the artifact file content (detects on-disk drift/tamper)."
+        },
         "domains": {
           "type": "array",
-          "items": { "$ref": "#/$defs/domainId" },
+          "items": {
+            "$ref": "#/$defs/domainId"
+          },
           "uniqueItems": true,
           "description": "Business domains this artifact consumed."
         },
-        "notes": { "type": "string" }
+        "notes": {
+          "type": "string"
+        }
+      }
+    },
+    "coverageChangeRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "affects",
+        "kind",
+        "reason",
+        "status"
+      ],
+      "properties": {
+        "source": {
+          "type": "string",
+          "enum": [
+            "clarification",
+            "exploratory",
+            "test-design",
+            "testcase-review",
+            "reconciliation",
+            "figma-analysis",
+            "prerequisites",
+            "operator"
+          ],
+          "description": "The phase whose decision reduced or changed the planned validation."
+        },
+        "sourceRef": {
+          "type": "string",
+          "description": "Where the decision is written, e.g. 'clarification/clarifications.md#A-3'."
+        },
+        "affects": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          },
+          "description": "AC ids, clause ids, screen ids or named requirements whose validation changes, e.g. ['AC-5'] or ['AC-5.2']."
+        },
+        "kind": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "enum": [
+              "removes-ac-coverage",
+              "narrows-ac-coverage",
+              "removes-state",
+              "removes-route",
+              "removes-visual-validation",
+              "visual-to-behavioural",
+              "automated-to-manual",
+              "merges-requirements",
+              "declared-not-testable",
+              "other"
+            ]
+          },
+          "description": "What kind of reduction this is. More than one may apply."
+        },
+        "was": {
+          "type": "string",
+          "description": "The validation that was planned before this decision."
+        },
+        "now": {
+          "type": "string",
+          "description": "The validation that remains after it."
+        },
+        "reason": {
+          "type": "string",
+          "description": "Why the reduction is justified. Must be checkable by a reviewer, not an assertion of confidence."
+        },
+        "evidence": {
+          "type": "string",
+          "description": "What the reason rests on — a measurement, a design node, a probe. The thing a reviewer re-checks."
+        },
+        "scopeChecked": {
+          "type": "string",
+          "description": "Which states/routes/variants the evidence actually covers. A decision generalised from one state to a whole requirement is the failure this field exists to expose (B10-57764 A-3)."
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "proposed",
+            "approved",
+            "rejected"
+          ],
+          "description": "'proposed' blocks approval of the test cases. 'rejected' means the coverage stays and the suite must cover it."
+        },
+        "approvedBy": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "note": {
+          "type": "string"
+        }
       }
     }
   },
@@ -213,18 +478,28 @@
         "jira": {
           "updated": "2026-07-22T09:12:00Z",
           "hash": "0000000000000000000000000000000000000000000000000000000000000000",
-          "fieldsHashed": ["summary", "description", "ac", "comments"]
+          "fieldsHashed": [
+            "summary",
+            "description",
+            "ac",
+            "comments"
+          ]
         },
         "figma": {
           "fileKey": "tvvGnEaxVjJvMWOTl4zjZC",
-          "nodeIds": ["1:211"],
+          "nodeIds": [
+            "1:211"
+          ],
           "lastModified": "2026-07-20T18:00:00Z",
           "version": "123456789",
           "framesHash": "3333333333333333333333333333333333333333333333333333333333333333"
         }
       },
       "domains": {
-        "card": { "version": "1.0", "checksum": "1111111111111111111111111111111111111111111111111111111111111111" }
+        "card": {
+          "version": "1.0",
+          "checksum": "1111111111111111111111111111111111111111111111111111111111111111"
+        }
       },
       "artifacts": {
         "requirements": {
@@ -232,16 +507,22 @@
           "status": "complete",
           "generatedAt": "2026-07-22T10:00:00Z",
           "generator": "story-analysis@1.0",
-          "derivedFrom": { "jira": "0000000000000000000000000000000000000000000000000000000000000000" },
+          "derivedFrom": {
+            "jira": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
           "checksum": "2222222222222222222222222222222222222222222222222222222222222222",
-          "domains": ["card"]
+          "domains": [
+            "card"
+          ]
         },
         "figma-analysis": {
           "path": "figma-analysis/analysis.md",
           "status": "complete",
           "generatedAt": "2026-07-22T10:05:00Z",
           "generator": "figma-analysis@1.0",
-          "derivedFrom": { "figma": "3333333333333333333333333333333333333333333333333333333333333333" },
+          "derivedFrom": {
+            "figma": "3333333333333333333333333333333333333333333333333333333333333333"
+          },
           "checksum": "4444444444444444444444444444444444444444444444444444444444444444"
         },
         "impact": {

@@ -3,7 +3,7 @@ name: exploratory-testing
 description: Exploratory work in both directions — pre-development ANALYSIS of existing behaviour to ground test design (conditional, qa-shift-left), and post-development charter-based TESTING of the delivered build (qa-implementation-validation). Inline (drives the app).
 metadata:
   type: task
-  version: 2.0
+  version: 2.1
   phase: Exploratory Analysis (shift-left) / Exploratory Testing (validation)
   workflow: [qa-shift-left, qa-implementation-validation]
   runsAs: inline
@@ -49,6 +49,27 @@ deployed to explore. Record the decision + reason in `prerequisites.md`; **skipp
 never a silent omission.** `exploratory-notes` is a conditional artifact: absent, it is not reconciled;
 present, it is (see `dag.js` `BASELINE_OPTIONAL`).
 
+### Also charter the ASSUMPTIONS, not only the unknowns
+
+Mode A's job is not only to understand the story — it is the **one phase positioned to falsify an
+assumption before it becomes coverage**. Charter these explicitly whenever they are in play:
+
+- **state differences and state transitions** — does behaviour actually differ per state?
+- **conditional UI** — what makes a control appear, enable, dim, or disappear?
+- **route-dependent behaviour** — can the same displayed state be reached in more than one way, and do
+  those ways differ? (fresh load · apply · un-apply **with** the submit action · un-apply **without** it ·
+  navigate away and back · Back button)
+- **visual differences between states** — measure them, do not assume them
+- **Figma states that look identical in one configuration but differ in another**
+- **any requirement declared "not visually testable"**, or **converted from visual to behavioural
+  validation** — re-derive that conclusion against the real state matrix
+
+**For a visual requirement, inspect the relevant state combinations before concluding no visual oracle
+exists.** Build the matrix (e.g. checked/unchecked × enabled/disabled) and read **every cell**. Never
+generalise a finding from one state to the whole requirement — that generalisation is precisely what
+[`QA_PROCESS.md`](../../../docs/ai/QA_PROCESS.md) *Coverage-changing decisions* exists to catch, and if
+you do conclude a reduction, record it there rather than asserting it in a note.
+
 ### Steps
 1. Derive charters from the open questions above — one charter per question, each with what it would
    change about the test cases if answered.
@@ -57,7 +78,10 @@ present, it is (see `dag.js` `BASELINE_OPTIONAL`).
 3. Write `evidence/exploratory-notes.md`: per charter — question, what was observed, evidence
    (screenshot/dump), and **the test-design implication** (cases to add, an expectation to correct, a
    scope assumption to drop).
-4. Feed it into `test-design` Phase B. An observation with no test-design implication is a note, not a
+4. Feed it into `test-design` Phase B. **An observation that *narrows* the plan — "this state does not
+   differ", "this is not testable", "one case covers both" — is a coverage-changing decision: record it
+   with `qa-cli.js coverage-change add … --source exploratory`, naming in `--scope-checked` the states
+   and routes you actually inspected.** An observation with no test-design implication is a note, not a
    finding — and **an observation is never a defect here**: nothing has been delivered to be wrong.
    Anything that looks like a pre-existing bug goes to the operator as an observation, not to Jira.
 
@@ -78,7 +102,7 @@ present, it is (see `dag.js` `BASELINE_OPTIONAL`).
 ## Recording (both modes)
 ```
 node qa-workflow/bin/qa-cli.js record "<storyDir>" exploratory-notes \
-     --path evidence/exploratory-notes.md --generator exploratory-testing@2.0 \
+     --path evidence/exploratory-notes.md --generator exploratory-testing@2.1 \
      --derive-artifacts requirements,figma-analysis,impact
 ```
 Returns `{ artifactPath, mode, charters, findings, testDesignImplications }` (compact).

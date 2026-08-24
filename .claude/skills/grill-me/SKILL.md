@@ -45,8 +45,35 @@ Interrogate every one of these dimensions (skip a group only if truly N/A, and s
 13. **Regression risk** — what existing behavior could this break.
 14. **Non-functional** — performance, accessibility, security expectations if any.
 
+## Coverage-changing answers — flag them, never bank them
+
+Most answers *add* information. Some **reduce planned validation** — and those are the dangerous ones,
+because nothing downstream re-opens a clarification the test cases then implement faithfully.
+
+An answer is **coverage-changing** when it removes or narrows AC coverage, drops a state or a route,
+turns visual validation into behavioural, turns automated into manual, merges clauses into one assertion,
+or declares a requirement not testable. The full list and the authoritative rule are in
+[`docs/ai/QA_PROCESS.md`](../../../docs/ai/QA_PROCESS.md) — *Coverage-changing decisions*.
+
+When you reach one:
+
+1. Write it in `clarification/clarifications.md` under its own anchor, stating **what will no longer be
+   asserted** — not merely what was decided.
+2. **Record it, so it is reviewable rather than inherited:**
+   ```
+   node qa-workflow/bin/qa-cli.js coverage-change add "<storyDir>" <id>         --source clarification --source-ref "clarification/clarifications.md#<anchor>"         --affects AC-<n> --kind <kind>[,<kind>] --reason "<why>"         --evidence "<what the reason rests on>" --scope-checked "<which states/routes it covers>"
+   ```
+3. **`--scope-checked` is not optional in spirit.** Before concluding *"there is no oracle"* or *"this
+   cannot be tested"*, check the **relevant state dimensions** — a property measured in one state says
+   nothing about the others. Name the states you actually looked at.
+
+It stays `proposed` until the operator ratifies it, and it **blocks test-case approval** until then.
+That is deliberate: reducing coverage is the operator's call, not a by-product of answering a question.
+
 ## Rules of engagement
 - **Challenge assumptions.** If the story assumes something unstated, surface it as a question.
+- **Never let an answer quietly shrink the test plan.** A decision that reduces validation is recorded
+  and ratified (above), never simply written down and inherited.
 - **Never sign off on shallow coverage.** Missing validations/edge cases are defects in the story.
 - **Do not proceed** until scope, requirements, and ambiguities are resolved — or the user
   explicitly says "assume X and continue."

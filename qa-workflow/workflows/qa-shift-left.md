@@ -74,6 +74,14 @@ Creates the story folder (with standard subfolders per `CLAUDE.md` STEP 0) + a `
 
 ### 3 · Clarification  ⟵ **gate (may STOP)**  → `clarifications`
 - Run the existing **`grill-me`** skill (inline, interactive). Resolve every ambiguity; **do not proceed until scope is locked.**
+- **Any answer that REDUCES planned validation is a coverage-changing decision** — removes/narrows an AC,
+  drops a state or a route, turns visual into behavioural, automated into manual, merges clauses, or
+  declares something untestable. Record each one so it is reviewable rather than inherited; it stays
+  `proposed` and **blocks test-case approval at Step 8** until the operator ratifies it. Rule:
+  [`QA_PROCESS.md`](../../docs/ai/QA_PROCESS.md) *Coverage-changing decisions*.
+  ```
+  node qa-workflow/bin/qa-cli.js coverage-change add "<storyDir>" <id> --source clarification        --source-ref "clarification/clarifications.md#<anchor>" --affects AC-<n> --kind <kind>[,<kind>]        --reason "<why>" --evidence "<what it rests on>" --scope-checked "<states/routes covered>"
+  ```
 - Write `clarification/clarifications.md`, then record:
   ```
   node qa-workflow/bin/qa-cli.js record "<storyDir>" clarifications \
@@ -105,7 +113,7 @@ Creates the story folder (with standard subfolders per `CLAUDE.md` STEP 0) + a `
 - Record (only if it ran):
   ```
   node qa-workflow/bin/qa-cli.js record "<storyDir>" exploratory-notes \
-       --path evidence/exploratory-notes.md --generator exploratory-testing@2.0 \
+       --path evidence/exploratory-notes.md --generator exploratory-testing@2.1 \
        --derive-artifacts requirements,figma-analysis,impact
   ```
 
@@ -119,7 +127,7 @@ Creates the story folder (with standard subfolders per `CLAUDE.md` STEP 0) + a `
 - Record:
   ```
   node qa-workflow/bin/qa-cli.js record "<storyDir>" hls \
-       --path hls/hls.md --generator test-design@2.0 \
+       --path hls/hls.md --generator test-design@2.1 \
        --derive-artifacts requirements,figma-analysis,impact --domains <domains>
   ```
 
@@ -135,7 +143,7 @@ Creates the story folder (with standard subfolders per `CLAUDE.md` STEP 0) + a `
 - Record:
   ```
   node qa-workflow/bin/qa-cli.js record "<storyDir>" testcases \
-       --path testcases/testcases.csv --generator test-design@2.0 \
+       --path testcases/testcases.csv --generator test-design@2.1 \
        --derive-artifacts hls,requirements,impact --domains <domains>
   ```
 - **Do not import yet.** Go to Step 8.
@@ -147,22 +155,32 @@ Creates the story folder (with standard subfolders per `CLAUDE.md` STEP 0) + a `
        --acs-from "<storyDir>/requirements-analysis/requirements.md" --require-screens
   ```
   which **exits 1** on duplicate titles/step-sequences, a step with no Expected Result, a format or
-  vocabulary violation, a case citing no AC, or **an AC with no case** — then the nine-check review
-  (unrelated cases · correct expected results · granularity · categorization · automatable
-  classification · justified regression coverage). It **revises and re-runs until all nine pass**, and
-  writes `testcases/review.md`.
+  vocabulary violation, a case citing no AC, or **an AC (or clause id) with no case**, and **warns**
+  `ac-possible-multi-clause` on an AC whose wording carries a second requirement — then the **ten**-check
+  review (unrelated cases · clause-level AC coverage · correct expected results · granularity ·
+  categorization · automatable classification · justified regression coverage · **upstream coverage
+  changes challenged**). It **revises and re-runs until all ten pass**, and writes `testcases/review.md`.
+- **Coverage changes are ratified at this same stop.** `approve … testcases` **exits non-zero** while any
+  is `proposed`, so present them with the counts and the AC table:
+  ```
+  node qa-workflow/bin/qa-cli.js coverage-change list "<storyDir>"
+  node qa-workflow/bin/qa-cli.js coverage-change approve "<storyDir>" <id> --by "<operator>"
+  #   ...or, if the operator wants the coverage back:
+  node qa-workflow/bin/qa-cli.js coverage-change reject  "<storyDir>" <id> --by "<operator>" --reason "<why>"
+  ```
+  A **reject** means the coverage stays: re-open `test-design`, add the cases, re-run the gate.
 - **Build the operator's review page** — standard for every story since 2026-08-10:
   ```
   node automation/gen_testcase_review_page.js --story "<storyDir>"
   ```
   One case at a time, with a per-case **Accept / Needs update / Invalid-delete** verdict **and a comment**.
-  Its "Copy review" block is the revision list: apply it to `testcases.csv`, re-run lint + the nine checks
+  Its "Copy review" block is the revision list: apply it to `testcases.csv`, re-run lint + the ten checks
   from the top, record the changes in `review.md`, and present again. (Skill §*Operator review page*.)
 - Record the review, then **present the counts, the AC-coverage table and every revision to the operator
   and STOP.** Approval is theirs:
   ```
   node qa-workflow/bin/qa-cli.js record "<storyDir>" testcase-review \
-       --path testcases/review.md --generator testcase-review@1.0 --derive-artifacts testcases
+       --path testcases/review.md --generator testcase-review@1.1 --derive-artifacts testcases
   node qa-workflow/bin/qa-cli.js approve "<storyDir>" testcases --by "<operator>" [--note "<note>"]
   ```
 - `approve` snapshots the approved CSV (`testcases/testcases.approved.csv`) + its checksum, so nothing

@@ -3,7 +3,7 @@ name: test-design
 description: Test Design (QA_PROCESS Phase 3). HLS + detailed test-case generation (both shift-left), and test-case reconciliation against the delivered implementation (validation). Runs as a subagent.
 metadata:
   type: task
-  version: 2.0
+  version: 2.1
   phase: HLS + Test Case Generation + Test Case Reconciliation
   workflow: [qa-shift-left, qa-implementation-validation]
   runsAs: subagent
@@ -45,7 +45,7 @@ metadata:
 ### Recording
 ```
 node qa-workflow/bin/qa-cli.js record "<storyDir>" hls \
-     --path hls/hls.md --generator test-design@2.0 \
+     --path hls/hls.md --generator test-design@2.1 \
      --derive-artifacts requirements,figma-analysis,impact --domains card,payment,marketing
 ```
 
@@ -61,14 +61,28 @@ grounded rather than speculative)*.
    regression coverage identified in `impact` · anything the exploratory analysis surfaced.**
    Scope localization to the surface's real capability (a surface with no locale switch gets no AR/RTL
    sweep — see `CLAUDE.md` scope rules), never to a default.
-3. **Tag every case for traceability** in the Tags column (§10.2a): `ac:AC-<n>` for **each** AC it
-   verifies — **at least one, mandatory** — plus `screen:<screenId>` for the screen(s) it exercises
+3. **Decompose before tagging (QA_PROCESS §3.0a — do not re-inline it, read it).** Where an AC carries
+   more than one atomic requirement (`if X → Y, otherwise → Z`, or several states/conditions), split it
+   into **clause ids** in `requirements.md` (`AC-5.1`, `AC-5.2`) and cover each independently — the lint
+   parses decimal ids, so clause coverage is enforced by the existing `uncovered-ac` error with no new
+   machinery. Then reason about coverage as **AC → clause → state → route → expected behaviour/visual
+   expectation**, enumerating only the states and routes the requirement makes *meaningful*
+   (intelligent coverage, never a Cartesian product). For stateful UI, ask explicitly: *"what are the
+   meaningful ways to reach this state, and can behaviour differ by how we got there?"* — a filter
+   removed **with** the submit action and **without** it are different routes.
+   **Any state, route or validation dimension you decide NOT to cover is a coverage-changing decision**
+   — record it (`qa-cli.js coverage-change add …`), do not simply omit it.
+4. **Tag every case for traceability** in the Tags column (§10.2a): `ac:AC-<n>` (or the clause id
+   `ac:AC-<n>.<m>`) for **each** requirement it verifies — **at least one, mandatory** — plus
+   `screen:<screenId>` for the screen(s) it exercises
    (QA_PROCESS Phase 3), alongside the existing `ai-created`. Mark each case
    **automatable / not-automatable** via Automation Status — `automation-gen` and the BrowserStack
    `automation_status` sync both read that classification.
-4. Write `testcases/testcases.csv` (BrowserStack-compatible) + `testcases/coverage-notes.md`
-   (AC → case map, and the reason for every AC with no case).
-5. **Self-check before handing off** — the review gate runs this anyway, so do not hand it a suite that
+5. Write `testcases/testcases.csv` (BrowserStack-compatible) + `testcases/coverage-notes.md`
+   (AC/clause → case map, the state+route matrix actually covered, and the reason for every AC or clause
+   with no case). A reason that reduces coverage belongs in `coverageChanges` too — the note explains,
+   the record is what gets ratified.
+6. **Self-check before handing off** — the review gate runs this anyway, so do not hand it a suite that
    fails on mechanics:
    ```
    node qa-workflow/bin/qa-cli.js testcase-lint "<storyDir>" \
@@ -77,7 +91,7 @@ grounded rather than speculative)*.
 ### Recording
 ```
 node qa-workflow/bin/qa-cli.js record "<storyDir>" testcases \
-     --path testcases/testcases.csv --generator test-design@2.0 \
+     --path testcases/testcases.csv --generator test-design@2.1 \
      --derive-artifacts hls,requirements,impact --domains card,payment,marketing
 ```
 **Then hand off to [`testcase-review`](../testcase-review/SKILL.md) — do NOT import.** `browserstack-mgmt`
@@ -95,6 +109,9 @@ execution, exploratory testing, the implementation or the live application shows
    change justifies it · add regression cases discovered during validation.
    **An adjusted expected result needs an authority — an AC, the design, or a recorded clarification.
    "The app does X" is not one** (that is a defect candidate; route it to `defect-reporting`).
+   **A delta that removes or narrows coverage is a coverage-changing decision**, not just a reconciliation
+   row: record it with `qa-cli.js coverage-change add …` (QA_PROCESS Principles). Re-approval of the
+   suite is blocked until the operator ratifies it.
 3. Write `testcases/reconciliation.md`: one row per delta — `case id · action · reason · authority
    (AC/design/rule) · evidence`. Then edit `testcases/testcases.csv` in place.
 4. Re-run `testcase-review` **over the deltas only**, and get a fresh operator approval, before the
@@ -102,9 +119,9 @@ execution, exploratory testing, the implementation or the live application shows
 ### Recording
 ```
 node qa-workflow/bin/qa-cli.js record "<storyDir>" testcase-reconciliation \
-     --path testcases/reconciliation.md --generator test-design@2.0 --derive-artifacts testcases
+     --path testcases/reconciliation.md --generator test-design@2.1 --derive-artifacts testcases
 node qa-workflow/bin/qa-cli.js record "<storyDir>" testcases \
-     --path testcases/testcases.csv --generator test-design@2.0 \
+     --path testcases/testcases.csv --generator test-design@2.1 \
      --derive-artifacts hls,requirements,impact --domains card,payment,marketing
 node qa-workflow/bin/qa-cli.js approve "<storyDir>" testcases --by "<operator>" --note "<what changed>"
 ```
