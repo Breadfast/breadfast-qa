@@ -91,24 +91,41 @@ diagnose before escalating.
 4. **`browserstack-mgmt`** (inline, **Mode B — sync**) → re-record `browserstack-import`. Apply the deltas
    to the **existing** folder by `TC-xxxx` id (create/update/archive); never re-upload the whole CSV as
    new cases — that duplicates the folder and orphans every `@TmsLink`. Verify each write by reading it back.
-5. **`automation-gen`** → `automation` — plan gate (written reuse ladder) → reuse framework assets;
-   automate the automatable cases → **`framework-conformance`** gate before recording (no new artifact;
-   writes `automation/conformance-review.md`, blocking violations fixed first).
-6. **Execution** (4 combos: iOS/Android × en/US + ar/EG) → `execution` — run, capture screenshots + structured dumps.
-7. **`visual-testing`** → `visual-findings` — per screen: pair Expected↔Actual, apply dynamic-vs-defect rules, annotated Design-Bug evidence (per `CLAUDE_CODE_OPERATOR.md`).
-8. **`defect-reporting`** (inline) → `defects` — file functional + Design bugs with evidence.
-9. **QA Summary** → `qa-summary` — consolidate functional + visual results, coverage, risks, recommendation.
+5. **Manual execution of the approved suite** ⟵ **runs BEFORE automation (operator instruction 2026-08-20, standing)**
+   Execute every approved case **by hand**, recording a per-case verdict (pass / fail / blocked / skipped)
+   with evidence, into **`execution-reports/manual-execution.md`**. A story is proven manually before effort
+   is spent encoding it, and an automated test written against unverified behaviour tends to enshrine
+   whatever the app currently does. Cases the operator **excluded from automation are executed here too** —
+   excluded from automation is not excluded from testing.
+   - **No artifact is recorded at this step, and no gate is bypassed.** `PHASE_DEPS = { execution: 'automation' }`
+     still holds: the manual results are written to disk now, automation follows, and the automated results are
+     appended before `execution` is recorded. That gate exists because on **B10-56717** the phases were
+     reordered and automation fell off the end of the run; manual-first must not reopen that hole.
+   - Findings route to phase 2 (a coverage change → loop back through the gate) or phase 9 (a grounded defect).
+6. **`automation-gen`** → `automation` — plan gate (written reuse ladder) → reuse framework assets;
+   automate **only the operator-selected** cases → **`framework-conformance`** gate before recording (no new
+   artifact; writes `automation/conformance-review.md`, blocking violations fixed first).
+7. **Automated execution** (mobile: 4 combos iOS/Android × en/US + ar/EG; web-admin: 1 combo EN) → `execution`
+   — run the suite, capture screenshots + structured dumps, and **append** to the manual results so the
+   recorded `execution` artifact carries both passes.
+8. **`visual-testing`** → `visual-findings` — per screen: pair Expected↔Actual, apply dynamic-vs-defect rules, annotated Design-Bug evidence (per `CLAUDE_CODE_OPERATOR.md`).
+9. **`defect-reporting`** (inline) → `defects` — file functional + Design bugs with evidence.
+10. **QA Summary** → `qa-summary` — consolidate functional + visual results, coverage, risks, recommendation.
    State the **test-case reconciliation** explicitly: cases added/updated/removed and why, or "no deltas".
 
 Record each produced artifact (`qa-cli.js record ... --derive-artifacts <upstream>`) and validate `qa-state.json`.
 
-**Run these phases IN ORDER.** `automation-gen` (5) precedes execution (6) so the generated suite can
-drive the runs, and recording `execution` is **blocked** while `automation` is missing or `partial`
-(`PHASE_DEPS` in `qa-cli.js`). On **B10-56717** the phases were reordered, automation landed last, and it
-was never generated at all — no test class, no page objects, no story branch — while every other artifact
-reported `complete`.
+**Run these phases IN ORDER.** The **manual** pass (5) precedes `automation-gen` (6) so the story is proven
+before it is encoded; `automation-gen` (6) precedes **automated** execution (7) so the generated suite can
+drive the runs; and recording `execution` is **blocked** while `automation` is missing or `partial`
+(`PHASE_DEPS` in `qa-cli.js`). Manual-first therefore changes the **order of work**, not the order of
+**recorded artifacts** — the manual results land in `execution-reports/manual-execution.md` at step 5 and are
+folded into the `execution` artifact at step 7. On **B10-56717** the phases were reordered, automation landed
+last, and it was never generated at all — no test class, no page objects, no story branch — while every other
+artifact reported `complete`. That is the hole the gate closes, and manual-first must not reopen it: **if the
+manual pass ends the run, `automation` is owed and needs a recorded operator deferral, not silence.**
 
-**Late deltas.** Execution (6) or visual testing (7) may still reveal a needed case change. Loop back
+**Late deltas.** Execution (7) or visual testing (8) may still reveal a needed case change. Loop back
 through 2 → 3 → 4 for it; do not smuggle the change into the CSV afterwards. `complete-check` **fails**
 a run whose approved suite drifted with no `testcase-reconciliation` recorded.
 

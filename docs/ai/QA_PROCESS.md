@@ -237,7 +237,25 @@ Execute across the applicable surfaces:
 - **Web** — the web application (per supported browser/locale).
 - **Mobile** — iOS and Android, EN and AR (the four-combo default).
 
+> **Manual execution comes FIRST — before any automation is written (operator instruction 2026-08-20, standing).**
+> Once the test cases are **approved** (Phase 3 §6), the approved suite is executed **by hand** and each case
+> gets a recorded verdict. Only then is automation generated, and it encodes behaviour that is already
+> understood. The reasons: a story must be *proven to work* before effort is spent encoding it; an automated
+> test written against unverified behaviour tends to enshrine whatever the app currently does; and a manual
+> pass surfaces the interaction traps (auto-dismissing toasts, shifting column indices, filter state that
+> survives navigation) that otherwise appear as automation flakiness.
+>
+> **This does not reorder the recorded artifacts.** `automation` is still recorded before `execution` —
+> `PHASE_DEPS = { execution: 'automation' }` in `qa-cli.js` is a real gate and is **not** bypassed. The
+> manual pass is written to `execution-reports/manual-execution.md` as it happens, automation follows, and
+> the automated results are then appended before `execution` is recorded. That gate exists because on
+> **B10-56717** the phases were reordered and automation fell off the end of the run entirely; manual-first
+> satisfies the QA requirement without reopening that hole.
+
 ### Activities
+0. **Manual execution of the approved suite** — work every approved case step by step by hand, recording
+   **pass / fail / blocked / skipped** per case with evidence, *before* automation exists. Cases the operator
+   excluded from automation are executed here too — *excluded from automation is not excluded from testing*.
 1. **Prepare state** — provision prerequisites (roles, data, flags) from Phase 1; execute only against the intended environment.
 2. **API execution** — verify status codes, payloads, contracts, and side effects for the flows under test.
 3. **Web execution** — drive each case step-by-step; compare live result to the expected result; **capture a screenshot per screen state**.
@@ -251,6 +269,7 @@ Execute across the applicable surfaces:
 - Candidate defects (grounded, reproducible).
 
 ### Exit gate ✅
+- [ ] **The approved suite was executed MANUALLY first, with a per-case verdict recorded, before automation was written.**
 - [ ] Every case executed on every applicable combo (or explicitly marked blocked with reason).
 - [ ] A screenshot captured per screen state.
 - [ ] Outcomes and grounded defects recorded.

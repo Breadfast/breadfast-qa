@@ -3,7 +3,7 @@ name: framework-conformance
 description: Framework-conformance gate for generated automation (QA_PROCESS Phase 4, post-generation). Reviews the code THIS story authored inside the Breadfast Java framework against the framework's real conventions — the checks compile + checkstyle cannot make. Runs as a subagent, after automation-gen writes code and before the `automation` artifact is recorded.
 metadata:
   type: task
-  version: 1.1
+  version: 1.2
   phase: Automation Generation (gate)
   workflow: [qa-implementation-validation, qa-full]
   runsAs: subagent
@@ -61,10 +61,12 @@ discipline as the Defect Grounding Gate ([bug-reporting.md](../../../docs/ai/bug
 
 1. **The rule** — the exact standard breached, with its source (`automation-generation.md` §9.x /
    `coding-standards.md` §… / memory `java-framework-style` item n).
-2. **The precedent** — the **nearest sibling framework file, opened and read in this pass**, that
-   establishes the convention, cited as `path:line`. Recalling a convention is not establishing it.
-   A claim of the form *"the framework never does X"* requires the **grep that proves it**, with the
-   command recorded verbatim in the review.
+2. **The precedent** — the **nearest HUMAN-AUTHORED framework file, opened and read in this pass**,
+   that establishes the convention, cited as `path:line`, **with the authorship check recorded**
+   (`git log --format='%an' -- <path> | sort -u`). Recalling a convention is not establishing it, and
+   a *generated* sibling is not a precedent — on B10-58603 this gate passed a class by comparing it
+   against three generated siblings in its own package (contract §4.2). A claim of the form *"the
+   framework never does X"* requires the **grep that proves it**, with the command recorded verbatim.
 3. **The offence** — the generated `file:line`.
 
 Per item record exactly one verdict: **PASS** · **VIOLATION (blocking)** · **ADVISORY** (style
@@ -226,9 +228,32 @@ ACs never raised.
 - [ ] Every open Jira **bug subtask** on the story maps to a test, or is explicitly declared
       visual-only / not-automated. Cross-check against Jira, not against your own notes. (§9.8)
 
+### J. Structural alignment against the human-authored references (v1.2)
+- [ ] The 2–3 golden references named in `framework-reference.md` are **human-authored**, with the
+      `git log` authorship check recorded (contract §4.2).
+- [ ] The **measured comparison** from contract §7.1 is in the review: lines · public methods ·
+      `@FindBy` count · `String …Selector` count · Javadoc lines, new class beside each reference.
+      Being an outlier on any row is a blocking violation, not a note.
+- [ ] **Locator-to-logic ratio** matches: locator-heavy, logic-light. More Javadoc lines than
+      `@FindBy` fields ⇒ not conforming.
+- [ ] **No reimplemented framework behaviour in a page object** — no `PointerInput`/`Sequence` scroll
+      loops, swipe logic, scroll budgets or `MAX_*_SCROLLS`; scroll-to-element goes through
+      `scrollUntilACertainElementIsFound(...)` with `getScrollableContentContainer()` + a
+      selector-string accessor (mobile-native-framework.md §3; per-platform argument order respected).
+- [ ] **No geometry** — no rect maths, viewport-bounds checks or centre/tolerance comparisons. If a
+      requirement appears to need it, it is a visual check and does not belong in a page object.
+- [ ] **No `getExpected*()` accessors.** Expected values are literals in the test.
+- [ ] **No generic string-dispatch** over a fixed control set; one explicit `press<Control>Btn()` each.
+- [ ] **No story narrative in production code** — no story history, investigation notes, evidence
+      paths or decision logs in a page object's comments.
+- [ ] For a mobile screen: `mobile-native-framework.md` §2/§3/§4 were read **this pass**, and the
+      class follows them (individual `@FindBy` per fixed control with bilingual `or`; `String
+      …Selector` only for templated lookups; `press*`/`is*Displayed()` naming; no fluent chaining).
+
 ### I. The last two questions
-- [ ] **Read the nearest sibling class end-to-end and answer in writing:** would a framework engineer
-      reading this diff be able to tell it was machine-generated? Name whatever gives it away.
+- [ ] **Read the nearest HUMAN-AUTHORED sibling class end-to-end and answer in writing:** would a
+      framework engineer reading this diff be able to tell it was machine-generated? Name whatever
+      gives it away. (A generated sibling cannot answer this question — §4.2 / grounding rule 2.)
 - [ ] **Would a QA engineer who has never seen this story understand every method on first reading?**
       Name each one that fails, and move the mechanics behind a well-named page-object method. Nested
       `if`s, nested loops, streams, index arithmetic and duplicate fallback paths in a test body are
@@ -245,7 +270,7 @@ ACs never raised.
 ## Output — `<storyDir>/automation/conformance-review.md`
 
 ```markdown
-# <TICKET> — Framework conformance review (framework-conformance@1.0)
+# <TICKET> — Framework conformance review (framework-conformance@1.2)
 Reviewed: <files this story authored, with LOC>   Framework branch: <branch>   Commit/worktree: <sha or "uncommitted">
 
 ## Verdict: CONFORMING | VIOLATIONS FOUND (n blocking, m advisory)

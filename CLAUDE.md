@@ -175,6 +175,20 @@ node automation/browserstack_test_run.js --folder-url "<the shared folder link>"
 ```
 It derives project + folder from the link, sets **`automation_status = automated`** on exactly the cases bound to a test by `@TmsLink`, creates **one run per platform** (mirrored classes share `@TmsLink` ids, so a shared run would have the second platform overwrite the first), attaches the recorded results, and **verifies every write by reading it back** — a `200` from this API is not proof. Record the run ids in the story report. Full contract, result sourcing and the API traps: [docs/ai/browserstack-process.md](docs/ai/browserstack-process.md) §10.8.
 
+### STEP 7b — Manual execution of the approved suite  ⟵ **BEFORE any automation is written**
+**Standing instruction (operator, 2026-08-20).** As soon as the cases are approved, execute the approved
+suite **by hand** and record a **per-case verdict** (pass / fail / blocked / skipped) with evidence into
+`execution-reports/manual-execution.md`. Automation is generated **after** this, so it encodes behaviour
+already understood rather than enshrining whatever the app happens to do. Cases the operator excluded from
+automation are executed here too — **excluded from automation is not excluded from testing.**
+
+This changes the order of **work**, not the order of **recorded artifacts**: `PHASE_DEPS = { execution:
+'automation' }` in `qa-cli.js` still blocks recording `execution` until `automation` is complete, so the
+manual results sit on disk and are folded into the `execution` artifact after the automated run. If a run
+stops after the manual pass, **`automation` is owed** and needs a recorded operator deferral, never silence
+(the B10-56717 failure). Methodology: [QA_PROCESS](docs/ai/QA_PROCESS.md) Phase 4 · sequencing:
+[qa-implementation-validation](qa-workflow/workflows/qa-implementation-validation.md) phases 5–7.
+
 > **Clarify-first vs auto-run (resolved policy):** Steps 1–7 (analysis → test-case design → import) are **clarify-first** — stop and grill until scope is locked. They hold the run's **two planned stops**: the **clarification gate** (STEP 3) and the **test-case approval gate** (STEP 6b). **Once the cases are approved, the execution sessions below run end-to-end WITHOUT stopping** to ask. During execution, only pause for a genuine blocker (unknown OTP/BCID the system can't derive, a required backend status change, story content that cannot be found) — or a **re-approval** of test cases that execution itself changed.
 
 ---
@@ -182,14 +196,15 @@ It derives project + folder from the link, sets **`automation_status = automated
 ## 3. Web Story Process (after Steps 1–7)
 1. **Application discovery** — if URL missing, ask for it. Explore navigation, behavior, journeys, dependencies, story impact, using the interactive browser (Playwright MCP) and the framework catalogs ([docs/ai/automation/](docs/ai/automation/)).
 2. **Exploratory testing** — generate notes ([docs/ai/exploratory-testing.md](docs/ai/exploratory-testing.md)).
-3. **Automation** — **Java + Selenium inside the Java framework** per [docs/ai/automation/automation-generation.md](docs/ai/automation/automation-generation.md): discover the framework (configurable path), learn it, reuse-before-build, one story test class (`B10_<id>_<Feature>Tests`) with one `@TmsLink`-bound test per automatable BrowserStack case; automate all generated test cases; `mvn test-compile` green before recording. Playwright only on explicit request.
-4. **Execution & reporting** — execute; generate the HTML report (tests, pass/fail, screenshots, evidence, coverage, defects).
-5. **Visual Testing** ([docs/ai/QA_PROCESS.md](docs/ai/QA_PROCESS.md) Phase 5) — compare each captured screen against its Figma design, deterministic-first, AI only on the residual; produce visual findings + report. ([docs/ai/testing-process.md](docs/ai/testing-process.md) §4.)
-6. **Defect reporting** — file Jira bugs, functional and visual, via `node automation/file_jira_bug.js` (§10 below is binding).
-7. **QA Summary** ([docs/ai/QA_PROCESS.md](docs/ai/QA_PROCESS.md) Phase 6) — consolidate functional + visual results, coverage, risks, and a clear recommendation into the story's report.
+3. **Manual execution of the approved suite** (STEP 7b) — **before automation.** Per-case verdict + evidence → `execution-reports/manual-execution.md`, including the cases excluded from automation.
+4. **Automation** — **Java + Selenium inside the Java framework** per [docs/ai/automation/automation-generation.md](docs/ai/automation/automation-generation.md): discover the framework (configurable path), learn it, reuse-before-build, one story test class (`B10_<id>_<Feature>Tests`) with one `@TmsLink`-bound test per automatable BrowserStack case; automate the **operator-selected** cases; `mvn test-compile` green before recording. Playwright only on explicit request.
+5. **Automated execution & reporting** — execute; generate the HTML report (tests, pass/fail, screenshots, evidence, coverage, defects), folding in the manual results.
+6. **Visual Testing** ([docs/ai/QA_PROCESS.md](docs/ai/QA_PROCESS.md) Phase 5) — compare each captured screen against its Figma design, deterministic-first, AI only on the residual; produce visual findings + report. ([docs/ai/testing-process.md](docs/ai/testing-process.md) §4.)
+7. **Defect reporting** — file Jira bugs, functional and visual, via `node automation/file_jira_bug.js` (§10 below is binding).
+8. **QA Summary** ([docs/ai/QA_PROCESS.md](docs/ai/QA_PROCESS.md) Phase 6) — consolidate functional + visual results, coverage, risks, and a clear recommendation into the story's report.
 
 ## 4. Mobile Story Process (user provides iOS + Android BrowserStack app IDs)
-Run the full cycle without skipping: Story Analysis → Figma Analysis → Clarification → Impact → HLS → Test Cases → BrowserStack Import → **Execution (4 combos, end-to-end)** → **Visual Testing** ([docs/ai/QA_PROCESS.md](docs/ai/QA_PROCESS.md) Phase 5 — deterministic-first, AI only on the residual) → **QA Summary** (Phase 6) → Defects.
+Run the full cycle without skipping: Story Analysis → Figma Analysis → Clarification → Impact → HLS → Test Cases → BrowserStack Import → **Manual execution of the approved suite (STEP 7b — before automation)** → **Automation** → **Automated Execution (4 combos, end-to-end)** → **Visual Testing** ([docs/ai/QA_PROCESS.md](docs/ai/QA_PROCESS.md) Phase 5 — deterministic-first, AI only on the residual) → **QA Summary** (Phase 6) → Defects.
 - **Cross-platform validation:** validate Android + iOS; compare against Figma, AC, business requirements; document platform differences. ([docs/ai/testing-process.md](docs/ai/testing-process.md) §3.4.)
 - **Appium automation (unchanged — no migration):** analyze the existing native framework (androidNative/iosNative/page-objects/helpers/configs), follow conventions, never duplicate, automate all generated test cases. Story class + `@TmsLink` mapping conventions: [docs/ai/automation/automation-generation.md](docs/ai/automation/automation-generation.md) §5–6. (Mobile WebDriver layer for ad-hoc sessions: [docs/ai/automation/appium-framework.md](docs/ai/automation/appium-framework.md).)
 - **Reporting:** HTML report + screenshots + videos + defect summary + coverage summary ([docs/ai/release-validation.md](docs/ai/release-validation.md)).

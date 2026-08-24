@@ -25,6 +25,26 @@ runs `androidNative`/`iosNative`.
 
 ---
 
+## 0.1 Which screens to learn from — check authorship first
+
+**Learn the conventions from human-authored screens only.** Verified 2026-08-24 with
+`git log --format='%an' -- <path> | sort -u`:
+
+| | |
+|---|---|
+| **Human-authored — use as references** | `androidNative/` root screens (`AndroidNativeMoreScreen`, `AndroidNativeLandingScreen`, `AndroidNativePhoneNumberScreen`, `AndroidNativeOtpVerificationScreen`, `AndroidNativeSearchScreen`, …), `AndroidNativeMoreScreen/` package (`AndroidNativeAccountSettingsScreen`, `AndroidNativePersonalInfoScreen`), `iosNativeMorePage/` (`IosNativeMoreScreen`, `IosNativeAccountSettingsScreen`), `iosNative/` root screens. Authors: `mthms`/`M.Sharaf`, `Asmaa`/`AsmaRamadan`, `Amira Badawy`, `islam-abdelaziz83`, `Mai Youssef`, `kfayz`, `Rawan Mohamed` |
+| **Generated — NOT references** | the **whole** `androidNative/androidNativePayScreen/` and `iosNative/iosNativePayScreen/` packages (card/pay screens: perks list, perk details, card id info, ID near-expiry modal, pay/passcode/OTP screens, card settings). Every file there was authored by a QA-automation story run |
+
+The closest human-authored analogue for a **settings/list screen** is `AndroidNativeMoreScreen` +
+`AndroidNativeAccountSettingsScreen` (Android) and `IosNativeMoreScreen` (iOS) — not anything in the
+pay package.
+
+*Why this note exists:* on B10-58603 a new card-settings screen was matched against three siblings in
+its own package. All three were generated, so the conformance review confirmed the wrong pattern and
+the class shipped at ~3× the size of the human equivalent, with gesture code, geometry and
+expected-value getters that §2–§4 below already ruled out. Full account:
+[automation-generation.md](automation-generation.md) §4.2.
+
 ## 1. Base screen classes — the contract every page object inherits
 
 | | Android | iOS |

@@ -148,7 +148,7 @@ minutes ago, so the same machinery runs as an **assertion**, not a reuse plan:
 
 ## Phase B — Post-Development validation (Workflow 2)
 
-Execute [`qa-implementation-validation.md`](qa-implementation-validation.md) **Execution phases 1–9 exactly
+Execute [`qa-implementation-validation.md`](qa-implementation-validation.md) **Execution phases 1–10 exactly
 as written** — skipping only its Step 0 (satisfied by Step 6 above):
 
 | # | Skill (runsAs) | Artifact key |
@@ -157,12 +157,17 @@ as written** — skipping only its Step 0 (satisfied by Step 6 above):
 | 2 | `test-design` Phase C (subagent) — **only if the approved suite must change** | `testcase-reconciliation` (+ re-record `testcases`) |
 | 3 | `testcase-review` over the deltas ⟵ **GATE, stops for re-approval** — only if 2 ran | `testcase-review` (re-recorded) |
 | 4 | `browserstack-mgmt` (inline, Mode B — **sync**, by `TC-xxxx` id) — only if 2 ran | `browserstack-import` (re-recorded) |
-| 5 | `automation-gen` (subagent) | `automation` |
-| 5b | `framework-conformance` (subagent) — gate, runs before 5 is recorded | — (`automation/conformance-review.md`) |
-| 6 | Execution — 4 combos (iOS/Android × en/US + ar/EG) | `execution` |
-| 7 | `visual-testing` (subagent) | `visual-findings` |
-| 8 | `defect-reporting` (inline) | `defects` |
-| 9 | QA Summary | `qa-summary` |
+| **5** | **Manual execution of the approved suite** ⟵ **BEFORE automation** (operator instruction 2026-08-20, standing). Per-case verdict + evidence. Includes the cases excluded from automation. | — (`execution-reports/manual-execution.md`; folded into `execution` at 7) |
+| 6 | `automation-gen` (subagent) — automates **only the operator-selected** cases | `automation` |
+| 6b | `framework-conformance` (subagent) — gate, runs before 6 is recorded | — (`automation/conformance-review.md`) |
+| 7 | Automated execution — mobile 4 combos (iOS/Android × en/US + ar/EG); web-admin 1 combo (EN) | `execution` (manual + automated) |
+| 8 | `visual-testing` (subagent) | `visual-findings` |
+| 9 | `defect-reporting` (inline) | `defects` |
+| 10 | QA Summary | `qa-summary` |
+
+**Step 5 records no artifact and bypasses no gate.** `PHASE_DEPS = { execution: 'automation' }` still holds:
+the manual verdicts are written to disk at 5 and folded into `execution` at 7. If a run ends after the manual
+pass, `automation` is **owed** and needs a recorded operator deferral — never silence (the B10-56717 hole).
 
 Phases 2–4 are **conditional**: in a `qa-full` run the suite was designed minutes ago against the same
 implementation, so it will often need no deltas at all. Record nothing and say so — an empty

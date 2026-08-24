@@ -32,8 +32,7 @@
 |-------------------|-------------------|-----------------------------------------|
 | **Customer mobile auth** (OTP/register/login → `User`) | `MobileAuthorizationApiClient` | `helpers/apiClients/mobileApiClients/MobileAuthorizationApiClient.java` |
 | **Admin / RMS auth** (tokens, RMS retry) | `AdminAuthorizationApiClient` | `helpers/apiClients/webApiClients/AdminAuthorizationApiClient.java` |
-| **Card service** (token, status, passcode/PIN, link/activate/replace, balance, transfers, invitation codes) | `CardServiceApiClient` | `helpers/apiClients/mobileApiClients/CardServiceApiClient.java` |
-| **Card-panel perks via API** (general cashback variants) | `CardAdminPanelPerksApiClient` | `helpers/apiClients/webApiClients/CardAdminPanelPerksApiClient.java` |
+| **Card service — mobile AND card-panel, one client** (token, status, passcode/PIN, link/activate/replace, balance, transfers, invitation codes, **perks: read oracles, shape-finders, mark-featured, seed/expire**) | `CardServiceApiClient` | `helpers/apiClients/mobileApiClients/CardServiceApiClient.java` |
 | **Control Room** (warehouses/orders/stock/status) | `ControlRoomV2ApiClient` | `helpers/apiClients/webApiClients/ControlRoomV2ApiClient.java` |
 | **Orders via API** (COD/CC/coupon/tipping/multi-product, cancel, sync) | `OrderApiClient` | `helpers/apiClients/mobileApiClients/OrderApiClient.java` |
 | **Chatbot / FreshChat** | `ChatbotApiClient`, `FreshChatApiClient` | `helpers/apiClients/mobileApiClients/` |
