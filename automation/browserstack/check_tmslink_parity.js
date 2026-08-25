@@ -41,11 +41,16 @@ const AUTH = 'Basic ' + Buffer.from(`${creds.browserstack.tmUsername()}:${creds.
 /** Pull (description, tmsLink) pairs out of the Java source, in file order. */
 function parseJavaTests(source) {
   const found = [];
-  // description = "..." possibly spanning lines, then @TmsLink("TC-xxxxx")
-  const re = /description\s*=\s*"((?:[^"\\]|\\.)*)"[\s\S]*?@TmsLink\("([^"]+)"\)/g;
+  // description = "..." + "..." + "...", possibly spanning lines, then @TmsLink("TC-xxxxx").
+  // A case title longer than the line limit is written as a Java concatenation, so capturing only the
+  // FIRST literal reported every such test as a title mismatch against a BrowserStack name that was in
+  // fact identical - it truncated the java side and then complained the two differed.
+  const re = /description\s*=\s*((?:"(?:[^"\\]|\\.)*"\s*\+?\s*)+)[\s\S]*?@TmsLink\("([^"]+)"\)/g;
   let m;
   while ((m = re.exec(source)) !== null) {
-    found.push({ description: m[1].replace(/\\"/g, '"'), tmsLink: m[2] });
+    const description = [...m[1].matchAll(/"((?:[^"\\]|\\.)*)"/g)]
+      .map(literal => literal[1]).join('');
+    found.push({ description: description.replace(/\\"/g, '"'), tmsLink: m[2] });
   }
   return found;
 }
