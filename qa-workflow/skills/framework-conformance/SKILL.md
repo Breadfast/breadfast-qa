@@ -3,7 +3,7 @@ name: framework-conformance
 description: Framework-conformance gate for generated automation (QA_PROCESS Phase 4, post-generation). Reviews the code THIS story authored inside the Breadfast Java framework against the framework's real conventions — the checks compile + checkstyle cannot make. Runs as a subagent, after automation-gen writes code and before the `automation` artifact is recorded.
 metadata:
   type: task
-  version: 1.2
+  version: 1.3
   phase: Automation Generation (gate)
   workflow: [qa-implementation-validation, qa-full]
   runsAs: subagent
@@ -228,7 +228,7 @@ ACs never raised.
 - [ ] Every open Jira **bug subtask** on the story maps to a test, or is explicitly declared
       visual-only / not-automated. Cross-check against Jira, not against your own notes. (§9.8)
 
-### J. Structural alignment against the human-authored references (v1.2)
+### J. Structural alignment against the human-authored references (v1.3)
 - [ ] The 2–3 golden references named in `framework-reference.md` are **human-authored**, with the
       `git log` authorship check recorded (contract §4.2).
 - [ ] The **measured comparison** from contract §7.1 is in the review: lines · public methods ·
@@ -236,6 +236,28 @@ ACs never raised.
       Being an outlier on any row is a blocking violation, not a note.
 - [ ] **Locator-to-logic ratio** matches: locator-heavy, logic-light. More Javadoc lines than
       `@FindBy` fields ⇒ not conforming.
+- [ ] **API clients carry no Javadoc.** The framework's largest human client, `InventoryApiClient`
+      (2192 lines), has **0** Javadoc blocks; `PaymentPanelApiClient` has 0; `CouponsApiClient` has 2.
+      Proof grep: `grep -c '/\*\*' src/main/java/helpers/apiClients/webApiClients/InventoryApiClient.java`.
+      Endpoint fields at the top, business args first with the session/`CardService` argument LAST.
+- [ ] **A page object never calls a `TestsExecutionHelper`.** Proof grep across `origin/main`:
+      **0 of 251** human page objects reference `TestsExecutionHelper` or
+      `scrollUntilACertainElementIsFound`. Scrolling to a known element belongs to the TEST, which
+      calls the helper with the screen's `getScrollableContentContainer()`. A screen that must scroll
+      *itself* (enumerating a list) uses the Appium command the framework already uses — Android
+      `mobile: scrollGesture` / `mobile: swipeGesture` with a `HashMap` of
+      `elementId`+`direction`+`percent` (`AndroidTestsExecutionHelper.scrollToDirection:365`,
+      `swipeElementInDirection:680`), iOS `mobile: scroll`
+      (`IosNativeFoodAggregatorHomeScreen:513`) — never a hand-rolled `PointerInput`/`Sequence`.
+- [ ] **An uncalled *public* page-object method is NOT a violation.** Measured on `origin/main`:
+      **27 of 526** methods in `cardsAdminPanel` + `androidNative` page objects have no caller (5%).
+      Page objects accumulate API. Only an uncalled **private** method is dead code. Do not "tidy"
+      public readers away — that removes framework-normal surface and can strip coverage.
+- [ ] **Comment prefix matches the house style: `//text`, no space.** Measured across human test
+      classes: `//text` **5790** vs `// text` **2576**. Do not reformat one into the other.
+- [ ] **No class-level narrative header on a test class.** Only **3 of 128** human test classes carry
+      a pre-class comment block; scope, expected failures and case-mapping notes belong in the story's
+      `automation/README.md`, not above the class.
 - [ ] **No reimplemented framework behaviour in a page object** — no `PointerInput`/`Sequence` scroll
       loops, swipe logic, scroll budgets or `MAX_*_SCROLLS`; scroll-to-element goes through
       `scrollUntilACertainElementIsFound(...)` with `getScrollableContentContainer()` + a

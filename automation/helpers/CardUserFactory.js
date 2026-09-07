@@ -35,6 +35,14 @@ const SEND_OTP   = '/wp-json/breadfast/v4/user/send-otp';
 const VERIFY_OTP = '/wp-json/breadfast/v4/user/verify-otp';
 const REGISTER   = '/wp-json/breadfast/v4/user/register';
 
+// The wp-json user endpoints now REQUIRE an `accept-version` header, and validate it as a semver:
+// without it every call answers `422 Validation Error … "accept-version": expected string, received
+// undefined`, and a non-semver value answers `must match pattern /^[0-9]+\.[0-9]+\.[0-9]+$/`.
+// Measured 2026-09-03 on new-testing while provisioning a Registered user for B10-58669 — the whole
+// factory was dead against the live API until this was sent. Probed values: absent → 422, "1" → 422,
+// "1.0.0" → 200.
+const WP_HEADERS = { 'accept-version': '1.0.0' };
+
 // createCardUser name fields — Arabic, mirroring the Java framework (the card-service name
 // fields are Arabic-only since B10-56336, so ASCII would 400). register() uses the random
 // ASCII names; only the card-user record carries these.
@@ -170,14 +178,14 @@ class CardUserFactory {
     const lastName   = randomName();
     const email      = uniqueEmail(localPhone);
 
-    const send = await postJson(cfg.mobileBaseURL + SEND_OTP, { phone, country_code: cfg.countryCode });
+    const send = await postJson(cfg.mobileBaseURL + SEND_OTP, { phone, country_code: cfg.countryCode }, WP_HEADERS);
     if (!(send.json && send.json.status === 200)) throw new Error(`send-otp failed for ${phone}: HTTP ${send.status} ${send.text}`);
     const otp = await this._readOtpFromDb(phone);
     if (!otp) throw new Error(`Could not read OTP for ${phone}`);
-    const verify = await postJson(cfg.mobileBaseURL + VERIFY_OTP, { phone, country_code: cfg.countryCode, otp });
+    const verify = await postJson(cfg.mobileBaseURL + VERIFY_OTP, { phone, country_code: cfg.countryCode, otp }, WP_HEADERS);
     const registerToken = verify.json?.data?.register_token;
     if (!registerToken) throw new Error(`verify-otp no register_token for ${phone}: ${verify.text}`);
-    const reg = await postJson(cfg.mobileBaseURL + REGISTER, { first_name: firstName, last_name: lastName, email, ref_code: '', register_token: registerToken });
+    const reg = await postJson(cfg.mobileBaseURL + REGISTER, { first_name: firstName, last_name: lastName, email, ref_code: '', register_token: registerToken }, WP_HEADERS);
     const breadfastId = reg.json?.data?.id != null ? String(reg.json.data.id) : null;
     if (!breadfastId) throw new Error(`register no data.id for ${phone}: ${reg.text}`);
     return { phone, searchMobile: phone.replace('+2', ''), breadfastId, email, firstName, lastName, localPhone };
@@ -211,7 +219,7 @@ class CardUserFactory {
     const email      = uniqueEmail(localPhone);
 
     // 2. send OTP
-    const send = await postJson(cfg.mobileBaseURL + SEND_OTP, { phone, country_code: cfg.countryCode });
+    const send = await postJson(cfg.mobileBaseURL + SEND_OTP, { phone, country_code: cfg.countryCode }, WP_HEADERS);
     if (!(send.json && send.json.status === 200)) {
       throw new Error(`send-otp failed for ${phone}: HTTP ${send.status} ${send.text}`);
     }
@@ -221,7 +229,7 @@ class CardUserFactory {
     if (!otp) throw new Error(`Could not read OTP for ${phone} from bf_phone_otp_verification`);
 
     // 4. verify OTP -> register_token
-    const verify = await postJson(cfg.mobileBaseURL + VERIFY_OTP, { phone, country_code: cfg.countryCode, otp });
+    const verify = await postJson(cfg.mobileBaseURL + VERIFY_OTP, { phone, country_code: cfg.countryCode, otp }, WP_HEADERS);
     const registerToken = verify.json?.data?.register_token;
     if (!registerToken) {
       throw new Error(`verify-otp did not return register_token for ${phone}: HTTP ${verify.status} ${verify.text}`);

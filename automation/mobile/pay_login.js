@@ -364,4 +364,33 @@ async function loginAndOpenPay({ sid, platform, locale, phoneLocal, passcode, sh
   return { notes, src };
 }
 
-module.exports = { loginAndOpenPay, findAny, findDigitKey, findVisible, tapCentre, labels, DIGIT_FORMS };
+/**
+ * From the Pay dashboard, open the card settings ("More") screen.
+ *
+ * The entry point is the unlabelled "..." control on the card artwork. It carries NO text, no
+ * content-desc and no id on either platform, so it can only be located geometrically: same row as
+ * Add Money / Send, at the trailing edge — right in LTR, left in RTL. It is NOT the bottom-bar "More"
+ * tab, which is a different app-level screen.
+ *
+ * Returns the tap point so a caller can re-open the screen later without recomputing it.
+ */
+async function openCardSettings({ sid, platform, locale }) {
+  const isAndroid = platform === 'android';
+  const size = await S.windowSize(sid);
+  const anchor = await findAny(sid, locale === 'ar' ? 'إرسال' : 'Send', isAndroid);
+  let dots;
+  if (anchor) {
+    const r = await S.rect(sid, anchor);
+    const x = locale === 'ar' ? Math.round(r.x - r.width * 0.55) : Math.round(r.x + r.width * 1.55);
+    dots = { x: Math.max(20, Math.min(size.width - 20, x)), y: Math.round(r.y + r.height / 2) };
+  } else {
+    dots = {
+      x: locale === 'ar' ? Math.round(size.width * 0.18) : Math.round(size.width * 0.82),
+      y: Math.round(size.height * 0.365),
+    };
+  }
+  await S.tap(sid, dots.x, dots.y);
+  return { dots, size };
+}
+
+module.exports = { loginAndOpenPay, openCardSettings, findAny, findDigitKey, findVisible, tapCentre, labels, DIGIT_FORMS };

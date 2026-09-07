@@ -130,6 +130,38 @@ async function tap(sid, x, y) {
 }
 
 /** Vertical swipe, fractions of the screen. dir: 'up' scrolls content up (reveals lower content). */
+/**
+ * iOS interactive-pop gesture: drag in from the very left edge.
+ *
+ * Needed because the customer app's back chevron is NOT in the accessibility tree on iOS — the screen
+ * exposes only its list rows as Buttons and the navigation bar has no children (measured on build 1299,
+ * B10-58603). With no locator to tap, a run that opens a destination cannot get back out, and every
+ * subsequent lookup then fails from the wrong screen. The gesture needs no locator at all.
+ *
+ * Starts at x=2 (inside the ~20pt edge-gesture region) and must be SLOW — a fast flick is treated as a
+ * scroll, not a pop.
+ */
+async function swipeFromEdge(sid, { w, h }, fromRight = false) {
+  const y = Math.round(h / 2);
+  // RTL mirrors the pop gesture with the layout: in ar/EG the back affordance is on the RIGHT, so the
+  // drag must start at the right edge. Swiping from the left there does nothing (measured, B10-58603).
+  const x0 = fromRight ? w - 2 : 2;
+  const x1 = fromRight ? Math.round(w * 0.25) : Math.round(w * 0.75);
+  return req('POST', `/wd/hub/session/${sid}/actions`, {
+    actions: [{
+      type: 'pointer', id: 'finger1', parameters: { pointerType: 'touch' },
+      actions: [
+        { type: 'pointerMove', duration: 0, x: x0, y },
+        { type: 'pointerDown', button: 0 },
+        { type: 'pause', duration: 250 },
+        { type: 'pointerMove', duration: 900, x: x1, y },
+        { type: 'pause', duration: 150 },
+        { type: 'pointerUp', button: 0 },
+      ],
+    }],
+  });
+}
+
 async function swipe(sid, { w, h }, dir = 'up', frac = 0.6) {
   const x = Math.round(w / 2);
   const from = dir === 'up' ? Math.round(h * 0.75) : Math.round(h * 0.30);
@@ -259,4 +291,4 @@ async function typeDigits(sid, digits, findKey) {
   }
 }
 
-module.exports = { req, start, stop, source, screenshot, find, findAll, click, typeText, enterText, attr, rect, text, tap, swipe, windowSize, typeDigits, pressDigits, fillSegmented, sleep, USER };
+module.exports = { req, start, stop, source, screenshot, find, findAll, click, typeText, enterText, attr, rect, text, tap, swipe, swipeFromEdge, windowSize, typeDigits, pressDigits, fillSegmented, sleep, USER };
