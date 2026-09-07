@@ -46,6 +46,7 @@ CLAUDE.md orchestrates; `docs/ai/` holds the detail. Routing:
 | **Coverage-changing decisions — what counts, how it is recorded, why it needs ratification** | [QA_PROCESS](docs/ai/QA_PROCESS.md) *Coverage-changing decisions* · [contract](docs/ai/architecture/qa-artifact-contract.md) §5.1a · `qa-cli.js coverage-change` |
 | **Clause-level AC coverage + state/route coverage (an AC tag is not proof)** | [QA_PROCESS](docs/ai/QA_PROCESS.md) §3.0a |
 | **A rejected visual finding must not close the requirement** | [QA_PROCESS](docs/ai/QA_PROCESS.md) §5.7 · [CLAUDE_CODE_OPERATOR](docs/ai/visual-testing/CLAUDE_CODE_OPERATOR.md) §7.3 |
+| **Visual testing runs the DETERMINISTIC engine, never an eyeball — and visual coverage is counted** | [QA_PROCESS](docs/ai/QA_PROCESS.md) §5.3/§5.6a · [visual-testing SKILL](qa-workflow/skills/visual-testing/SKILL.md) · `qa-cli.js visual-evaluate` + `visual-coverage` |
 | **Execution engine requirements (session/browser lifecycle for Claude Code as executor)** | [docs/ai/execution-engine.md](docs/ai/execution-engine.md) |
 | Methodology, test design, **Figma visual comparison**, screenshot strategy | [docs/ai/testing-process.md](docs/ai/testing-process.md) |
 | Mobile sessions, Appium caps, tap/OTP/keypad patterns, **CSV import**, quirks | [docs/ai/browserstack-process.md](docs/ai/browserstack-process.md) |
@@ -313,7 +314,7 @@ Full coordinate table, keypad maps, API patterns, element/locator reference: [do
 - **BrowserStack Test Management:** REST **API v2** (`https://test-management.browserstack.com/api/v2`, Basic `username:access_key`). **v1 does not exist and returns a misleading `401` + SSO redirect for valid keys.** Create cases individually via `POST /projects/{PR-x}/folders/{id}/test-cases`; steps go in **`test_case_steps`** (a `steps` payload returns 200 and saves none). Details + traps: [docs/ai/browserstack-process.md](docs/ai/browserstack-process.md) §10.6. Reference impl (shared, any story): [`automation/browserstack/upload_browserstack.js`](automation/browserstack/upload_browserstack.js) — `--cases <story>/automation/gen_browserstack_csv.js --project PR-x --folder <id>`. Tooling index: [`automation/browserstack/README.md`](automation/browserstack/README.md).
 - **BrowserStack test runs + `automation_status` (standard step, any story):** [automation/browserstack_test_run.js](automation/browserstack_test_run.js) — takes the shared **test-case folder link** and does the rest (§10.8). Results are sourced from **App Automate** when the suite ran without `targetRunId`, because `target/surefire-reports` and `logs/test.log` are overwritten by the next run; take the **latest session per test name** and **filter by session `os`**, or the Android leg silently gets filled from an iOS build.
 - **QA workflow entrypoints:** `/qa-shift-left` (pre-dev — analysis **+ the approved, imported coverage baseline**) · `/qa-validate` (post-dev only; reconciles + reuses that baseline, **maintaining** the suite rather than regenerating it) · `/qa-full` (both, end-to-end — use when no baseline exists). Definitions: [qa-workflow/workflows/](qa-workflow/workflows/).
-- **`qa-cli.js` at a glance** — `init` · `fingerprint-jira/-figma` · `record` · **`status`** (where is this story, what is next, what blocks it — always exits 0) · **`testcase-lint`** (the mechanical review checks; exits 1) · `approve` (operator sign-off + snapshot) · `defer` (postpone what is owed) · **`skip`** (a *conditional* phase deliberately not needed) · **`coverage-change add/approve/reject/list`** (a decision that reduces planned validation — blocks `approve testcases` until ratified) · `reconcile` (`--ignore-lock` to carry a superseded methodology forward) · `branch-check` · `complete-check --profile shift-left|validate|full`. Full usage: the header of [qa-workflow/bin/qa-cli.js](qa-workflow/bin/qa-cli.js).
+- **`qa-cli.js` at a glance** — `init` · `fingerprint-jira/-figma` · `record` · **`status`** (where is this story, what is next, what blocks it — always exits 0) · **`testcase-lint`** (the mechanical review checks; exits 1) · **`visual-coverage`** (every exported design frame compared or excluded-with-a-reason; an `engine:` claim is verified against the engine output; exits 1) · `approve` (operator sign-off + snapshot) · `defer` (postpone what is owed) · **`skip`** (a *conditional* phase deliberately not needed) · **`coverage-change add/approve/reject/list`** (a decision that reduces planned validation — blocks `approve testcases` until ratified) · `reconcile` (`--ignore-lock` to carry a superseded methodology forward) · `branch-check` · `complete-check --profile shift-left|validate|full`. Full usage: the header of [qa-workflow/bin/qa-cli.js](qa-workflow/bin/qa-cli.js).
 
 ---
 
@@ -332,10 +333,17 @@ On **B10-56652 (2026-07-28) five bugs were filed and all five were rejected** �
    assumption is **not** a spec. **Never test a dimension outside the story's ACs** (accessibility, API
    contracts, performance) unless asked. Verify every **negative** before reporting it — a DOM/a11y dump of
    a *scrollable* container proves nothing until it is scrolled to the end.
-3. **File with [automation/file_jira_bug.js](automation/file_jira_bug.js)** — `--dry` first, then live.
+3. **Write it in the operator's voice — invoke `/humanizer:humanizer` first (MANDATORY, 2026-09-07).**
+   Title = the wrong behaviour plainly · Steps = `1-`,`2-`,`3-` with **no space after the dash**, lowercase
+   imperatives, UI labels in quotes, last step a check · **Actual** short and direct, usually a restatement
+   of the title · **Expected** one line using **should**. **No rgb/hex values, weights, ratios or
+   methodology in the ticket** — those live in `visual-findings.md` / `defects.md`. Applies to **updates**
+   as well as creates; correct a filed bug with `--update <KEY>`, never by refiling.
+   Full format + worked example: [docs/ai/bug-reporting.md](docs/ai/bug-reporting.md) §4.0a.
+4. **File with [automation/file_jira_bug.js](automation/file_jira_bug.js)** — `--dry` first, then live.
    Never hand-assemble a bug through the MCP: the MCP cannot attach files, and it will happily accept a bug
    with every template field empty.
-4. **Read the script's post-create verify output before saying the bug is filed.** `HTTP 201` is not proof
+5. **Read the script's post-create verify output before saying the bug is filed.** `HTTP 201` is not proof
    of a well-formed bug.
 
 **The shape (B10, verified against B10-58191…58197; Steps block corrected by the operator 2026-07-28):**
