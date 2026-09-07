@@ -66,6 +66,23 @@ Attachments are **mandatory**, so gather them first rather than bolting them on:
 
 Convert `.webm` → `.mp4`. Never `image1.png`. For BrowserStack runs the session video is a legitimate source.
 
+## Step 2a · Write it in the OPERATOR'S VOICE — invoke `/humanizer:humanizer` (MANDATORY)
+
+These tickets reach developers as **his** reports, so they must be indistinguishable in voice from the
+bugs he writes by hand. Run the `humanizer` skill over Title / Steps / Actual / Expected **on creates and
+on updates alike**, then check the shape:
+
+- **Title** — the wrong behaviour, plainly. No AC numbers, no internal vocabulary.
+- **Steps** — `1-`, `2-`, `3-` with **no space after the dash** (the script does this); first step
+  capitalised, the rest lowercase imperatives, UI labels in double quotes, **last step is the check**.
+- **Actual** — short and direct, usually a restatement of the title. Under ~50 words.
+- **Expected** — one line, using **should**.
+- **No rgb/hex values, font weights, ratios, stem widths or methodology in the ticket.** They belong in
+  `visual-findings.md` / `defects.md` beside the grounding gate. The filer warns if they appear.
+- Never imitate his typos — match brevity, structure and word choice only.
+
+Standard + worked example: [`docs/ai/bug-reporting.md`](../../../docs/ai/bug-reporting.md) §4.0a.
+
 ## Step 3 · File it with the script — never by hand
 
 ```
@@ -95,6 +112,16 @@ And it **warns when Actual/Expected read as machine-written** — methodology no
 *“arguably”*), essay connectives (*“furthermore”*, *“in other words”*), *“Note for triage:”* paragraphs, or
 first person. Those fields are a senior QA engineer's note: state the fact, give the number or exact string,
 cite the authority, stop.
+
+### Correcting a bug that is already filed
+Never refile — it loses the key, the comments and the attachments:
+
+```
+node automation/file_jira_bug.js --spec <bug.json> --update <ISSUE-KEY> [--attach]
+```
+
+The spec is validated exactly as a create is; summary + the three template fields are rewritten, any
+listed attachment not already present is added, and the issue is re-read to show what landed.
 
 ## Step 4 · Read the verify output before telling anyone the bug is filed
 

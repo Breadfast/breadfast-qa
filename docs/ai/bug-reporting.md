@@ -111,6 +111,58 @@ Enforced in the QA Platform execution node (`apps/worker/src/nodes.ts`) as a man
 > were rejected. The filer had cited this document without reading it. **Use the script in §4.3; do not
 > hand-assemble a bug.**
 
+### 4.0a Voice — MANDATORY. Every bug reads as the operator wrote it (standing rule, 2026-09-07)
+
+**Before creating OR updating any bug, invoke the `/humanizer:humanizer` skill over the Title, Steps,
+Actual and Expected, and write them in the operator's own style.** This is not a preference about tone:
+these bugs reach developers as **his** reports, and a ticket that reads machine-written is read
+differently from one that reads like the QA lead wrote it, whatever evidence is attached. Applies to
+every bug, functional and visual, on every story, with no exception.
+
+Added after B10-59822 and B10-59823 were filed in plainly machine-written prose (rgb values, an
+ink-ratio derivation, "the component library's default styling") and had to be rewritten. B10-59719,
+B10-59720 and B10-59826 were rewritten in the same pass.
+
+#### The format, learned from bugs he reported himself
+Source: B10-50328, B10-48678, B10-48218, B10-46923, B10-46653, B10-46368.
+
+- **Title** — the wrong behaviour, stated plainly. No AC numbers, no internal vocabulary, no severity
+  words. *"Passcode is not displayed when opening saved cards screen then go back to home screen."*
+- **Steps** — a `Builds :` / `Environment :` block for **mobile only** (version + build number), then
+  `Steps :`, then `1-`, `2-`, `3-` with **no space after the dash**. First step capitalised
+  (`1-Open the card panel and login with an ops user`), the rest lowercase imperatives (`navigate to`,
+  `click on "Edit"`), UI labels in double quotes, and the **last step is the observation**:
+  `check the behavior` / `check the display of X` / `check the time format`.
+- **Actual** — short and direct, usually a restatement of the title. No measurements, no derivations,
+  no methodology, no "note for triage". Aim for **under ~50 words**; the filer warns past 90 and it
+  should rarely come close.
+- **Expected** — one line, always using **should**. *"Passcode screen should be displayed normally."*
+- He writes a space before some punctuation (`Steps :`, `X , Y`). Keep it; it is his rhythm.
+- **Never imitate his typos.** Match brevity, structure and word choice only.
+
+#### Worked example (B10-59823, before and after)
+
+| | |
+|---|---|
+| **Filed as** | *"Frequency renders at font-weight 400 and 14px — identical to the Starts at and Ends at labels beneath it… at equal weight the two strings give an ink ratio of 1.07 and the same median stem width…"* |
+| **Rewritten** | Actual: `"Frequency" label is displayed as a normal text , same as "Starts at" and "Ends at" labels below it` · Expected: `"Frequency" label should be displayed in bold as in the design` |
+
+#### The measurements still matter — they just do not go in the ticket
+Hex and rgb values, computed styles, ratios, stem widths and probe output belong in
+`visual-findings.md` and `defects.md`, beside the grounding gate that used them. The **ticket** carries
+the observable fact plus the attachments. `file_jira_bug.js` warns when `actual`/`expected` contains an
+`rgb()`, a hex colour, a `font-weight`, an ink ratio or a median stem, for exactly this reason.
+
+#### Correcting a bug that is already filed
+Use the update path — **never refile**, which loses the key, the comments and the attachments:
+
+```
+node automation/file_jira_bug.js --spec <bug.json> --update <ISSUE-KEY> [--attach]
+```
+
+It validates the spec exactly as a create does, rewrites summary + the three template fields, adds any
+listed attachment that is not already there, and re-reads the issue to show what landed.
+
 ### 4.1 The five parts of a B10 bug
 
 **1 · Issue type + parent.** `Bug` is **issue type `10084`, a SUB-TASK** → always pass
@@ -132,7 +184,7 @@ noisier Environment block.)*
 
 | Field | Id | Contents |
 |---|---|---|
-| **Steps** | `customfield_10042` | `Environment:` block (**mobile only**) → optional `Language :` → optional `Precondition:` → `Steps:` **numbered**, one action per line, ending with the observation step |
+| **Steps** | `customfield_10042` | `Environment:` block (**mobile only**) → optional `Language :` → optional `Precondition:` → `Steps :` then `1-`, `2-`, `3-` (**no space after the dash**), one action per line, ending with the observation step (`check the behavior` / `check the display of X`) |
 | **Actual Result** | `customfield_10043` | What happened, with the concrete observed values / exact strings. **Short and factual.** |
 | **Expected Result** | `customfield_10044` | What should happen + the authority — `Ref: design node <id>`, the AC's wording (not its number), or the named business rule |
 

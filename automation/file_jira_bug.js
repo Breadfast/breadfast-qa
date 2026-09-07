@@ -21,7 +21,12 @@
  * Usage
  *   node automation/file_jira_bug.js --spec <bug.json>          file it
  *   node automation/file_jira_bug.js --spec <bug.json> --dry     validate + preview, no write
+ *   node automation/file_jira_bug.js --spec <bug.json> --update B10-59822 [--attach]
+ *                                                               rewrite an existing bug's report
  *   node automation/file_jira_bug.js --verify B10-58191          audit an existing bug against the standard
+ *
+ * VOICE: the wording must read as the operator wrote it, not as a machine did — see
+ * docs/ai/bug-reporting.md §4.0a, and run the `humanizer` skill on create AND update.
  *
  * Spec shape (JSON) — see the bottom of this file for a complete example:
  *   {
@@ -115,8 +120,10 @@ const MIME = {
  *   Precondition:                   ← OMIT unless genuinely mandatory to reproduce.
  *   - …
  *
- *   Steps:
- *   1. …
+ *   Steps :                         ← "1-" with no space, the operator's own numbering (§4.0a).
+ *   1-Open the card panel and login with an ops user
+ *   2-navigate to …
+ *   3-check the behavior           ← the last step is the observation
  */
 function buildSteps(spec) {
   if (spec.steps) return spec.steps; // escape hatch: pre-assembled block
@@ -134,8 +141,11 @@ function buildSteps(spec) {
     spec.precondition.forEach((p) => out.push(`- ${p}`));
     out.push('');
   }
-  out.push('Steps:');
-  (spec.stepList || []).forEach((s, i) => out.push(`${i + 1}. ${s}`));
+  out.push('Steps :');
+  // "1-" with no space, which is how the operator numbers steps in every bug he files himself
+  // (B10-50328, 48678, 48218, 46923, 46653, 46368 …). Bugs filed from here have to be
+  // indistinguishable in voice from the ones he writes by hand — operator instruction 2026-09-07.
+  (spec.stepList || []).forEach((s, i) => out.push(`${i + 1}-${s}`));
   return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
@@ -203,8 +213,16 @@ function validate(spec) {
     const tell = AI_TELLS.find((re) => re.test(v));
     if (tell) warn.push(`${k} reads as machine-written ("${(v.match(tell) || [''])[0]}") — state the fact plainly and cut the commentary`);
     const words = v.split(/\s+/).filter(Boolean).length;
-    if (words > 90) warn.push(`${k} is ${words} words — trim it; Actual/Expected should be short and direct`);
+    // The operator's own bugs run ~10-25 words here. 90 was far too loose to catch machine-written
+    // prose, so it warns from 50 and states the standard rather than just a limit (§4.0a).
+    if (words > 50) warn.push(`${k} is ${words} words — the operator's own bugs are one short line; `
+      + 'restate the wrong behaviour and stop, and move any measurement to visual-findings.md / defects.md');
     if (/^\s*(?:I |We )/m.test(v)) warn.push(`${k} is written in the first person — describe the behaviour, not the tester`);
+    // Measurements are how a finding is PROVEN, not how a bug is WRITTEN. They belong in
+    // visual-findings.md / defects.md next to the grounding gate; the ticket carries the observable
+    // fact and the attachments (§4.0a, operator instruction 2026-09-07).
+    const lab = v.match(/rgb\(|#[0-9a-f]{6}\b|font-weight|\bink ratio\b|\bmedian stem\b|\bcomputed style\b/i);
+    if (lab) warn.push(`${k} contains a measurement ("${lab[0]}") — keep hex/rgb values, weights and ratios in the story artifacts and state the visible fact here`);
   }
 
   // Attachments: the whole point of the standard.
@@ -321,7 +339,11 @@ const arg = (n) => { const i = process.argv.indexOf(n); return i !== -1 ? proces
 
   const specPath = arg('--spec');
   if (!specPath) {
-    console.log('usage: node automation/file_jira_bug.js --spec <bug.json> [--dry]   |   --verify <ISSUE-KEY>');
+    console.log([
+      'usage: node automation/file_jira_bug.js --spec <bug.json> [--dry]',
+      '       node automation/file_jira_bug.js --spec <bug.json> --update <ISSUE-KEY> [--attach]',
+      '       node automation/file_jira_bug.js --verify <ISSUE-KEY>',
+    ].join('\n'));
     process.exitCode = 2; return;
   }
   const specs = [].concat(JSON.parse(fs.readFileSync(specPath, 'utf8')));
@@ -345,6 +367,19 @@ const arg = (n) => { const i = process.argv.indexOf(n); return i !== -1 ? proces
     return;
   }
 
+  // Rewrite an existing bug instead of filing a new one. One key, one spec.
+  // This dispatch sits BEFORE the create loop for a reason: when it was missing, `--update <KEY>`
+  // was silently ignored and the run filed a duplicate bug instead (B10-59825, 2026-09-07).
+  const updateKey = arg('--update');
+  if (updateKey) {
+    if (specs.length !== 1) {
+      console.log(`--update takes exactly one spec, got ${specs.length}`);
+      process.exitCode = 2; return;
+    }
+    process.exitCode = (await update(updateKey, specs[0], process.argv.includes('--attach'))) ? 0 : 1;
+    return;
+  }
+
   for (const spec of specs) {
     const r = await api('/rest/api/2/issue', {
       method: 'POST',
@@ -359,6 +394,44 @@ const arg = (n) => { const i = process.argv.indexOf(n); return i !== -1 ? proces
     await verify(key);
   }
 })().catch((e) => { console.error('FATAL', e.message); process.exit(1); });
+
+/**
+ * Rewrite the report on a bug that already exists: summary and the three template fields, nothing else.
+ *
+ * Exists because a bug whose wording is wrong is normally worth fixing rather than refiling — refiling
+ * loses the key, the comments and the attachments. Attachments already on the issue are left alone;
+ * pass `--attach` to add any listed in the spec that are not there yet.
+ *
+ * The spec is validated exactly as a create is, so an update cannot smuggle in a shape a create
+ * would have rejected.
+ */
+async function update(key, spec, addAttachments) {
+  const { fields } = buildPayload(spec);
+  const patch = {
+    summary: fields.summary,
+    [F.steps]: fields[F.steps],
+    [F.actual]: fields[F.actual],
+    [F.expected]: fields[F.expected],
+  };
+  const r = await api(`/rest/api/2/issue/${key}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fields: patch }),
+  });
+  if (!r.ok) {
+    console.log(`\n✗ update failed ${r.status}: ${JSON.stringify(r.json).slice(0, 400)}`);
+    return false;
+  }
+  console.log(`\n✓ updated ${key} — ${BASE}/browse/${key}`);
+  if (addAttachments && (spec.attachments || []).length) {
+    const have = await api(`/rest/api/2/issue/${key}?fields=attachment`);
+    const names = new Set(((have.json.fields || {}).attachment || []).map((a) => a.filename));
+    const missing = (spec.attachments || []).filter((f) => !names.has(path.basename(f)));
+    if (missing.length) { console.log('  attaching what is not already there:'); await attach(key, missing); }
+    else console.log('  every listed attachment is already on the issue');
+  }
+  return verify(key);
+}
 
 /* ── Example spec — MOBILE ───────────────────────────────────────────────────
 The script assembles the Steps block, so the Environment shape cannot be got wrong.
