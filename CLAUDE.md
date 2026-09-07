@@ -357,7 +357,7 @@ them** — the fact, the number or exact string, the authority, stop; no methodo
 "Note for triage" paragraphs ·
 fields Severity `10076`, Testing Phase `10078`, Bug type `10079`, Environment `10348`, Platform `10467`,
 Squad `10183`, Components, Priority, Labels · **no AC numbers in the title or ANY field** ·
-**attachments are mandatory: `actual-*.png` + `design-*.png` + a `F-0N-*.mp4` screen recording**, uploaded
+**attachments are mandatory: `actual-*.png` + `design-*.png` + a `F-0N-*.mp4` screen recording**, and **every still and the recording must carry an INDICATOR marking where the issue is** (`automation/visual/annotate.js`; a change or drift needs a before/after pair on the same element) — §4.0b, uploaded
 via the REST attachments endpoint with the correct per-file `Content-Type`.
 
 If a filed bug turns out to be invalid, **retract it explicitly** — comment the reason on the ticket and

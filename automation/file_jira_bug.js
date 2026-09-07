@@ -376,7 +376,8 @@ const arg = (n) => { const i = process.argv.indexOf(n); return i !== -1 ? proces
       console.log(`--update takes exactly one spec, got ${specs.length}`);
       process.exitCode = 2; return;
     }
-    process.exitCode = (await update(updateKey, specs[0], process.argv.includes('--attach'))) ? 0 : 1;
+    const alsoFields = (arg('--fields') || '').split(',').map((x) => x.trim()).filter(Boolean);
+    process.exitCode = (await update(updateKey, specs[0], process.argv.includes('--attach'), alsoFields)) ? 0 : 1;
     return;
   }
 
@@ -405,7 +406,7 @@ const arg = (n) => { const i = process.argv.indexOf(n); return i !== -1 ? proces
  * The spec is validated exactly as a create is, so an update cannot smuggle in a shape a create
  * would have rejected.
  */
-async function update(key, spec, addAttachments) {
+async function update(key, spec, addAttachments, alsoFields = []) {
   const { fields } = buildPayload(spec);
   const patch = {
     summary: fields.summary,
@@ -413,6 +414,20 @@ async function update(key, spec, addAttachments) {
     [F.actual]: fields[F.actual],
     [F.expected]: fields[F.expected],
   };
+  // Classification fields are NOT patched by default, deliberately: the team re-triages on the
+  // ticket, and an update carrying the spec's values would silently undo that. B10-59719 was raised
+  // to Critical by a triager while its local spec still read Major. Pass `--fields` to change them on
+  // purpose — as when QA's own re-test changes the severity it originally filed (B10-59832).
+  const OPTIONAL = { severity: F.severity, priority: 'priority', bugType: F.bugType, platform: F.platform };
+  for (const name of alsoFields) {
+    const target = OPTIONAL[name];
+    if (!target) {
+      console.log(`  ! --fields: "${name}" is not one of ${Object.keys(OPTIONAL).join(', ')}`);
+      continue;
+    }
+    patch[target] = fields[target];
+    console.log(`  also setting ${name} -> ${JSON.stringify(fields[target])}`);
+  }
   const r = await api(`/rest/api/2/issue/${key}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },

@@ -163,6 +163,46 @@ node automation/file_jira_bug.js --spec <bug.json> --update <ISSUE-KEY> [--attac
 It validates the spec exactly as a create does, rewrites summary + the three template fields, adds any
 listed attachment that is not already there, and re-reads the issue to show what landed.
 
+### 4.0b Evidence — MANDATORY. Every screenshot and every recording carries an INDICATOR
+
+**Mark where the issue is. On every still, and in the video.** Operator instruction 2026-09-07, said
+after two rounds of evidence that showed a screen without saying what in it to look at:
+
+- B10-59719's first recording *"does not specify what actually happens"*, and its stills showed a form
+  full of dates with nothing distinguishing the value entered from the value displayed. One of them,
+  named *"window grows on every save"*, was the locations **list** with a success toast and contained
+  no closure at all.
+- B10-59832's stills carried a caption but no mark, so the reader had to locate the success message and
+  the empty section unaided.
+
+Use [`automation/visual/annotate.js`](../../automation/visual/annotate.js), which annotates the **live
+page**, so one call covers the screenshot and the video frame:
+
+| Call | Use |
+|---|---|
+| `mark(page, sel, {label})` | red box on the wrong element, label placed on whichever side has room |
+| `markEmpty(page, sel, label)` | a defect of **absence** — dashed box on the container, label saying what is missing |
+| `pointer(page, sel)` | a real `mouse.move` **and** a drawn cursor: Playwright's video renders no cursor, so a hover is otherwise invisible |
+| `caption(page, text)` | the step, as a strip at the **top** (a bottom strip covers anything that opens downward) |
+| `addPageRoom(page)` | temporary bottom room so a control at the end of the page can be raised and its picker still fits |
+
+For a **before/after** defect, one labelled image beats two crops:
+[`automation/visual/compose_side_by_side.js`](../../automation/visual/compose_side_by_side.js).
+
+**Rules that made the difference in practice:**
+1. **A drift or a change needs a before/after pair on the same element.** One frame of a form shows a
+   date; nothing in it says whether that date is the one that was saved.
+2. **Check the mark landed.** `mark` reports rather than throws. Collect the results and **fail the
+   capture run** when one is missing — on B10-59832 the success-message selector matched nothing
+   (`[class*=alert]` against an Angular Material `mat-snack-bar-container`) and the still was attached
+   with no indicator on the only thing it was about.
+3. **Never let an annotation cover the evidence.** A caption at the bottom hid the calendar day it
+   named; a label pinned above hid the weekday header. Place to the side by default.
+4. **Values in a label are read out of the page**, never typed in from an expectation, and every
+   overlay carries a `__qa_` id so it cannot be mistaken for product UI.
+5. **Jira does not replace an attachment.** A re-uploaded same name sits beside the old one — delete
+   the superseded files, or the ticket carries both evidence sets, including the one you retracted.
+
 ### 4.1 The five parts of a B10 bug
 
 **1 · Issue type + parent.** `Bug` is **issue type `10084`, a SUB-TASK** → always pass

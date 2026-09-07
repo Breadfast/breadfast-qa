@@ -66,6 +66,21 @@ Attachments are **mandatory**, so gather them first rather than bolting them on:
 
 Convert `.webm` → `.mp4`. Never `image1.png`. For BrowserStack runs the session video is a legitimate source.
 
+### Every image and the recording carries an INDICATOR (mandatory)
+
+Mark the wrong thing, on every still and in the video, with
+[`automation/visual/annotate.js`](../../../automation/visual/annotate.js) — `mark` (red box + label),
+`markEmpty` (a defect of absence), `pointer` (real hover **and** a drawn cursor, since the video shows
+none), `caption` (step text, at the top). A change or a drift needs a **before/after pair on the same
+element**; `compose_side_by_side.js` labels them into one image.
+
+**Collect the mark results and fail the capture when one did not land** — a selector that matches
+nothing returns quietly, and on B10-59832 that put out a screenshot with no mark on the only thing it
+was about. Never let an overlay cover the evidence, and remember Jira does not replace an attachment:
+delete the superseded files.
+
+Standard: [`docs/ai/bug-reporting.md`](../../../docs/ai/bug-reporting.md) §4.0b.
+
 ## Step 2a · Write it in the OPERATOR'S VOICE — invoke `/humanizer:humanizer` (MANDATORY)
 
 These tickets reach developers as **his** reports, so they must be indistinguishable in voice from the
