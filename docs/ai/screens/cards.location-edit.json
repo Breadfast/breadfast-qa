@@ -1,0 +1,77 @@
+{
+  "_status": "Second real Screen Registry entry. Added 2026-09-07 after three visual deviations on B10-58669 (B10-59822/59823/59826) survived a Phase 5 pass that was performed by eye instead of through the deterministic engine. expectedComponents are AUTHORED from the design frames of Figma node 3302-1538 (file kmIp6MpoxXBKf3wJ1P6wkR, 'Closing Branch Hours'); figmaFileKey/figmaNodeId stay PLACEHOLDER per ADR-003 Decision 2 and are resolved at execution from the story's Figma URL.",
+  "_identity_convention": "componentId matches the testId synthesized by automation/visual/dump_web_screen.js: '<role>:<slug of a STABLE label>' — an aria-label, a name/id/formcontrolname/placeholder attribute, the label of the control's row, or (for unnamed painted chrome) its first class token. Repeats get an ordinal suffix, so the two selects in a day row are 'combobox:sunday' (From) and 'combobox:sunday-2' (To). Identity never comes from a control's current VALUE, which changes.",
+  "_known_engine_gap": "L2 flags expected components that are MISSING or duplicated. It does not flag components the build renders that the design does not — so the picker's ISO week-number column (td.week cells, rendered as text:36 … text:41) is NOT catchable deterministically today. It needs an 'unexpected component' check on screens marked exhaustively specified. Recorded rather than worked around.",
+
+  "profiles": [
+    {
+      "id": "card-panel-web",
+      "mode": "design-conformance",
+      "enabledLayers": ["identity", "component-tree", "visibility", "layout", "text", "styles"],
+      "tolerances": { "px": 6, "colorDeltaE": 2.5, "fontPx": 1, "spacingPx": 6 }
+    }
+  ],
+
+  "screens": [
+    {
+      "id": "location-edit.onetime-picker-open",
+      "displayName": "Location edit — Temporary closing hours, One-time with the date picker open",
+      "domain": "cards",
+      "owner": "Card Ops Squad",
+      "profileId": "card-panel-web",
+      "_designFrames": ["f03_onetime_added_a", "f04_onetime_added_b"],
+      "expectedComponents": [
+        { "componentId": "heading:temporary-closing-hours", "accessibleName": "Temporary closing hours", "required": true,
+          "styles": { "font-size": "18px", "font-weight": "600" } },
+        { "componentId": "text:these-will-override-the-main-working-hours-above", "accessibleName": "These will override the main working hours above", "required": true },
+        { "componentId": "button:add", "accessibleName": "Add", "required": true,
+          "styles": { "background-color": "rgb(170, 0, 130)", "color": "rgb(255, 255, 255)" } },
+
+        { "componentId": "label:frequency", "accessibleName": "Frequency", "required": true,
+          "_design": "f04 renders this label BOLD above regular field labels — the group heading",
+          "styles": { "font-size": "14px", "font-weight": "700" } },
+        { "componentId": "label:one-time", "accessibleName": "One-time", "required": true },
+        { "componentId": "label:recurring", "accessibleName": "Recurring", "required": true },
+        { "componentId": "label:starts-at", "accessibleName": "Starts at *", "required": true,
+          "styles": { "font-size": "14px", "font-weight": "400" } },
+        { "componentId": "label:ends-at", "accessibleName": "Ends at *", "required": true,
+          "styles": { "font-size": "14px", "font-weight": "400" } },
+
+        { "componentId": "group:bs-datepicker", "required": true,
+          "_design": "the picker card itself: white, neutral",
+          "styles": { "background-color": "rgb(255, 255, 255)" } },
+        { "componentId": "group:bs-datepicker-head", "required": true,
+          "_design": "f03/f04 draw the picker header on the SAME white ground as the calendar body, with dark text and the navigation on the right. The build ships ngx-bootstrap's default green.",
+          "styles": { "background-color": "rgb(255, 255, 255)" } }
+      ],
+      "variants": [
+        { "platform": "web", "locale": "en-US", "figmaFileKey": "PLACEHOLDER", "figmaNodeId": "PLACEHOLDER", "figmaFrameName": "f04_onetime_added_b" }
+      ]
+    },
+
+    {
+      "id": "location-edit.recurring-days",
+      "displayName": "Location edit — Temporary closing hours, Recurring with the day list filled",
+      "domain": "cards",
+      "owner": "Card Ops Squad",
+      "profileId": "card-panel-web",
+      "_designFrames": ["f07_recurring_days_a", "f09_recurring_days_c"],
+      "expectedComponents": [
+        { "componentId": "label:frequency", "accessibleName": "Frequency", "required": true,
+          "styles": { "font-size": "14px", "font-weight": "700" } },
+        { "componentId": "label:repeats-on", "accessibleName": "Repeats On", "required": true },
+        { "componentId": "label:same-time", "accessibleName": "Same time", "required": true },
+        { "componentId": "label:sunday", "accessibleName": "Sunday", "required": true },
+        { "componentId": "label:saturday", "accessibleName": "Saturday", "required": true },
+
+        { "componentId": "combobox:sunday", "accessibleName": "01:00 PM", "required": true,
+          "_design": "f09 renders the From/To values in 12-hour form with a meridian. The build offers 00:00-23:00 and renders 13:00." },
+        { "componentId": "combobox:sunday-2", "accessibleName": "03:00 PM", "required": true,
+          "_design": "as above, the To value" }
+      ],
+      "variants": [
+        { "platform": "web", "locale": "en-US", "figmaFileKey": "PLACEHOLDER", "figmaNodeId": "PLACEHOLDER", "figmaFrameName": "f09_recurring_days_c" }
+      ]
+    }
+  ]
+}

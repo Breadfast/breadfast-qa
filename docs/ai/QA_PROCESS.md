@@ -438,6 +438,33 @@ Each finding records: layer, category/dimension, **severity** (critical/major/mi
 ### 5.6 Produce the visual report
 Assemble a visual report: per-screen verdict (pass / minor / major / no-frame / coverage-gap), findings by severity and category, recurring-pattern summary, coverage gaps (listed separately, non-penalizing), and an expected-vs-actual view per screen.
 
+### 5.6a Visual coverage is COUNTED, not asserted (added 2026-09-07)
+
+Every frame Phase 2 exported is either **compared** (and says how) or **excluded** (and says why),
+declared per frame in `figma-analysis/frame-coverage.json` and enforced:
+
+```
+node qa-workflow/bin/qa-cli.js visual-coverage <storyDir>
+```
+
+Exits 1 on `uncovered-frame` (neither compared nor excluded), `unjustified-exclusion` (excluded with no
+reason), `compared-without-evidence`, `unknown-frame` (a declaration naming a frame that was never
+exported), and — the check that matters most — **`engine-screen-not-found`**: a frame declared
+`comparedVia: "engine:<screenId>"` is verified against the deterministic engine's own output, so it
+cannot be declared compared by assertion. `complete-check` runs the same check and fails the run; an
+operator deferral on `visual-findings` waives it.
+
+> **Motivating failure — B10-58669 (2026-09-07).** Phase 2 exported 12 primary frames. Phase 5 compared
+> **6**, by eye, reported all six matching, and filed nothing. Nothing counted the other six, so every
+> gate stayed green and the QA summary said the visual pass was done. The operator then found three real
+> deviations by looking: **B10-59822** (the date picker keeps ngx-bootstrap's default green theme and an
+> ISO week-number column, in the picker-open state that `f03`/`f04` draw and no capture ever produced),
+> **B10-59823** (the `Frequency` label lost its bold — no story had ever measured a font weight), and
+> **B10-59826** (`13:00` where `f09` shows `01:00 PM` — in a frame the reference set excluded, and
+> previously *rejected* on the false claim that the design showed the dropdown closed). AC coverage
+> could never fail this way, because it is computed (`uncovered-ac`). Visual coverage was prose.
+> Postmortem: the story's `execution-reports/visual-postmortem.md`.
+
 ### 5.7 Rejecting a finding does not close the requirement
 
 **Disproving a specific *claim* proves nothing about the underlying visual *requirement*.** A finding is

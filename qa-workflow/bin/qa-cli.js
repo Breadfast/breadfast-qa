@@ -148,6 +148,107 @@ function frameworkPath() {
 function readStdin() { try { return fs.readFileSync(0, 'utf8'); } catch { return ''; } }
 function loadOrInit(dir, ticket) { return qs.load(dir) || qs.newState(ticket || 'B10-0'); }
 
+/**
+ * VISUAL COVERAGE — the counterpart of `uncovered-ac`, added 2026-09-07.
+ *
+ * AC coverage is computed and enforced: every case carries `ac:AC-n.m`, testcase-lint derives the
+ * uncovered set and exits 1. Visual coverage had no equivalent, so a Phase 5 pass could export twelve
+ * design frames, compare six, report "all match" and satisfy every gate. On **B10-58669** it did
+ * exactly that, and three real deviations (B10-59822/59823/59826) lived in the frames and states that
+ * were never compared. Nothing counted them, so nothing could object.
+ *
+ * Frames come from the story's own capture spec (what Phase 2 exported). Coverage is declared in
+ * `figma-analysis/frame-coverage.json`:
+ *
+ *   { "frames": [
+ *       { "frame": "f04_onetime_added_b", "compared": true,
+ *         "comparedVia": "engine:location-edit.onetime-picker-open" },
+ *       { "frame": "v01_alt_recurring_default", "compared": false,
+ *         "reason": "alternate cluster, not adopted by the ACs (clarification Q-5)" } ] }
+ *
+ * `comparedVia: "engine:<screenId>"` is VERIFIED against the deterministic engine's own output, so a
+ * frame cannot be declared compared by assertion alone — which is the whole failure being fixed. Any
+ * other `comparedVia` value is a manual claim and is reported as such.
+ */
+function visualCoverage(dir, opts = {}) {
+  const errors = [];
+  const warn = [];
+  const specPath = path.join(dir, 'figma-analysis', 'capture-spec.json');
+  const covPath = path.join(dir, 'figma-analysis', 'frame-coverage.json');
+  const resultPath = opts.result || path.join(dir, 'visual', 'result.json');
+
+  const readJson = (p) => { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return null; } };
+
+  const spec = readJson(specPath);
+  if (!spec) return { skipped: true, reason: 'no figma-analysis/capture-spec.json — no design frames were exported for this story', errors, warn };
+  const specFrames = (spec.frames || []).map((f) => f.name).filter(Boolean);
+  if (!specFrames.length) return { skipped: true, reason: 'capture-spec.json declares no frames', errors, warn };
+
+  const cov = readJson(covPath);
+  if (!cov) {
+    errors.push({ code: 'no-frame-coverage', message:
+      `${specFrames.length} design frames were exported but figma-analysis/frame-coverage.json does not exist. `
+      + 'Declare, per frame, whether it was compared (and how) or excluded (and why).' });
+    return { frames: specFrames.length, errors, warn };
+  }
+
+  const declared = new Map();
+  for (const row of cov.frames || []) if (row && row.frame) declared.set(row.frame, row);
+
+  // engine screenIds actually present in the deterministic result
+  const result = readJson(resultPath);
+  const engineScreens = new Set((result && result.screens ? result.screens : []).map((s) => s.screen));
+
+  for (const name of specFrames) {
+    const row = declared.get(name);
+    if (!row) {
+      errors.push({ code: 'uncovered-frame', frame: name, message:
+        `design frame "${name}" is neither compared nor excluded — a frame the design owns must be one or the other` });
+      continue;
+    }
+    if (row.compared) {
+      const via = String(row.comparedVia || '');
+      if (!via) {
+        errors.push({ code: 'compared-without-evidence', frame: name, message:
+          `"${name}" is declared compared with no comparedVia — name the engine screen or the evidence` });
+      } else if (via.startsWith('engine:')) {
+        const screenId = via.slice('engine:'.length);
+        if (!engineScreens.size) {
+          errors.push({ code: 'engine-result-missing', frame: name, message:
+            `"${name}" claims comparedVia "${via}" but ${path.relative(dir, resultPath)} has no screens — run qa-cli visual-evaluate` });
+        } else if (!engineScreens.has(screenId)) {
+          errors.push({ code: 'engine-screen-not-found', frame: name, message:
+            `"${name}" claims comparedVia "${via}" but the engine result contains no screen "${screenId}" (has: ${[...engineScreens].join(', ')})` });
+        }
+      } else {
+        warn.push({ code: 'manual-comparison', frame: name, message:
+          `"${name}" was compared manually (comparedVia "${via}") — not verified by the deterministic engine` });
+      }
+    } else if (!String(row.reason || '').trim()) {
+      errors.push({ code: 'unjustified-exclusion', frame: name, message:
+        `"${name}" is excluded with no reason — an exclusion is a decision and must say why` });
+    }
+  }
+
+  for (const name of declared.keys()) {
+    if (!specFrames.includes(name)) {
+      errors.push({ code: 'unknown-frame', frame: name, message:
+        `frame-coverage.json names "${name}", which the capture spec never exported (typo, or a stale entry)` });
+    }
+  }
+
+  const compared = specFrames.filter((n) => declared.get(n) && declared.get(n).compared);
+  const excluded = specFrames.filter((n) => declared.get(n) && !declared.get(n).compared);
+  return {
+    frames: specFrames.length,
+    compared: compared.length,
+    excluded: excluded.length,
+    engineVerified: compared.filter((n) => String(declared.get(n).comparedVia || '').startsWith('engine:')).length,
+    errors,
+    warn,
+  };
+}
+
 /** Inspect a Figma node (name/type/direct frame-children) so export scopes correctly (FRAME vs SECTION). */
 async function figmaInspectNode(token, fileKey, id) {
   const url = `https://api.figma.com/v1/files/${fileKey}/nodes?ids=${encodeURIComponent(id)}&depth=1`;
@@ -603,6 +704,24 @@ async function main() {
       }
       break;
     }
+    case 'visual-coverage': {
+      // The visual counterpart of testcase-lint's `uncovered-ac`. Exits 1 on a design frame that was
+      // neither compared nor excluded-with-a-reason.
+      const [dir] = positional;
+      if (!dir) die('usage: visual-coverage <storyDir> [--result <path>]');
+      const r = visualCoverage(dir, { result: flags.result });
+      process.stdout.write(JSON.stringify(r, null, 2) + '\n');
+      if (r.skipped) { process.stdout.write('visual-coverage: skipped — ' + r.reason + '\n'); break; }
+      r.warn.forEach((w) => process.stderr.write('   ! ' + w.code + ': ' + w.message + '\n'));
+      if (r.errors.length) {
+        process.stderr.write('qa-cli: visual-coverage FAILED\n');
+        r.errors.forEach((e) => process.stderr.write(`     ${e.code}: ${e.message}\n`));
+        process.exit(1);
+      }
+      process.stdout.write(`visual-coverage OK — ${r.compared}/${r.frames} frames compared `
+        + `(${r.engineVerified} engine-verified), ${r.excluded} excluded with a reason\n`);
+      break;
+    }
     case 'complete-check': {
       // Completion assertion for qa-full / W2. `show` prints state and always exits 0, so a `partial`
       // artifact could sit alongside eleven `complete` ones and never contradict the QA summary.
@@ -639,6 +758,17 @@ async function main() {
       for (const [id, c] of Object.entries(state.coverageChanges || {})) {
         if (c.status === 'proposed') {
           problems.push({ key: `coverage-change:${id}`, issue: `still proposed - affects ${(c.affects || []).join(',')} (${(c.kind || []).join(',')})` });
+        }
+      }
+
+      // Visual coverage, enforced the same way AC coverage is. A run that exported design frames and
+      // silently compared a subset of them is not complete — that is the B10-58669 failure, where six
+      // of twelve frames were compared, the pass reported "all match", and every gate stayed green.
+      // A deferral on `visual-findings` waives this too, so the operator can still choose to skip it.
+      if (required.includes('visual-findings') && !(state.deferrals && state.deferrals['visual-findings'])) {
+        const vc = visualCoverage(dir);
+        if (!vc.skipped) {
+          for (const e of vc.errors) problems.push({ key: 'visual-coverage', issue: `${e.code}: ${e.message}` });
         }
       }
 

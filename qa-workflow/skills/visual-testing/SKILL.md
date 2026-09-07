@@ -78,6 +78,18 @@ comparison rules (dynamic-content exclusion taxonomy + tolerances, per the opera
    `qa-cli.js coverage-change add … --source test-design` — not a verdict this phase may issue alone.
    Schema: [`CLAUDE_CODE_OPERATOR.md`](../../../docs/ai/visual-testing/CLAUDE_CODE_OPERATOR.md) §7.3 ·
    rule: [`QA_PROCESS.md`](../../../docs/ai/QA_PROCESS.md) §5.7.
+5b. **Declare and verify visual COVERAGE.** Write `figma-analysis/frame-coverage.json` with one row per
+   frame Phase 2 exported: `{frame, compared:true, comparedVia:"engine:<screenId>"}` or
+   `{frame, compared:false, reason:"<why>"}`. Then:
+
+   ```
+   node qa-workflow/bin/qa-cli.js visual-coverage "<storyDir>"
+   ```
+
+   It exits 1 on a frame that is neither compared nor excluded, on an exclusion with no reason, and on
+   an `engine:` claim the engine result does not contain. `complete-check` runs it too. **A frame you
+   chose not to compare is a decision that has to be written down** — on B10-58669, six of twelve
+   frames were silently left out and three real defects lived in them.
 6. Write `evidence/visual-findings.md` (+ evidence files).
 
 ## Recording
