@@ -54,20 +54,30 @@ function getCardDbConfig(propsPath) {
   const p = load(propsPath);
   return {
     db: {
-      host:     p.mysqlHost,
-      port:     parseInt(p.mysqlServerPort || '3306', 10),
-      user:     p.mysqlUserName,
-      password: p.mysqlUserPassword,
+      // The card DB is on a DIFFERENT server from the breadfast one, reached through a DIFFERENT
+      // jump host, with its own credentials — so each generic key has a `mysqlCardServices*`
+      // override, following the convention `mysqlCardServicesDatabaseName` already set. Without
+      // them, pointing the generic keys at the card DB breaks every caller that queries
+      // breadfast_testing through the same config. (2026-09-08: the generic keys pointed at
+      // 10.54.224.3, whose `cards_hades_testing` is an ~11-month-old snapshot with none of the
+      // current fixtures and no closure column — so a DB read there answers about the wrong data.)
+      host:     p.mysqlCardServicesHost || p.mysqlHost,
+      port:     parseInt(p.mysqlCardServicesServerPort || p.mysqlServerPort || '3306', 10),
+      user:     p.mysqlCardServicesUserName || p.mysqlUserName,
+      password: p.mysqlCardServicesUserPassword || p.mysqlUserPassword,
       // card data lives in the hades DB, not the default breadfast_testing DB
       database: p.mysqlCardServicesDatabaseName || p.mysqlDatabaseName,
     },
     ssh: {
       required:    String(p.sshConnectionRequired).toLowerCase() === 'true',
-      host:        p.sshHost,
+      host:        p.sshCardServicesHost || p.sshHost,
       // sshPort=0 in config means "use the default 22"
-      port:        parseInt(p.sshPort || '0', 10) || 22,
-      username:    p.sshUserName,
-      keyPath:     p.sshKeyPath,
+      port:        parseInt(p.sshCardServicesPort || p.sshPort || '0', 10) || 22,
+      username:    p.sshCardServicesUserName || p.sshUserName,
+      // PASSWORD auth: DbHelper already prefers `ssh.password` over a key, but this reader never
+      // surfaced the property, so a password-authenticated jump host could not be configured at all.
+      password:    p.sshCardServicesPassword || p.sshPassword || undefined,
+      keyPath:     p.sshCardServicesKeyPath || p.sshKeyPath,
       keyProtected: String(p.isSshKeyProtected).toLowerCase() === 'true',
       passphrase:  p.sshPassphrase || undefined,
     },
