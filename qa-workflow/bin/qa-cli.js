@@ -949,7 +949,7 @@ async function main() {
           die('figma-export: Figma REST rate-limited (' + e.message + ').\n' +
               '  REST quota likely exhausted (Starter-plan PAT monthly content limit). This is the FALLBACK path —\n' +
               '  use the PRIMARY browser-session Copy-as-PNG capture instead: check `node qa-workflow/bin/figma-connect.js --status`,\n' +
-              '  reconnect via `node qa-workflow/bin/figma-connect.js` if not FRESH (session at auth/figma-auth.json), or retry after the reset.');
+              '  reconnect via `node qa-workflow/bin/figma-connect.js` if that exits 3 (session at auth/figma-auth.json), or retry after the reset.');
         }
         throw e;
       }

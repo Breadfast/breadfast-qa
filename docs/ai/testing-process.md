@@ -126,22 +126,63 @@ A test case is not complete without a Figma comparison result. Three non-negotia
 > helper or config. (`tvvGnEaxVjJvMWOTl4zjZC` is just B10-56336's key, used as an example only.)
 
 **Step 0 — mandatory session check (before opening the browser):** run
-`node qa-workflow/bin/figma-connect.js --status` — it reads the saved session `auth/figma-auth.json`
-(repo root; override `FIGMA_AUTH_PATH`) and exits **0 = FRESH**, **3 = MISSING/EXPIRED/INVALID**.
-If not FRESH, **notify the tester and open a browser to reconnect**: run
+`node qa-workflow/bin/figma-connect.js --status`. It reads the saved session `auth/figma-auth.json`
+(repo root; override `FIGMA_AUTH_PATH`), fast-fails on the structural checks (exists / parses / has
+cookies / within the 25-day window), then **makes one real authenticated request to Figma** and
+reports on that. One JSON line:
+
+| state | exit | meaning | what to do |
+|---|---|---|---|
+| `FRESH` | **0** | structurally fine **and** Figma confirmed the session (`verified: true`) | capture |
+| `UNVERIFIED` | **0** (`4` under `--strict`) | the probe itself could not complete — offline, timeout, `429`, probe endpoint moved | **capture anyway. Do NOT re-login on this alone** — the capture script's own file-canvas gate is the backstop |
+| `STALE` | **3** | the file is intact, **Figma rejected it** (`401`/`403`, or `/files` redirects to `/login`) | reconnect |
+| `MISSING` · `INVALID` · `EXPIRED` | **3** | absent · unparseable/no cookies · past the age window | reconnect |
+| — | **2** | internal error | read stderr |
+
+`--offline` (or `--no-probe`) keeps the pre-2026-09-08 date-only behaviour, for a machine with no
+network; `--timeout <ms>` bounds the probe (default 8000).
+
+> **Why it probes at all (changed 2026-09-08).** The gate used to decide `FRESH` from
+> `cookies.length >= 1` plus `savedAt` age — arithmetic on a date, never a request to Figma. A jar
+> Figma had already invalidated server-side (password change, new device, SSO policy) therefore
+> reported `FRESH` with 25 days "left" while every capture run landed on the login wall, and the
+> tester was sent to re-login by the *capture* failure rather than by the gate. **A date is not
+> proof of a session.** Measured on the day of the change: `--offline` → `FRESH`, exit 0; the probe →
+> `STALE`, exit 3, `GET /api/user/state` → `401 {"reason":"expired"}`.
+
+If not usable, **notify the tester and open a browser to reconnect**: run
 `node qa-workflow/bin/figma-connect.js` from the repo root (`@playwright/test` resolves from the
 repo's own `node_modules`) — a headed Chromium opens on Figma login, the tester signs in with Google, and the script
 auto-saves the full `storageState`. Resume once it exits 0. **Never** attempt capture against a
 missing/stale session or silently fall through to REST/spec-only, and **never** mark the phase
 "blocked" — reconnect is a normal prompt. (Fallback when no headed browser can launch: reconnect
-in-session via the Playwright MCP — §4.5 / the figma-analysis skill session gate.) This flow is
-**self-contained in this repo — no qa-platform dependency.**
+in-session via the Playwright MCP, then persist that jar with
+`node qa-workflow/bin/figma-connect.js --import-state <state.json|->` — the one guarded atomic
+writer; never hand-write `auth/figma-auth.json`. §4.5 / the figma-analysis skill session gate.) This
+flow is **self-contained in this repo — no qa-platform dependency.**
 
-**Primary method: authenticated browser-session capture** — immune to the **Starter-plan** limits
-that `429` the REST PAT (monthly content quota) and seat-cap the Figma MCP. Inject the saved Figma
-cookies (`figma-auth.json`) into the browser context **before** navigating (**session-gate first** —
-missing/expired ⇒ **stop and ask the tester to reconnect**, never fall through silently). The same
-authenticated channel has two variants:
+**Primary method: authenticated browser-session capture, run through THIS repo's Playwright** —
+immune to the **Starter-plan** limits that `429` the REST PAT (monthly content quota) and seat-cap
+the Figma MCP:
+
+```
+node automation/figma/capture_frames.js --spec <storyDir>/figma-analysis/frames/spec.json
+```
+
+Session handling — load, the split restore, the probe, and the atomic write-back — lives once in
+[`automation/figma/session.js`](../../automation/figma/session.js); the capture script consumes it.
+Two properties matter here and are easy to lose by hand-rolling a capture:
+
+- **The session is written back after every run that proved authenticated** (added 2026-09-08).
+  Figma **rotates** its session token, and nothing ever saved the rotation: each run re-read the jar
+  from the last manual login until the 25-day window lapsed, then asked for another login — for two
+  weeks the file's mtime never moved while the tester logged in again and again. The write-back is
+  atomic, and refuses to replace a good jar with one it cannot confirm, so the freshness window now
+  resets on **use**.
+- **The Playwright MCP browser cannot read `auth/figma-auth.json`** — it runs its own profile and
+  always starts logged out. It is a reconnect and exploration channel, **not** the capture channel.
+
+The authenticated channel has two variants, both implemented by that script:
 
 - **Copy as PNG (`Ctrl+Shift+C`) — the DEFAULT, per-frame.** Deep-link to the frame node
   (`?node-id=<frame>`), wait for canvas (title contains "–"), `grantPermissions(['clipboard-read',
@@ -276,10 +317,12 @@ Reference flow frames: [figma_full_flow_reference.md](../../figma_full_flow_refe
 Capture in this order; each step is a fallback for the one above. **Do not stop the QA process.**
 
 1. **Authenticated browser-session capture (PRIMARY)** — the self-contained browser-session mechanism
-   (§4.1); reconnect via `qa-workflow/bin/figma-connect.js`, session at `auth/figma-auth.json` — **no
-   qa-platform dependency**. **Session-gate first** (`figma-connect.js --status`; not FRESH ⇒ notify
-   the tester and open the reconnect browser — never emit a "blocked" artifact). Immune to both the
-   Starter-plan REST quota and the MCP seat-cap. Two variants of the one channel:
+   (§4.1), run via `automation/figma/capture_frames.js`; reconnect via
+   `qa-workflow/bin/figma-connect.js`, session at `auth/figma-auth.json` — **no qa-platform
+   dependency**. **Session-gate first** (`figma-connect.js --status`; **exit 3** ⇒ notify the tester
+   and open the reconnect browser — never emit a "blocked" artifact. `UNVERIFIED` at exit 0 is *not*
+   a reconnect trigger: see the §4.1 table). Immune to both the Starter-plan REST quota and the MCP
+   seat-cap. Two variants of the one channel:
    - **Copy as PNG (`Ctrl+Shift+C`) — DEFAULT, per-frame.** 2× native, no editor chrome; one clean
      file per screen. The reliable workhorse on this account.
    - **`Ctrl+Shift+E → ZIP` — BULK VARIANT** for large multi-frame sections (dozens of frames at once).
@@ -305,7 +348,10 @@ frames, and became the documented primary. **B10-57393 (2026-07-26) — account 
 (REST PAT `429` monthly quota + MCP View-seat cap); the authenticated browser-session `Ctrl+Shift+C`
 Copy-as-PNG delivered export-grade 2× frames when both REST and MCP were down. Per user decision, the
 authenticated browser session is now the documented PRIMARY (Copy-as-PNG default; `Ctrl+Shift+E` ZIP
-for bulk); REST and MCP are fallbacks.**
+for bulk); REST and MCP are fallbacks.** B10-59294 (2026-09-08) — the session gate was proved to be
+guessing: it reported `FRESH` off `savedAt` arithmetic while Figma had already invalidated the jar, and
+nothing ever wrote the session back, so the tester re-logged-in every run. `--status` now probes, and
+a successful capture re-saves the jar (§4.1).
 
 ---
 

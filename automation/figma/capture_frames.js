@@ -38,7 +38,12 @@ const path = require('path');
 const crypto = require('crypto');
 const { chromium } = require('playwright');
 
-const AUTH_PATH = process.env.FIGMA_AUTH_PATH || path.join(__dirname, '..', '..', 'auth', 'figma-auth.json');
+// Session load / split-restore / probe / atomic write-back live once in ./session.js (2026-09-08).
+// This file used to hold the repo's ONLY correct restore; everything else got the `__Host-` cookies
+// wrong. It is now the shared module's first consumer rather than its owner.
+const session = require('./session.js');
+
+const AUTH_PATH = session.authPath();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const sha256 = (buf) => crypto.createHash('sha256').update(buf).digest('hex');
 
@@ -47,28 +52,9 @@ function arg(name, dflt) {
   return i > -1 && process.argv[i + 1] ? process.argv[i + 1] : dflt;
 }
 
-/**
- * Playwright's `storageState` silently DROPS every `__Host-`prefixed cookie, because the prefix is
- * only honoured for a cookie with no Domain attribute and the saved jar carries one. On Figma that
- * set (`__Host-figma.authn`, `-state`, `.mac`, …) IS the auth, so a storageState-only restore lands
- * on the login wall with a perfectly valid session. Split the jar and inject those by url instead.
- * (Measured: storageState alone → 0 `__Host-*`; split restore → all 9.)
- */
-function splitJar(cookies) {
-  const byUrl = [];
-  const byDomain = [];
-  for (const c of cookies) {
-    if (c.name.startsWith('__Host-')) {
-      byUrl.push({
-        name: c.name, value: c.value,
-        url: `https://${String(c.domain).replace(/^\.+/, '')}/`,
-        httpOnly: c.httpOnly, secure: true, sameSite: c.sameSite || 'Lax',
-        ...(c.expires > 0 ? { expires: c.expires } : {}),
-      });
-    } else { byDomain.push(c); }
-  }
-  return { byUrl, byDomain };
-}
+// The `__Host-` split-restore that makes the jar work at all (Playwright's `storageState` silently
+// drops exactly the cookies that ARE the Figma auth) now lives in ./session.js → `splitJar` /
+// `newAuthedContext`. Same logic, one copy, so no other caller can get it wrong.
 
 /** Empty the clipboard and confirm no image survives on it. Returns true when provably image-free. */
 async function clearClipboard(page) {
@@ -168,39 +154,71 @@ async function captureFrame(page, spec, f, seen) {
   fs.mkdirSync(spec.out, { recursive: true });
   fs.mkdirSync(spec.ctx, { recursive: true });
 
-  if (!fs.existsSync(AUTH_PATH)) {
-    console.error(`Missing Figma session: ${AUTH_PATH}\n  -> run: node qa-workflow/bin/figma-connect.js`);
+  let raw;
+  try {
+    raw = session.loadJar(AUTH_PATH);
+  } catch (e) {
+    console.error(e.message);
     process.exit(3);
   }
-  const raw = JSON.parse(fs.readFileSync(AUTH_PATH, 'utf8'));
-  const { byUrl, byDomain } = splitJar(raw.cookies);
 
   const browser = await chromium.launch({ headless: false, args: ['--start-maximized'] });
-  const context = await browser.newContext({
-    storageState: { cookies: byDomain, origins: raw.origins || [] },
+  // `newAuthedContext` does the split-restore (storageState + addCookies by url) in one place.
+  const context = await session.newAuthedContext(browser, {
+    jar: raw,
     viewport: { width: 1600, height: 1000 },
     deviceScaleFactor: 1,
   });
-  await context.addCookies(byUrl);
   await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: 'https://www.figma.com' });
   const page = await context.newPage();
 
-  // A live jar restored the wrong way is indistinguishable from an expired one, so prove the session
+  // A live jar restored the wrong way is indistinguishable from an expired one, so prove access
   // before spending a capture run on frames that will all render the login wall.
-  await page.goto('https://www.figma.com/files', { waitUntil: 'domcontentloaded', timeout: 90000 });
-  await sleep(6000);
-  if (/login|signup/i.test(page.url())) {
+  //
+  // Two things are true independently: the ACCOUNT session (does /files open) and ACCESS TO THE
+  // TARGET FILE (a link-shared file opens its canvas, and exports natively, with no account session
+  // at all). B10-59294, 2026-09-08: the jar reported FRESH, /files redirected to login, and all
+  // 12 frames still exported natively — so the account session is not the thing to gate on.
+  //
+  // Gate on the TARGET FILE, never on /files: visiting /files with a dead jar lands on the login
+  // wall, and that navigation itself then poisons the design-URL load in the same context (observed
+  // repeatedly on B10-59294). The canvas loader is also flaky cold, so retry before condemning access.
+  const gateNode = spec.frames && spec.frames[0] ? `?node-id=${spec.frames[0].node.replace(':', '-')}` : '';
+  let fileTitle = '';
+  for (let attempt = 1; attempt <= 3 && !/–/.test(fileTitle); attempt++) {
+    await page.goto(`https://www.figma.com/design/${spec.fileKey}/${spec.fileSlug || 'file'}${gateNode}`, { waitUntil: 'domcontentloaded', timeout: 120000 });
+    for (let i = 0; i < 45; i++) { fileTitle = await page.title(); if (/–/.test(fileTitle)) break; await sleep(2000); }
+    if (!/–/.test(fileTitle)) console.warn(`  gate attempt ${attempt}: title "${fileTitle}" — reloading`);
+  }
+  if (!/–/.test(fileTitle) || /login|signup/i.test(page.url())) {
+    await page.screenshot({ path: path.join(spec.ctx, 'GATE_no_file_access.png') });
     await browser.close();
-    console.error(`Figma session is not authenticated (jar savedAt ${raw.savedAt}).\n` +
+    console.error(`No access to file ${spec.fileKey} (title "${fileTitle}", url ${page.url()}, jar savedAt ${raw.savedAt}).\n` +
       '  -> run: node qa-workflow/bin/figma-connect.js');
     process.exit(3);
   }
+  console.log(`file access OK — "${fileTitle}"`);
 
   const seen = new Map();                 // sha256 -> frame name, the distinctness ledger
   const rows = [];
   try {
     for (const f of spec.frames) rows.push(await captureFrame(page, spec, f, seen));
   } finally {
+    // WRITE THE SESSION BACK (2026-09-08) — the cure for the recurring re-login. Figma ROTATES its
+    // session token, and until now nothing ever saved the rotation: every run re-read the same
+    // jar from the last manual login until the 25-day window lapsed, then asked for another one.
+    // `verify: true` probes the captured jar browserlessly (no navigation — /files navigation
+    // poisons this context, see the gate above) and writes ONLY if Figma confirms the ACCOUNT
+    // session, so a link-shared-only run can never overwrite a good jar with a logged-out one.
+    // Atomic (temp + rename), and never fatal to the run that earned it.
+    try {
+      const wb = await session.saveJar(context, AUTH_PATH, { figmaUrl: page.url() }, { verify: true });
+      console.log(wb.saved
+        ? `session written back (${wb.cookies} cookies, savedAt ${wb.savedAt}) — freshness window reset on USE`
+        : `session NOT written back (${wb.reason}); previous session file kept as-is`);
+    } catch (e) {
+      console.warn(`session write-back skipped: ${e.message}`);
+    }
     await browser.close();
   }
 
