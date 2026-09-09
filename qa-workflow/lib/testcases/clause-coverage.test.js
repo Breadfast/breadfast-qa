@@ -73,3 +73,25 @@ test('an AC with no clause indicator is not flagged', () => {
   });
   assert.ok(!r.findings.some((f) => f.code === 'ac-possible-multi-clause'));
 });
+
+/**
+ * A case may cite the PRD when NO acceptance criterion adopted the requirement.
+ *
+ * Before this, `missing-ac-ref` errored on any case without an `ac:` tag, so the only way to get a
+ * PRD-only case past the lint was to attach an AC tag that did not describe it. That is what happened
+ * on B10-58669: TC-56785 asserts the portal's "Temporarily closed until" badge — a PRD requirement no
+ * AC adopted (gap G-1) — and carried `ac:AC-8.1`, whose text is "the location shows closed on the
+ * app". The false tag inflated AC-8.1's coverage and hid the gap, and the operator caught it.
+ */
+test('a prd: tag satisfies traceability, and is reported as PRD-only', () => {
+  const badge = { ...mkCase('Verify the portal shows a Temporarily closed until badge', []), prds: ['portal-status-indicator'] };
+  const withPrd = lintTestCases(parsed([badge]), { acs: ['AC-1'] });
+  assert.equal(withPrd.findings.filter((f) => f.code === 'missing-ac-ref').length, 0,
+    'a prd: tag must satisfy the source requirement');
+  assert.equal(withPrd.findings.filter((f) => f.code === 'prd-only-coverage').length, 1,
+    'and it must still be reported, so the AC gap stays visible at the gate');
+
+  const neither = lintTestCases(parsed([mkCase('Verify something', [])]), { acs: ['AC-1'] });
+  assert.equal(neither.findings.filter((f) => f.code === 'missing-ac-ref').length, 1,
+    'a case citing NO source at all is still an error');
+});

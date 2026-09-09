@@ -103,6 +103,12 @@ function parseTestCases(text) {
   for (const c of cases) {
     c.acs = c.tags.filter((t) => /^ac[:\-]/i.test(t)).map((t) => normalizeAc(t.replace(/^ac[:\-]/i, '')));
     c.screens = c.tags.filter((t) => /^screen[:\-]/i.test(t)).map((t) => t.replace(/^screen[:\-]/i, '').trim());
+    // `prd:<slug>` — a requirement the PRD states that NO acceptance criterion adopted. Without it the
+    // only way past `missing-ac-ref` was to attach an AC tag that does not describe the case, which is
+    // exactly what happened on B10-58669: TC-56785 tests the portal's "Temporarily closed until" badge
+    // (a PRD requirement, gap G-1) and was tagged `ac:AC-8.1`, whose text is "the location shows closed
+    // on the app". The tag inflated AC-8.1's coverage with an assertion that was not AC-8.1's.
+    c.prds = c.tags.filter((t) => /^prd[:\-]/i.test(t)).map((t) => t.replace(/^prd[:\-]/i, '').trim());
   }
   return { header, headerOk, cases, orphanRows, rowCount: rows.length - 1 };
 }

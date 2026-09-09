@@ -87,7 +87,16 @@ function lintTestCases(parsed, opts = {}) {
     }
 
     // traceability
-    if (!c.acs.length) add('error', 'missing-ac-ref', 'no `ac:` tag — the case cites no Acceptance Criterion', at);
+    // A case must cite a SOURCE. Normally that is an AC; `prd:<slug>` covers a requirement the PRD
+    // states and no AC adopted, so such a case no longer has to borrow an unrelated AC tag to pass.
+    if (!c.acs.length && !(c.prds || []).length) {
+      add('error', 'missing-ac-ref',
+        'no `ac:` tag — the case cites no Acceptance Criterion (use `prd:<slug>` when the PRD requires it and no AC adopted it)', at);
+    }
+    if (!c.acs.length && (c.prds || []).length) {
+      add('warn', 'prd-only-coverage',
+        `cites only the PRD (${c.prds.join(', ')}) — no AC adopted this requirement, so ask the PO whether an AC should`, at);
+    }
     if (acs.length) {
       for (const ref of c.acs) if (!acs.includes(ref)) add('error', 'unknown-ac-ref', `cites ${ref}, which is not in the story's AC list`, at);
     }
