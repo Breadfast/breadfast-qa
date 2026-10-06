@@ -4,6 +4,7 @@
 - **Date:** 2026-07-22
 - **Deciders:** QA Lead (Ahmed Essam) + Claude Code
 - **Supersedes:** none · **Related:** [`../QA_PROCESS.md`](../QA_PROCESS.md), [`../visual-testing/CLAUDE_CODE_OPERATOR.md`](../visual-testing/CLAUDE_CODE_OPERATOR.md), [`../../../CLAUDE.md`](../../../CLAUDE.md)
+- **Superseded in part by ADR-004** (`docs/architecture/adr-004-testing-in-the-plugin.md` in the **breadfast-workflow** plugin), which verified the inferred plugin shape against the real files: four assumptions in §1/§3.3 are false, and the migration checklist in [`qa-artifact-contract.md`](qa-artifact-contract.md) §7 steps 2 and 5 no longer applies. This repo is archived read-only; ADR-004 is the live decision.
 
 ---
 

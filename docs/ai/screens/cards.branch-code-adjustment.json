@@ -1,0 +1,70 @@
+{
+  "_status": "Screen Registry entry for B10-58644 (Admin Portal, Bulk Correct Pickup Card Branch Location). Added 2026-09-21.",
+  "_baseline_caveat": "THE DESIGN IS A SCREENSHOT MOCK-UP, NOT A VECTOR DESIGN. Every frame under Figma node 3302-1538 (file gu6vY6VGkyIrRMU4IhJbcE, page 'Playground') renders the tool card as a bitmap of the EXISTING Balance-adjustment screen, captured 2026-07-29/30, with a handful of text nodes patched on top. Verified by node inspection: Upload holds 1 screenshot node, Count 2, Confirmation 5, Complete 6. So there is no component tree, no layout and no style data on the expected side for this tool, and layers beyond identity/component-tree/text cannot be run against it. That is a BASELINE GAP recorded as such, not a passed comparison.",
+  "_provenance_convention": "Each expected component carries `_provenance`. `patched` = a text node the designer placed deliberately over the screenshot, which IS a design statement for this story. `screenshot` = text visible only because it was part of the Balance-adjustment capture, which this story inherited rather than specified. A deviation on a `patched` component is a candidate defect; a deviation on a `screenshot` component is evidence about the mock-up, not about the build.",
+  "_patched_nodes": {
+    "Upload 5901:2022": ["5901:2546 'confirm adjustment'"],
+    "Count 5901:2547": ["5901:3071 'confirm adjustment'", "5901:3073 '0'"],
+    "Confirmation 5901:3074": ["5901:3597 'confirm adjustment'"],
+    "Complete 5901:3608": ["5901:4132 'confirm adjustment'", "5901:4140 'Finish'"]
+  },
+  "_identity_convention": "componentId matches the testId synthesized by automation/visual/dump_web_screen.js: '<role>:<slug of a stable label>'. Identity never comes from a value that changes, so the Valid/Invalid figures are not components.",
+
+  "profiles": [
+    {
+      "id": "card-panel-web-bitmap-baseline",
+      "mode": "design-conformance",
+      "_why_reduced_layers": "layout, styles and pixel are OMITTED because the expected side is a bitmap: the frames carry no bounds or computed styles for this tool's card, so those layers would have nothing to compare and would report a false clean pass. identity, component-tree, visibility and text remain, which is exactly what a patched-text baseline can support.",
+      "enabledLayers": ["identity", "component-tree", "visibility", "text"],
+      "tolerances": { "px": 6, "colorDeltaE": 2.5, "fontPx": 1, "spacingPx": 6 }
+    }
+  ],
+
+  "screens": [
+    {
+      "id": "branch-code-adjustment.upload-empty",
+      "displayName": "Branch code adjustment - Upload step, no file chosen",
+      "domain": "cards",
+      "owner": "Card Ops Squad",
+      "profileId": "card-panel-web-bitmap-baseline",
+      "_designFrames": ["f01_upload"],
+      "expectedComponents": [
+        { "componentId": "heading:upload-file", "accessibleName": "Upload file", "required": true, "_provenance": "screenshot" },
+        { "componentId": "group:upload", "accessibleName": "Upload", "required": true, "_provenance": "screenshot" },
+        { "componentId": "group:upload-your-file", "accessibleName": "Upload your file", "required": true, "_provenance": "screenshot" },
+        { "componentId": "group:count", "accessibleName": "Count", "required": true, "_provenance": "screenshot" },
+        { "componentId": "group:valid-and-invalid-count", "accessibleName": "Valid and Invalid Count", "required": true, "_provenance": "screenshot" },
+        { "componentId": "group:confirmation", "accessibleName": "Confirmation", "required": true, "_provenance": "screenshot" },
+        { "componentId": "group:confirm-adjustment", "accessibleName": "Confirm adjustment", "required": true, "_provenance": "patched" },
+        { "componentId": "group:complete", "accessibleName": "Complete", "required": true, "_provenance": "screenshot" },
+        { "componentId": "group:final-step", "accessibleName": "Final Step", "required": true, "_provenance": "screenshot" },
+        { "componentId": "button:export", "accessibleName": "Export", "required": true, "_provenance": "screenshot" },
+        { "componentId": "button:next", "accessibleName": "Next", "required": true, "_provenance": "screenshot" }
+      ],
+      "variants": [
+        { "platform": "web", "locale": "en-US", "figmaFileKey": "PLACEHOLDER", "figmaNodeId": "PLACEHOLDER", "figmaFrameName": "f01_upload" }
+      ]
+    },
+    {
+      "id": "branch-code-adjustment.count-valid",
+      "displayName": "Branch code adjustment - Count step, every row valid",
+      "domain": "cards",
+      "owner": "Card Ops Squad",
+      "profileId": "card-panel-web-bitmap-baseline",
+      "_designFrames": ["f02_count"],
+      "expectedComponents": [
+        { "componentId": "heading:upload-file", "accessibleName": "Upload file", "required": true, "_provenance": "screenshot" },
+        { "componentId": "group:confirmation", "accessibleName": "Confirmation", "required": true, "_provenance": "screenshot" },
+        { "componentId": "group:confirm-adjustment", "accessibleName": "Confirm adjustment", "required": true, "_provenance": "patched" },
+        { "componentId": "heading:total-count", "accessibleName": "Total Count", "required": true, "_provenance": "screenshot" },
+        { "componentId": "label:valid", "accessibleName": "Valid :", "required": true, "_provenance": "screenshot" },
+        { "componentId": "label:invalid", "accessibleName": "Invalid :", "required": true, "_provenance": "screenshot" },
+        { "componentId": "button:back", "accessibleName": "Back", "required": true, "_provenance": "screenshot" },
+        { "componentId": "button:next", "accessibleName": "Next", "required": true, "_provenance": "screenshot" }
+      ],
+      "variants": [
+        { "platform": "web", "locale": "en-US", "figmaFileKey": "PLACEHOLDER", "figmaNodeId": "PLACEHOLDER", "figmaFrameName": "f02_count" }
+      ]
+    }
+  ]
+}
