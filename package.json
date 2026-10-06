@@ -12,7 +12,8 @@
     "test:visual": "node --test \"qa-workflow/capabilities/visual/**/*.test.js\"",
     "doctor": "node scripts/doctor.mjs",
     "playwright:install": "npx playwright install chromium",
-    "report": "npx playwright show-report"
+    "report": "npx playwright show-report",
+    "bcard-user": "node automation/bcard-user/create_bcard_user.js"
   },
   "dependencies": {
     "@playwright/test": "^1.60.0",

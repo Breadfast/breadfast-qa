@@ -52,3 +52,6 @@ playwright-report/
 # Orphaned image fixtures — nothing references these; PerksPage uses "automation/perks photos/".
 /perks-images/
 /B10-*/automation/**/*.zip
+
+# bcard-user run log (phones, BCIDs) — local to whoever ran it
+automation/bcard-user/output/
