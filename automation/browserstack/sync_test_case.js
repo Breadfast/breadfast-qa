@@ -60,9 +60,18 @@ const html = (s) => String(s == null ? '' : s);
 
 /** Rebuild the case identified by `tc` from the story's approved CSV. */
 function caseFromCsv(storyDir, tcId) {
-  const map = JSON.parse(fs.readFileSync(path.join(storyDir, 'browserstack/tc-map.json'), 'utf8'));
-  const entry = Object.values(map.map).find((m) => m.tc === tcId);
-  if (!entry) throw new Error(`${tcId} is not in tc-map.json`);
+  // Two map shapes exist in the wild: the object form `{ map: { <k>: {tc, title} } }` and the array
+  // form `[{ title, id }]` that `upload_browserstack.js` writes. Read both, or a story that used the
+  // uploader can never be synced (hit on B10-58644).
+  const mapPath = ['browserstack/tc-map.json', 'automation/tc-map.json']
+    .map((rel) => path.join(storyDir, rel)).find((f) => fs.existsSync(f));
+  if (!mapPath) throw new Error(`no tc-map.json under ${storyDir} (browserstack/ or automation/)`);
+  const raw = JSON.parse(fs.readFileSync(mapPath, 'utf8'));
+  const entries = Array.isArray(raw)
+    ? raw.map((m) => ({ tc: m.tc || m.id, title: m.title }))
+    : Object.values(raw.map || raw).map((m) => ({ tc: m.tc || m.id, title: m.title }));
+  const entry = entries.find((m) => m.tc === tcId);
+  if (!entry) throw new Error(`${tcId} is not in ${path.basename(mapPath)}`);
 
   const rows = P.parseCsv(fs.readFileSync(path.join(storyDir, 'testcases/testcases.csv'), 'utf8'));
   const H = rows[0]; const ix = (n) => H.indexOf(n);

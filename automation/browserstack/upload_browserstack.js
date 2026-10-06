@@ -171,7 +171,13 @@ async function call(method, p, body) {
   return { status: res.status, json };
 }
 
-const tagsOf = (c) => ['ai-created', ...c.acs.map((a) => `ac:${a}`), ...c.screens.map((s) => `screen:${s}`)];
+// `prd:<slug>` carries a requirement the PRD states that no AC adopted (parse.js). It has to reach
+// BrowserStack too, or the imported case loses the only traceability it has — the CSV shows the tag
+// and test management does not, and the two stop agreeing.
+const tagsOf = (c) => ['ai-created',
+  ...(c.acs || []).map((a) => `ac:${a}`),
+  ...(c.prds || []).map((p) => `prd:${p}`),
+  ...(c.screens || []).map((s) => `screen:${s}`)];
 
 function payload(c) {
   return {
