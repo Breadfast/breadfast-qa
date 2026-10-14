@@ -28,7 +28,7 @@ if (!PROJECT) {
 }
 if (!TEST_CLASS) {
   console.error('check_tmslink_parity: missing --class <path to the story test class>, e.g.\n'
-    + '  --class D:\\projects\\src\\test\\java\\cardService\\adminPanel\\B10_57777_CategoriesManagementTests.java');
+    + '  --class <framework>/src/test/java/cardService/adminPanel/B10_57777_CategoriesManagementTests.java');
   process.exit(1);
 }
 if (!fs.existsSync(TEST_CLASS)) {

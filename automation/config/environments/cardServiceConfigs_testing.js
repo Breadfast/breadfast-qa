@@ -23,9 +23,34 @@ function resolveBfPropertiesPath() {
   return framework.environmentsFile('config_testing.properties');
 }
 
+/**
+ * The card-panel admin password. Never a literal here — this file is tracked by git, and the value
+ * rotates (it did between 2026-09-15 and 2026-10-04, which is how a committed copy was found).
+ *
+ * Resolution order:
+ *   1. CARD_PANEL_ADMIN_PASSWORD                 — env
+ *   2. `cardPanelAdminPassword` in credentials.local.js (gitignored, per-machine)
+ *   3. `adminPassword` in the Java framework's cardServiceConfigs_testing.properties (gitignored),
+ *      the documented source of truth this file mirrors
+ * Returns undefined when none is set, so the caller can ask for it (ask-never-block).
+ */
+function resolveAdminPassword() {
+  if (process.env.CARD_PANEL_ADMIN_PASSWORD) return process.env.CARD_PANEL_ADMIN_PASSWORD;
+  try {
+    const local = require('../credentials.local');
+    if (local && local.cardPanelAdminPassword) return local.cardPanelAdminPassword;
+  } catch (_) { /* no local overrides */ }
+  try {
+    const file = framework.environmentsFile('cardServiceConfigs_testing.properties');
+    const m = file && require('fs').readFileSync(file, 'utf8').match(/^adminPassword=(.*)$/m);
+    if (m) return m[1].trim();
+  } catch (_) { /* framework not reachable from here */ }
+  return undefined;
+}
+
 module.exports = {
   adminUserName:                'agent',
-  adminPassword:                'Admin@123456789',
+  get adminPassword() { return resolveAdminPassword(); },
   cardServicesAdminPanelBaseURL: 'https://card-panel-testing.breadfast.tech',
 
   // Card backend that runs the cashback cron (B10-55185)

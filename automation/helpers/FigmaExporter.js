@@ -3,11 +3,22 @@
 /**
  * FigmaExporter — batch-export Figma frames as PNG via the Figma REST API.
  *
- * This is the PRIMARY Figma-capture method for visual testing and the design-vs-implementation
- * comparison (testing-process.md §4). It replaces the slow/fragile browser-screenshot fallback,
- * which is now only a last resort.
+ * ⚠ DEPRECATED FOR DESIGN EXPORT — operator decision 2026-07-30.
+ *   There is exactly ONE official and supported method for exporting Figma designs:
+ *   **Figma's native PNG export, driven through the authenticated browser session** — either
+ *   `Ctrl+Shift+C` (Copy as PNG) or the Properties-panel Export (batch: `Ctrl+Shift+E` → ZIP).
+ *   REST image export (`exportNodes` / `exportPage`) is NOT a sanctioned channel any more — not as a
+ *   fallback, and not for completeness-gate recovery (re-export the frame natively instead). Frames
+ *   produced here must not be used as a Phase-2 frame set or pixel-diff baseline. A frame that will
+ *   not export natively is a stop-and-ask, not a channel switch.
+ *   STILL FINE: the non-image utilities — `fileKeyFromUrl()`, `nodeIdFromUrl()` — and REST/MCP
+ *   *metadata* reads (node trees, `version`, `lastModified`), which inform capture but never produce
+ *   a frame. Kept on disk for those uses and ad-hoc non-Phase-2 work.
+ *   Policy: docs/ai/testing-process.md §4.1 / §4.1.1 / §4.5 · qa-workflow/skills/figma-analysis/SKILL.md
  *
- * Why REST over the Figma MCP / browser screenshots:
+ * Historical rationale (why REST was once preferred over the Figma MCP / browser screenshots — it was
+ * superseded when this account was confirmed Starter-plan and the REST PAT began 429-ing on a monthly
+ * content quota):
  *   • ONE batched GET /v1/images call renders ALL frames at once (vs ~5 browser steps per frame:
  *     show-UI → click layer → hide-UI → zoom-to-fit → screenshot, plus reloads and stale-ref retries).
  *   • Isolated, pixel-perfect frame render at scale=2 — no Figma canvas chrome, no neighbour
@@ -69,8 +80,8 @@ class FigmaExporter {
       (() => { try { return require('../config/figma').apiToken; } catch { return null; } })();
     if (!this.token) {
       throw new Error(
-        'FigmaExporter: no Figma token. Set FIGMA_API_TOKEN env var (scope file_content:read) ' +
-        'or automation/config/figma.js { apiToken }.'
+        'FigmaExporter: no Figma token. Set env FIGMA_API_TOKEN (scope file_content:read) or ' +
+        'figmaApiToken in automation/config/credentials.local.js (copy from credentials.local.example.js).'
       );
     }
   }

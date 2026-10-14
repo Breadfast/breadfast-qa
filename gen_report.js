@@ -2,12 +2,27 @@
 'use strict';
 
 const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
-const SCREENSHOTS_IOS_EN_PATH  = 'D:/BreadfastQA/screenshots_b64.json';
-const SCREENSHOTS_IOS_AR_PATH  = 'D:/BreadfastQA/ios_ar_screenshots.json';
-const SCREENSHOTS_AND_EN_PATH  = 'D:/BreadfastQA/android_en_screenshots.json';
-const SCREENSHOTS_AND_AR_PATH  = 'D:/BreadfastQA/android_ar_screenshots.json';
-const OUTPUT_PATH               = 'D:/BreadfastQA/test_report_B10-53033.html';
+/**
+ * Cross-platform I/O roots. The screenshot accumulators and the generated report live in
+ * the per-user runtime workspace, never in the repo (mirrors @qa/shared/paths):
+ *   QA_WORKSPACE_DIR  — workspace root      (default ~/BreadfastQA/Workspace)
+ *   QA_SHOTS_DIR      — accumulators + PNGs (default <workspace>)
+ *   QA_STORY_ID       — story the report is for (default B10-53033)
+ *   QA_REPORT_OUT     — explicit output file (default <workspace>/test_report_<story>.html)
+ */
+const WORKSPACE_DIR = process.env.QA_WORKSPACE_DIR || path.join(os.homedir(), 'BreadfastQA', 'Workspace');
+const SHOTS_DIR     = process.env.QA_SHOTS_DIR || WORKSPACE_DIR;
+const STORY_ID      = process.env.QA_STORY_ID || 'B10-53033';
+
+const SCREENSHOTS_IOS_EN_PATH  = path.join(SHOTS_DIR, 'screenshots_b64.json');
+const SCREENSHOTS_IOS_AR_PATH  = path.join(SHOTS_DIR, 'ios_ar_screenshots.json');
+const SCREENSHOTS_AND_EN_PATH  = path.join(SHOTS_DIR, 'android_en_screenshots.json');
+const SCREENSHOTS_AND_AR_PATH  = path.join(SHOTS_DIR, 'android_ar_screenshots.json');
+const OUTPUT_PATH              = process.env.QA_REPORT_OUT ||
+  path.join(WORKSPACE_DIR, `test_report_${STORY_ID}.html`);
 
 console.log('Reading iOS English screenshots …');
 const iosEn = JSON.parse(fs.readFileSync(SCREENSHOTS_IOS_EN_PATH, 'utf8'));
@@ -38,7 +53,7 @@ function imgFromMap(map, key, caption) {
 
 function imgFromFile(filename, caption) {
   try {
-    const buf = fs.readFileSync(`D:/BreadfastQA/${filename}`);
+    const buf = fs.readFileSync(path.join(SHOTS_DIR, filename));
     const src = `data:image/png;base64,${buf.toString('base64')}`;
     return `<figure class="screenshot"><img src="${src}" alt="${caption}" height="260" /><figcaption>${caption}</figcaption></figure>`;
   } catch(e) {

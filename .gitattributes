@@ -1,12 +1,36 @@
 # Normalize line endings across Windows/macOS/Linux — text is LF in the repo.
 * text=auto eol=lf
 
-# Explicit binary (never normalize)
-*.png binary
-*.jpg binary
+# Windows shells REQUIRE CRLF: cmd.exe can mis-parse LF-only batch files
+# (notably around labels/goto), so force CRLF in the working tree.
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# POSIX shells REQUIRE LF: a CRLF shebang line yields
+# "bad interpreter: /bin/bash^M" on macOS/Linux.
+*.sh       text eol=lf
+*.command  text eol=lf
+*.bash     text eol=lf
+*.zsh      text eol=lf
+
+# Properties/config read by the Java framework — keep LF.
+*.properties text eol=lf
+
+# Explicit binary (never normalize, never diff as text)
+*.png  binary
+*.jpg  binary
 *.jpeg binary
-*.gif binary
-*.pdf binary
-*.zip binary
-*.mp4 binary
-*.ico binary
+*.gif  binary
+*.webp binary
+*.ico  binary
+*.pdf  binary
+*.zip  binary
+*.mp4  binary
+*.webm binary
+*.jar  binary
+*.keystore binary
+*.jks  binary
+
+# Collapse generated/lock noise in diffs and PR reviews.
+package-lock.json -diff linguist-generated

@@ -564,8 +564,16 @@ async function main() {
       const { lintTestCases } = require('../lib/testcases/lint');
 
       let file = dirOrFile;
+      let ccExcluded = {};
       if (fs.existsSync(file) && fs.statSync(file).isDirectory()) {
         const state = qs.load(file);
+        // A clause removed by an operator-RATIFIED coverage change is excluded, not uncovered.
+        // A `proposed` one stays an error: ratification, not the proposal, is what releases the clause.
+        for (const [id, c] of Object.entries((state && state.coverageChanges) || {})) {
+          if (c.status !== 'approved') continue;
+          if (!(c.kind || []).some((k) => k === 'removes-ac-coverage' || k === 'declared-not-testable')) continue;
+          for (const ac of c.affects || []) ccExcluded[ac] = id;
+        }
         const rel = (state && state.artifacts && state.artifacts.testcases && state.artifacts.testcases.path) || 'testcases/testcases.csv';
         file = path.join(dirOrFile, rel);
       }
@@ -581,6 +589,9 @@ async function main() {
         // because it has one id (QA_PROCESS Phase 3).
         acTexts = extractAcTexts(acDoc);
       }
+      const excludedAcs = acs.filter((a) => ccExcluded[a]);
+      acs = acs.filter((a) => !ccExcluded[a]);
+      for (const a of excludedAcs) process.stderr.write(`  excluded  ${a} — ratified coverage change ${ccExcluded[a]}\n`);
       const parsed = parseTestCases(fs.readFileSync(file, 'utf8'));
       const result = lintTestCases(parsed, { acs, acTexts, requireScreens: !!flags['require-screens'], newImport: !!flags.new });
 

@@ -12,17 +12,15 @@
  * Override any path with env vars BF_PROPERTIES_PATH / BF_CARD_PROPERTIES_PATH / BF_CARD_PUBKEY_PATH.
  */
 
-const path = require('path');
 const { load } = require('./PropertiesReader');
+const framework = require('../config/framework');
 
-// Cross-platform env dir: the registered Java framework's resources/environments
-// (BF_JAVA_FRAMEWORK_DIR, set by the platform worker), else the legacy Windows path.
-const ENV_DIR = process.env.BF_JAVA_FRAMEWORK_DIR
-  ? path.join(process.env.BF_JAVA_FRAMEWORK_DIR, 'resources', 'environments')
-  : 'D:\\projects\\resources\\environments';
-const CFG_PATH  = process.env.BF_PROPERTIES_PATH      || path.join(ENV_DIR, 'config_testing.properties');
-const CARD_PATH = process.env.BF_CARD_PROPERTIES_PATH || path.join(ENV_DIR, 'cardServiceConfigs_testing.properties');
-const PUB_PATH  = process.env.BF_CARD_PUBKEY_PATH     || path.join(ENV_DIR, 'cardServiceEncryptionPublicKey.pub');
+// Cross-platform: resolve the Java framework's resources/environments via
+// automation/config/framework.js (QA_FRAMEWORK_PATH / BF_JAVA_FRAMEWORK_DIR /
+// conventional locations). Each file can also be overridden individually.
+const CFG_PATH  = process.env.BF_PROPERTIES_PATH      || framework.environmentsFile('config_testing.properties');
+const CARD_PATH = process.env.BF_CARD_PROPERTIES_PATH || framework.environmentsFile('cardServiceConfigs_testing.properties');
+const PUB_PATH  = process.env.BF_CARD_PUBKEY_PATH     || framework.environmentsFile('cardServiceEncryptionPublicKey.pub');
 
 const c = load(CFG_PATH);
 const k = load(CARD_PATH);

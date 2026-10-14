@@ -52,3 +52,68 @@ playwright-report/
 # Orphaned image fixtures — nothing references these; PerksPage uses "automation/perks photos/".
 /perks-images/
 /B10-*/automation/**/*.zip
+
+# bcard-user run log (phones, BCIDs) — local to whoever ran it
+automation/bcard-user/output/
+
+# --- Clone-and-run hygiene (2026-10-14) ---------------------------------------------------------
+# These were previously ignored only by machine-local files (a global git ignore, .git/info/exclude),
+# which do not travel with a clone — on a teammate's checkout they showed up as committable.
+
+# Claude Code per-user state (settings.local.json carries personal permissions)
+.claude/settings.local.json
+**/.claude/scheduled_tasks.json
+**/.claude/scheduled_tasks.lock
+**/.claude/routines/.state/
+**/.claude/worktrees/
+**/.claude/checkpoints/
+**/.claude/mailbox/
+**/.claude/agent-registry.json
+**/.claude/agent-memory-local/
+**/.claude/first-run
+**/.claude/assistant-daemon-state.json
+**/.claude/shell-snapshots/
+**/.claude/todos/
+
+# Secrets and saved sessions — never commit
+.env
+.env.*
+!.env.example
+!.env.*.example
+.netrc
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+**/figma-auth.json
+**/app-session.json
+storage-state*.json
+.auth/
+
+# OS cruft (macOS + Windows)
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+__MACOSX/
+Thumbs.db
+desktop.ini
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# IDE / editor
+.idea/
+*.iml
+*.swp
+*~
+
+# Build and run outputs
+target/
+allure-results/
+surefire-reports/
+blob-report/
+*.sqlite
+*.sqlite3

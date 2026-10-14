@@ -209,6 +209,12 @@ A Jira change flags `requirements`/`hls` stale mechanically, but **`clarificatio
 
 ## 7. Migration checklist (independent → plugin)
 
+> **Steps 2 and 5 are superseded by ADR-004** (`docs/architecture/adr-004-testing-in-the-plugin.md`
+> in the **breadfast-workflow** plugin). Plugin task skills are repo-local, Champion-locked and
+> SHA-bound, so the phase skills cannot become them (they go to `process/testing/skills/`); and
+> `drift` compares a locked skill against code at a pinned SHA while freshness compares an artifact
+> against source fingerprints, so the two engines stay separate. The remaining steps stand.
+
 ```
 1. git mv qa-workflow/workflows/*      → breadfast-workflow/workflows/
 2. git mv qa-workflow/skills/*         → breadfast-workflow/<task-skills>/  (+ re-validate vs real lib/schema)

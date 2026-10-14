@@ -19,14 +19,22 @@ reports, screenshots, evidence and defects all stay local to whoever ran the sto
 tooling belongs in `automation/`; story data does not belong in git.
 
 ## Quick start
+
+**New here? Follow [SETUP.md](SETUP.md)** — empty machine to first workflow, Windows and macOS.
+The short version:
 ```bash
-npm install                       # @playwright/test, mysql2, ssh2, pdf-parse
-npx playwright install chromium
+git clone https://github.com/Breadfast/breadfast-qa.git
+git clone https://github.com/Breadfast/QA_Automation_Framework.git projects   # side by side
+cd breadfast-qa
+npm install && npm run playwright:install
 cp automation/config/credentials.local.example.js automation/config/credentials.local.js
-# fill in your own Jira token + BrowserStack login (or set env vars) — never commit it
+# fill in your own values; copy the team's framework config files into ../projects/resources/environments/
+npm run doctor                    # tells you exactly what is still missing
 ```
 
-Then run a workflow from Claude Code: `/qa-shift-left`, `/qa-validate`, or `/qa-full`.
+Then open this folder in Claude Code, approve the project MCP servers and plugins it offers
+(`.mcp.json`, `.claude/settings.json`), authenticate Atlassian and Figma with `/mcp`, and run
+`/qa-shift-left`, `/qa-validate`, or `/qa-full`.
 
 Run the legacy Playwright suite:
 ```bash
