@@ -20,4 +20,11 @@ module.exports = {
   // Optional: BrowserStack Test Management REST token (if you use the API path).
   // bsTmUsername: 'you@breadfast.com',
   // bsTmApiToken: 'your-tm-api-token',
+
+  // Live card-service DB (cards_hades_testing) over the VPN: SSH tunnel host + MySQL account.
+  // cardDbSshHost: 'ssh-host', cardDbSshUser: 'your-ssh-user', cardDbSshPassword: '...',
+  // cardDbHost: 'db-host', cardDbUser: 'your-db-user', cardDbPassword: '...',
+
+  // Card-service test cron trigger: Authorization JWT + x-auth-token (ask the card squad).
+  // cardCronAuthorization: '...', cardCronToken: '...',
 };
