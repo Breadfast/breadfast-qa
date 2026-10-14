@@ -18,8 +18,8 @@ const path = require('path');
 const HUB = 'hub-cloud.browserstack.com';
 
 function frameworkCreds() {
-  const root = process.env.QA_FRAMEWORK_PATH || 'D:/projects';
-  const file = path.join(root, 'resources', 'environments', 'browserStackConfigs.properties');
+  const file = require('../config/framework').environmentsFile('browserStackConfigs.properties');
+  if (!file) return {};
   try {
     const text = fs.readFileSync(file, 'utf8');
     const read = (k) => { const m = text.match(new RegExp('^' + k + '=(.*)$', 'm')); return m ? m[1].trim() : undefined; };

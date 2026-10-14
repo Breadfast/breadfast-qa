@@ -36,9 +36,14 @@
 const fs   = require('fs');
 const path = require('path');
 
+// Cross-platform: the shared ledger lives in the per-user runtime workspace, never in
+// the repo. QA_WORKSPACE_DIR mirrors @qa/shared/paths; defaults to ~/BreadfastQA/Workspace.
+const WORKSPACE_DIR =
+  process.env.QA_WORKSPACE_DIR || path.join(require('os').homedir(), 'BreadfastQA', 'Workspace');
+
 const DEFAULT_PATH =
   process.env.TEST_DATA_INVENTORY ||
-  'D:\\BreadfastQA\\test_data_inventory.csv';
+  path.join(WORKSPACE_DIR, 'test_data_inventory.csv');
 
 const HEADER = 'Phone Number,Package Number,Status,Story ID,Usage Date';
 

@@ -43,7 +43,7 @@ const props = require('./helpers/PropertiesReader');
 const BASE = process.env.BS_TM_BASE || 'https://test-management.browserstack.com/api/v2';
 const BS_PROPS_PATH =
   process.env.BS_PROPERTIES_PATH ||
-  'D:\\projects\\resources\\environments\\browserStackConfigs.properties';
+  require('./config/framework').environmentsFile('browserStackConfigs.properties');
 
 /**
  * Auth. The Test Management API does NOT accept the App Automate access key (it 401s
@@ -57,9 +57,16 @@ function authHeader() {
   const user = process.env.BS_TM_USERNAME || process.env.BROWSERSTACK_USERNAME;
   const token = process.env.BS_TM_API_TOKEN || process.env.BROWSERSTACK_ACCESS_KEY;
   if (user && token) return 'Basic ' + Buffer.from(`${user}:${token}`).toString('base64');
-  const p = props.load(BS_PROPS_PATH);
+  const MISSING = 'No BrowserStack Test Management creds. Set BS_TM_USERNAME + BS_TM_API_TOKEN ' +
+    '(token from BrowserStack → Profile → API tokens), or point BS_PROPERTIES_PATH at the ' +
+    'Java framework\'s browserStackConfigs.properties.';
+  // Optional properties fallback — only when the framework checkout was located.
+  let p = {};
+  if (BS_PROPS_PATH) {
+    try { p = props.load(BS_PROPS_PATH); } catch (e) { throw new Error(`${MISSING}\n  (${e.message})`); }
+  }
   if (!p.userName || !p.accessKey) {
-    throw new Error('No BrowserStack Test Management creds. Set BS_TM_USERNAME + BS_TM_API_TOKEN (token from Profile → API tokens).');
+    throw new Error(MISSING);
   }
   return 'Basic ' + Buffer.from(`${p.userName}:${p.accessKey}`).toString('base64');
 }

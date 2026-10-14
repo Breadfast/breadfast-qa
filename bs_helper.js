@@ -2,11 +2,34 @@
 const https = require('https');
 const fs    = require('fs');
 
-const BS_USER = 'fintech_6WdvD1';
-const BS_KEY  = 'm1yw4TJV3pdwhJuHxeBj';
-const HUB     = 'hub-cloud.browserstack.com';
+/**
+ * BrowserStack App Automate credentials — read from the environment or the gitignored
+ * local credentials file. NEVER hardcode them here: this file is committed and shared.
+ *
+ *   export BROWSERSTACK_USERNAME="…"  BROWSERSTACK_ACCESS_KEY="…"
+ *   # or set browserstackUsername / browserstackAccessKey in
+ *   #   automation/config/credentials.local.js  (copy from credentials.local.example.js)
+ */
+let _local = {};
+try { _local = require('./automation/config/credentials.local'); } catch (_) { /* env-only */ }
+
+const BS_USER = process.env.BROWSERSTACK_USERNAME   || _local.browserstackUsername;
+const BS_KEY   = process.env.BROWSERSTACK_ACCESS_KEY || _local.browserstackAccessKey;
+const HUB     = process.env.BROWSERSTACK_HUB || 'hub-cloud.browserstack.com';
+
+function requireCreds() {
+  if (!BS_USER || !BS_KEY) {
+    throw new Error(
+      'bs_helper: missing BrowserStack App Automate credentials.\n' +
+      '  -> Set env BROWSERSTACK_USERNAME + BROWSERSTACK_ACCESS_KEY (BrowserStack > Account > Settings),\n' +
+      '     or browserstackUsername / browserstackAccessKey in automation/config/credentials.local.js.\n' +
+      '     See SETUP.md §4.'
+    );
+  }
+}
 
 function bsReq(method, path, body) {
+  requireCreds();   // synchronous, so a misconfigured machine fails immediately and clearly
   return new Promise((resolve, reject) => {
     const payload = body ? JSON.stringify(body) : null;
     const opts = {

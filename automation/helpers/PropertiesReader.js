@@ -15,25 +15,27 @@
 
 const fs   = require('fs');
 const path = require('path');
+const framework = require('../config/framework');
 
-// Cross-platform: derive from the registered Java framework dir when available
-// (BF_JAVA_FRAMEWORK_DIR, set by the platform worker from the Framework Registry),
-// else an explicit BF_PROPERTIES_PATH, else the legacy Windows default.
+// Cross-platform: an explicit BF_PROPERTIES_PATH wins; otherwise the Java framework is located by
+// automation/config/framework.js (QA_FRAMEWORK_PATH / BF_JAVA_FRAMEWORK_DIR / ~/projects / …).
 const DEFAULT_PATH =
-  process.env.BF_PROPERTIES_PATH ||
-  (process.env.BF_JAVA_FRAMEWORK_DIR
-    ? path.join(process.env.BF_JAVA_FRAMEWORK_DIR, 'resources', 'environments', 'config_testing.properties')
-    : 'D:\\projects\\resources\\environments\\config_testing.properties');
+  process.env.BF_PROPERTIES_PATH || framework.environmentsFile('config_testing.properties');
 
 let _cache = null;
 
 function load(propsPath = DEFAULT_PATH) {
   if (_cache && _cache.__path === propsPath) return _cache;
 
-  if (!fs.existsSync(propsPath)) {
+  if (!propsPath || !fs.existsSync(propsPath)) {
+    const root = framework.resolve();
+    const why = propsPath ? `could not find properties file at "${propsPath}".`
+      : root ? `${path.join(root, 'resources', 'environments')} is missing the properties file — these are ` +
+               'gitignored in the framework repo; get them from the team and copy them in.'
+      : 'the Java QA framework was not found. Set QA_FRAMEWORK_PATH to your checkout (the folder with pom.xml).';
     throw new Error(
-      `PropertiesReader: could not find properties file at "${propsPath}". ` +
-      `Set BF_PROPERTIES_PATH to the absolute path of config_testing.properties.`
+      `PropertiesReader: ${why} Or set BF_PROPERTIES_PATH to the absolute path of ` +
+      'config_testing.properties. `npm run doctor` checks the whole setup.'
     );
   }
 

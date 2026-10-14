@@ -170,11 +170,13 @@ registry framework, **one** finding model — a second is prohibited (ADR-001 re
 1. **Open the repo root in Claude Code** (VS Code extension). The three workflow entrypoints — plus the
    `grill-me` clarification skill they call — live in [`.claude/skills/`](.claude/skills/) and are discovered
    **only when the repo root is the open folder**.
-2. **Node.js 18+** (verified on v22.12). `qa-workflow/` is **zero-dependency**; root `package.json` deps are
+2. **Node.js 20+** (verified on v22.12). `qa-workflow/` is **zero-dependency**; root `package.json` deps are
    for *automation execution*, not the engine.
-3. **Authenticate your MCP connectors** — **Jira (Atlassian)**, **Figma**, **Slack** (per-user, via
-   claude.ai connector settings or `/mcp`). Without them a run can't fetch the story, export the design, or
-   read login OTPs.
+3. **Authenticate your MCP connectors** — **Jira (Atlassian)** and **Figma** are declared in
+   [`.mcp.json`](.mcp.json); approve them on first open, then authenticate per user via `/mcp` (or use
+   claude.ai connectors). Without them a run can't fetch the story or read the design. Login OTPs come from
+   the Google Chat `#testing-otp` space via the framework's properties, not an MCP (Slack is retired).
+   Full machine setup, Windows and macOS: [SETUP.md](SETUP.md).
 4. **Credentials** for Jira/BrowserStack writes are wired through
    [`automation/config/credentials.js`](automation/config/credentials.js) — **the loader comes first**, so
    nothing already configured is ever asked for. A value that is genuinely missing, or that fails its Phase 0
@@ -865,7 +867,8 @@ Card, Pay and Marketing surfaces, and the migration target for the Breadfast QA 
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | `/qa-shift-left` not found | repo root isn't the open folder | open the **repo root** so `.claude/skills/` is discovered |
-| "can't fetch story / design / OTP" | MCP connectors not authenticated for **your** user | authorize Jira / Figma / Slack via `/mcp` or claude.ai settings |
+| "can't fetch story / design" | MCP connectors not authenticated for **your** user | authorize Jira / Figma via `/mcp` or claude.ai settings |
+| "can't read OTP" | the framework's `config_testing.properties` is missing (it's gitignored) | copy the team's config files in — [SETUP.md](SETUP.md) §6 |
 | Reconcile reports a **conflict** | you edited an artifact **and** its source changed | choose: regenerate (lose edits) · keep edits (accept staleness) · merge |
 | Says `reuse`, but analysis is clearly stale | the Figma metadata call **429'd** and stored fingerprints were passed as live | read `version` via the browser session, or treat `figma-analysis` as candidate-stale and re-capture |
 | Everything regenerates every run, or the clarification gate re-opens on a typo | comparing Figma `version` instead of `framesHash` · materiality classified the change as material | compare `framesHash` to confirm the frames changed; verify the diff and pass `--immaterial` |

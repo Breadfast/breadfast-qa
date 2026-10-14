@@ -25,8 +25,8 @@ const fs = require('fs');
 const path = require('path');
 
 function fromFrameworkProperties() {
-  const root = process.env.QA_FRAMEWORK_PATH || 'D:/projects';
-  const file = path.join(root, 'resources', 'environments', 'config_testing.properties');
+  const file = require('../config/framework').environmentsFile('config_testing.properties');
+  if (!file) return {};
   try {
     const text = fs.readFileSync(file, 'utf8');
     const read = (key) => {

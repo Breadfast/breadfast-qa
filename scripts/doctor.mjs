@@ -114,8 +114,16 @@ const firstLine = (s) => (s ? s.split(/\r?\n/)[0].trim() : s);
     const { createRequire } = await import('node:module');
     const framework = createRequire(import.meta.url)(mod);
     const found = framework.resolve();
-    if (found) ok('Java QA framework', found);
-    else warn('Java QA framework', 'not located on this machine',
+    if (found) {
+      ok('Java QA framework', found);
+      // The framework's environment files are gitignored there too: a fresh clone has none, and
+      // OTP lookup, card-service config and BrowserStack runs all read them.
+      const needed = ['config_testing.properties', 'cardServiceConfigs_testing.properties', 'browserStackConfigs.properties'];
+      const missing = needed.filter((f) => !framework.environmentsFile(f));
+      if (!missing.length) ok('Framework config files', `${needed.length} found in resources/environments`);
+      else warn('Framework config files', `missing: ${missing.join(', ')}`,
+        `These are gitignored in the framework repo. Get them from the QA team and copy them into ${framework.environmentsDir()}`);
+    } else warn('Java QA framework', 'not located on this machine',
       'Only needed to GENERATE/RUN automation. Clone it, then set QA_FRAMEWORK_PATH to the folder ' +
       'containing pom.xml. Tried:\n      ' + framework.candidates().join('\n      '));
   } catch (e) {

@@ -109,30 +109,46 @@ Key `playwright.config.js` settings: `testDir: './tests'`, `timeout: 120_000`, `
 
 ## Running a story's suite on BrowserStack Automate (browserstack-node-sdk)
 
-To run a story's Playwright web suite against real BrowserStack Automate browsers (not just locally), wrap the run with `browserstack-node-sdk` from the **workspace root** (`D:\BreadfastQA`), since that's where `node_modules`/`playwright.config.js` live and `browserstack-node-sdk` reads `browserstack.yml` only from the current working directory:
+To run a story's Playwright web suite against real BrowserStack Automate browsers (not just locally), wrap the run with `browserstack-node-sdk` from the **repo root**, since that's where `node_modules`/`playwright.config.js` live and `browserstack-node-sdk` reads `browserstack.yml` only from the current working directory.
+
+Export your BrowserStack Automate credentials first (never commit them):
+
+```bash
+# macOS / Linux
+export BROWSERSTACK_USERNAME="…"  BROWSERSTACK_ACCESS_KEY="…"
+```
+```powershell
+# Windows PowerShell
+$env:BROWSERSTACK_USERNAME="…"; $env:BROWSERSTACK_ACCESS_KEY="…"
+```
 
 1. Create `<STORY>/browserstack.yml` (per-story, not shared) modeled on an existing one (e.g. `B10-55570/browserstack.yml`):
    ```yaml
-   userName: "fintech_6WdvD1"
-   accessKey: "m1yw4TJV3pdwhJuHxeBj"
+   # Credentials: NEVER hardcode them here. browserstack-node-sdk reads
+   # BROWSERSTACK_USERNAME / BROWSERSTACK_ACCESS_KEY from the environment.
+   userName: ${BROWSERSTACK_USERNAME}
+   accessKey: ${BROWSERSTACK_ACCESS_KEY}
    buildName: "<Story name>"
    projectName: "BCard Squad"
    CUSTOM_TAG_1: "<STORY-ID>"
    testObservability: true
    ```
-2. Copy it to the workspace root (temporary — remove afterward; don't overwrite an existing root `browserstack.yml` without checking first):
-   ```powershell
-   cd D:\BreadfastQA
-   Copy-Item .\<STORY>\browserstack.yml .\browserstack.yml
+2. Copy it to the repo root (temporary — remove afterward; don't overwrite an existing root `browserstack.yml` without checking first). From the repo root:
+   ```bash
+   cp "<STORY>/browserstack.yml" browserstack.yml     # PowerShell: Copy-Item
    ```
 3. Run the wrapped suite, pointing at the story's spec files and the root config:
+   ```bash
+   PLAYWRIGHT_HTML_OPEN=never npx browserstack-node-sdk playwright test \
+     <STORY>/automation/tests/<spec1>.spec.js --config=playwright.config.js
+   ```
    ```powershell
    $env:PLAYWRIGHT_HTML_OPEN='never'
-   npx browserstack-node-sdk playwright test <STORY>/automation/tests/<spec1>.spec.js <STORY>/automation/tests/<spec2>.spec.js --config=playwright.config.js
+   npx browserstack-node-sdk playwright test <STORY>/automation/tests/<spec1>.spec.js --config=playwright.config.js
    ```
-4. Remove the temporary root config: `Remove-Item .\browserstack.yml`.
+4. Remove the temporary root config (`rm browserstack.yml` / `Remove-Item .\browserstack.yml`).
 
-The BrowserStack Automate `userName`/`accessKey` above are a shared org credential already used for `B10-55570` — reuse them rather than asking for new ones unless they've been rotated. This is the same pattern used for `B10-55570` (see `B10-55570/BrowserStack-Suite-Run.md`) and was reused for `B10-56336`'s KYC suite (`kyc_edit_customer.spec.js`, `kyc_collect_flow.spec.js`, `kyc_pdf_content.spec.js`).
+The BrowserStack Automate credentials are a **shared org credential** — get them from the team vault or an existing engineer, set them in the environment as above, and never write them into a committed file. This is the same pattern used for `B10-55570` (see `B10-55570/BrowserStack-Suite-Run.md`) and reused for `B10-56336`'s KYC suite (`kyc_edit_customer.spec.js`, `kyc_collect_flow.spec.js`, `kyc_pdf_content.spec.js`).
 
 ## DB-over-SSH-tunnel requirement (cannot run from CI)
 
