@@ -14,12 +14,13 @@
  *   active      + set-pin → card PIN → cards/activate
  *
  * Card PIN (--pin-mode, or env BCARD_PIN_MODE):
- *   mock     (default) testing runs on MOCK MDP: set-pin returns a static mock page (a data: URI) whose
- *            submit never reaches card-service, so no browser is opened and activate is called straight
- *            after set-pin (verified 2026-10-06).
- *   webview  for REAL MDP: opens set-pin's webview_link in headless Chromium and enters + confirms the
- *            PIN, then activates. Locators mirror the Java SetCardPinPage ("Create PIN" / "Confirm PIN" /
- *            "Success!", keypad div[data-value]) — not yet run against real MDP, so verify on first use.
+ *   auto     (default) picks mock or webview from the link set-pin returns.
+ *   mock     MOCK MDP: set-pin returns a static mock page (a data: URI) whose submit never reaches
+ *            card-service, so no browser is opened and activate is called straight after set-pin.
+ *   webview  REAL MDP (testing since 2026-10-18, devcarduat.mdp.global): opens set-pin's webview_link in
+ *            headless Chromium, enters + confirms the PIN, waits for "Success!", then activates.
+ *            Locators mirror the Java SetCardPinPage. The page rejects a weak PIN such as 1111 silently:
+ *            it stays on "Loading..." and never posts api/setpin.
  *
  * Phone:
  *   --phone given and the account exists  → used as-is; its breadfast_id comes from the DB
@@ -71,9 +72,9 @@ Create a BCard test user at any card stage.
   --national-id <id>  national id for createCardUser (default: random, Luhn-valid)
   --kyc               also complete KYC when stopping at "registered"
   --bcid <bcid>       card BCID, when resuming a Received user this script did not collect
-  --pin-mode <m>      mock (default — testing is on mock MDP, no browser) | webview (real MDP)
+  --pin-mode <m>      auto (default — from the set-pin link) | mock (no browser) | webview (real MDP)
                       also settable with env BCARD_PIN_MODE
-  --card-pin <pin>    4-digit card PIN entered in the webview (default: 1111) — webview mode only
+  --card-pin <pin>    4-digit card PIN entered in the webview (default: 1357; 1111 is rejected) — webview only
   --headed            show the browser while the card PIN is set — webview mode only
   --count <n>         create n users in parallel (random phones only)
   --json              print only the JSON result
@@ -81,7 +82,7 @@ Create a BCard test user at any card stage.
 
 function parseArgs(argv) {
   const a = { stage: 'active', count: 1, kyc: false, json: false, headed: false,
-              cardPin: '1111', pinMode: (process.env.BCARD_PIN_MODE || 'mock').toLowerCase() };
+              cardPin: '1357', pinMode: (process.env.BCARD_PIN_MODE || 'auto').toLowerCase() };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
     const next = () => {
@@ -106,7 +107,7 @@ function parseArgs(argv) {
     }
   }
   if (!STAGES.includes(a.stage)) throw new Error(`--stage must be one of ${STAGES.join(', ')}`);
-  if (!['mock', 'webview'].includes(a.pinMode)) throw new Error('--pin-mode must be mock or webview');
+  if (!['auto', 'mock', 'webview'].includes(a.pinMode)) throw new Error('--pin-mode must be auto, mock or webview');
   if (!/^\d{4}$/.test(a.cardPin)) throw new Error('--card-pin must be 4 digits');
   if (!(a.count >= 1)) throw new Error('--count must be >= 1');
   if (a.phone && a.count > 1) throw new Error('--count cannot be combined with --phone');
@@ -281,9 +282,11 @@ function readOutput() {
 async function toActive(session, u, { pinMode, cardPin, headed }) {
   const token = await userToken(session, u);
   const link = await session.factory.setPinApi(token);
+  const mockLink = !link || /^data:|data%3Atext%2Fhtml/.test(link);
+  if (pinMode === 'auto') pinMode = mockLink ? 'mock' : 'webview';
   if (pinMode === 'webview') {
     if (!link) throw new Error('set-pin returned no webview_link');
-    if (link.includes('data%3Atext%2Fhtml')) {
+    if (mockLink) {
       session.log('  ! set-pin returned the MOCK MDP page — the PIN entered there is not stored (use --pin-mode mock)');
     }
     await setCardPinInWebview(link, cardPin, { headed });
@@ -298,15 +301,22 @@ async function setCardPinInWebview(link, pin, { headed }) {
   const browser = await chromium.launch({ headless: !headed });
   try {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
-    await page.goto(link, { waitUntil: 'domcontentloaded' });
+    // The keypad is in the HTML before its (obfuscated) script binds the clicks — wait for the page to settle.
+    await page.goto(link, { waitUntil: 'networkidle' });
+    let setPinStatus = null;
+    page.on('response', (r) => { if (r.url().includes('/api/setpin')) setPinStatus = r.status(); });
     for (const header of ['Create PIN', 'Confirm PIN']) {
       await page.locator(`b:text-is("${header}")`).waitFor({ timeout: 20000 });
       for (let i = 0; i < pin.length; i++) {
-        await page.locator(`div[data-value="${pin[i]}"]`).click();
+        await page.locator(`div.num[data-value="${pin[i]}"]`).click();
         await page.locator('span.pin-placeholder.setted').nth(i).waitFor({ timeout: 5000 });
       }
     }
-    await page.locator('b:text-is("Success!")').waitFor({ timeout: 20000 });
+    await page.locator('b:text-is("Success!")').waitFor({ timeout: 20000 }).catch((e) => {
+      if (setPinStatus === null) throw new Error(`api/setpin was never called — the page rejected PIN ${pin} without a message (try another, e.g. 1357)`);
+      if (setPinStatus >= 400) throw new Error(`api/setpin returned ${setPinStatus}`);
+      throw e;
+    });
   } catch (e) {
     throw new Error(`card-PIN webview: ${e.message.split('\n')[0]} (page: ${link.slice(0, 80)}…)`);
   } finally {
