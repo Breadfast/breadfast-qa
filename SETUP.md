@@ -172,7 +172,10 @@ on first open:
 | Declared in | What | Your action |
 |---|---|---|
 | [`.mcp.json`](.mcp.json) | **Atlassian** (Jira: story, AC, comments, HLS), **Figma** (design metadata), **Playwright** (browser driving) | approve the project MCP servers when prompted, then run `/mcp` and **Authenticate** Atlassian and Figma (browser sign-in, per user) |
-| [`.claude/settings.json`](.claude/settings.json) | plugins **`breadfast-workflow`** (from `Breadfast/breadfast-workflow`) and **`humanizer`** (mandatory for bug and test-case wording) | trust the marketplaces and install when prompted, or run `/plugin` |
+| [`.claude/settings.json`](.claude/settings.json) | plugin **`humanizer`** (mandatory for bug and test-case wording) | trust the marketplace and install when prompted, or run `/plugin` |
+
+The **`breadfast-workflow`** plugin is **not** needed for QA. No `/qa-*` workflow uses it, and it lives in a
+private repo most of the test team can't access. Skip it if Claude Code or an older setup note mentions it.
 
 If you already have Atlassian or Figma connected as a **claude.ai connector**, you can
 skip that server here; both routes give the same tools.
@@ -340,12 +343,6 @@ on Node 22 because it resolves the path as a *module*.
 The skills are discovered only when the **repo root itself** is the open folder, not a
 parent directory and not a subfolder. Reopen the folder and check `npm run doctor`
 reports *"Workflow skills — 4 discovered"*.
-
-### The `breadfast-workflow` plugin won't install
-
-It comes from the private `Breadfast/breadfast-workflow` repo, so your git must be able to
-clone it: run `git clone https://github.com/Breadfast/breadfast-workflow.git` once in a
-scratch folder to confirm access, then `/plugin` again.
 
 ### `claude: command not found` (doctor reports Claude CLI FAIL)
 
