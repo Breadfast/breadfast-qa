@@ -51,6 +51,46 @@ On **B10-56750** two items were reported as blocked in the final QA summary:
 
 Both were discoverable in the first minutes. Neither needed to reach a report.
 
+## Readiness — the environment, BEFORE the story (mandatory, every workflow)
+
+A colleague who just cloned the repo has no team, no credentials and maybe no `npm install`. None of that
+may surface as a script failing halfway through a story. **Before reading the story**, settle the
+environment. (Added 2026-11-16, operator instruction: *"Claude should check if everything is installed and
+added before running the workflow — even when the team or the credentials are not added, detect it and ask."*)
+
+1. **Run the doctor in machine mode** — always, even if the session-start brief said "ready" (the operator
+   may have changed something since):
+   ```
+   node scripts/doctor.mjs --json
+   ```
+   It returns `{ ready, blocking[], warnings[], ok[] }`; every problem carries a `fix` saying exactly what
+   to set or run. It never prints a credential value, and neither do you.
+2. **Check the connections the story needs**, with one cheap call each: Atlassian (e.g. the current-user
+   lookup) always; Figma (`whoami`) when the story has a design. If a server is missing or "requires
+   authentication", that is a step **only the user can do**: tell them to run `/mcp`, pick the server and
+   **Authenticate** in the browser, then continue.
+3. **Pick what this story needs.** Everything in `blocking` is needed. From `warnings`, take what the
+   story's surface needs: a mobile story needs the App Automate username + access key; automation needs
+   the Java framework path and its config files; web execution needs Playwright browsers. Ignore the rest.
+4. **Ask for all of it in ONE batch** (`AskUserQuestion` for choices, plain questions for values), handling
+   each `fix.type` like this:
+
+   | `fix.type` | What to do |
+   |---|---|
+   | `team` | Ask which team, offering `fix.available` plus "a new team". Write `team: '<id>'` into `automation/config/credentials.local.js` (create it from the template first if it is missing). A new team: copy `teams/_template.json` to `teams/<id>.json` and continue with `team-values` |
+   | `team-values` | Ask for each field in `fix.fields` (non-secret; `teams/_template.json` says where each comes from) and write them into `teams/<team>.json`. Tell the user to **commit that file** so their teammates get it |
+   | `credential`, `secret: false` | Ask for the value (an email, a username) and write it under `fix.key` in `credentials.local.js` |
+   | `credential`, `secret: true` | **Do not ask the user to paste a token or password into the chat** — chat history keeps it. Create the file if needed, then tell them the exact key (`fix.key`), where to get the value (`fix.where`), and to paste it into `automation/config/credentials.local.js` themselves and reply when done. If they paste it into the chat anyway, write it into the file and never repeat it back |
+   | `command` | Ask once ("install now?"), then run `fix.run` (`npm install`, `npm run playwright:install`, the template copy) |
+   | `path` | Ask for the folder (`fix.what`), or offer to clone `fix.clone`; set `QA_FRAMEWORK_PATH` |
+   | `file` | The credentials file doesn't load — show the user the error line (never the file's contents) and fix it together |
+
+5. **Re-run `node scripts/doctor.mjs --json` until `ready` is `true`** and the story-relevant warnings are
+   cleared — or the user has explicitly said to go on without one *for this run* (record that in
+   `prerequisites.md`). Only then continue with the story-specific checks below.
+
+Never read `credentials.local.js` aloud, print it, or copy values out of it; check keys, not values.
+
 ## What to enumerate
 Walk these categories and, for each, state **needed / have / how verified**:
 
@@ -87,7 +127,7 @@ Walk these categories and, for each, state **needed / have / how verified**:
 # Prerequisites — <TICKET>
 | # | Prerequisite | Status | How verified / What's needed |
 |---|---|---|---|
-| 0 | Team profile | ✅ have | `payment` selected; `teams/payment.json` has no TODO (`npm run doctor`) |
+| 0 | Environment readiness | ✅ have | `node scripts/doctor.mjs --json` → `ready: true`; team `payment`, no TODO; Atlassian + Figma MCP answered |
 | 1 | Admin Portal URL + creds | ✅ have | GET /#/dashboard authenticated as `agent` |
 | 2 | BrowserStack TM token | ✅ have | GET /api/v2/projects → 200 |
 | 3 | BrowserStack destination folder | ❓ ASK | operator must name the project + folder |

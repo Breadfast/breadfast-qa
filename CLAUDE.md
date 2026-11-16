@@ -78,7 +78,13 @@ CLAUDE.md orchestrates; `docs/ai/` holds the detail. Routing:
 When given a Jira story, follow these steps **in order**. Do **not** generate test cases before story analysis + clarification are complete.
 
 ### STEP 0-pre — Prerequisite Gate (`detect-prerequisites`) ⟵ **runs before everything**
-**First, the team.** This process serves every QA team. Team-specific values — Jira project, bug issue type,
+**Readiness before the story.** Every `/qa-*` workflow starts with `node scripts/doctor.mjs --json` plus one
+check of the Atlassian/Figma connections, and asks for everything missing — team, credentials, installs — in
+ONE batch before the ticket is read. Re-run until `ready` is `true`. Tokens and passwords are never asked for
+in chat: name the key and let the user paste it into `credentials.local.js`. A SessionStart hook
+(`.claude/settings.json`) runs the same doctor in `--session-start` mode, so the gaps are known before the
+first message. ([skill — *Readiness*](qa-workflow/skills/detect-prerequisites/SKILL.md).)
+**Then the team.** This process serves every QA team. Team-specific values — Jira project, bug issue type,
 squad + components, BrowserStack project and suite folder — come ONLY from the selected **team profile**
 (`teams/<team>.json`, chosen via `team` in `credentials.local.js` or `QA_TEAM`; [teams/README.md](teams/README.md)).
 **Never use another team's values as a default** — the card squad's (`B10`, `PR-5`, `Card Core`) included. No team

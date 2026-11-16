@@ -225,8 +225,20 @@ setx QA_FRAMEWORK_PATH "D:\projects"
 
 ```bash
 npm run doctor      # every prerequisite, with fix-it hints
-npm test            # 202 tests, 0 fail — the workflow engine
+npm test            # 221 tests, 0 fail — the workflow engine, team profiles and the doctor
 ```
+
+**You don't have to remember this.** Claude runs the same check for you:
+
+- **When Claude Code opens** in this repo, a start-up hook (`.claude/settings.json`) runs the doctor and tells
+  Claude what is missing: your team, a credential still holding the template placeholder, an install.
+- **When you start a workflow** (`/qa-shift-left`, `/qa-validate`, `/qa-full`), Claude reruns it, checks the
+  Jira and Figma connections, and asks for everything missing in one batch before it touches the story.
+  For tokens and passwords it names the exact key and asks you to paste the value into
+  `automation/config/credentials.local.js` yourself, so secrets never sit in the chat history.
+
+The first time you open the repo, Claude Code asks whether you trust this folder. Say yes; otherwise the
+project's start-up hook does not run (the workflows still run the check themselves).
 
 `npm test` is portable (Node's own glob; works in PowerShell, cmd, bash and zsh).
 Narrower slices: `npm run test:machinery` · `npm run test:visual`.

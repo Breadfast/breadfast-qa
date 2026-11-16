@@ -16,6 +16,11 @@ description: >-
 > breadfast-workflow plugin). Workflow + skills live under `qa-workflow/`.
 
 ## What to do
+0. **Readiness first — before reading the ticket.** Run `node scripts/doctor.mjs --json`, check the
+   Atlassian/Figma connections, and ask for everything missing (team, credentials, installs — for a mobile
+   story also the App Automate keys; for automation the Java framework path) in ONE batch, exactly as in the
+   *Readiness* section of [`detect-prerequisites`](../../../qa-workflow/skills/detect-prerequisites/SKILL.md).
+   Re-run the doctor until `ready` is `true`. Do not start the story on a half-configured machine.
 1. Determine the **ticket** (e.g. `B10-56729`) and optional `appUrl` / `mobileAppIds`.
 2. Execute **[`qa-workflow/workflows/qa-implementation-validation.md`](../../../qa-workflow/workflows/qa-implementation-validation.md)** exactly:
    - **Reconcile first** (`qa-cli.js reconcile`): reuse the **eight-key** shift-left baseline — including
