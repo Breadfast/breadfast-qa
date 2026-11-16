@@ -28,9 +28,15 @@ function fakeRepo(credentialsBody) {
   return root;
 }
 
-function doctor(root, mode = '--json') {
-  const env = { ...process.env, QA_FRAMEWORK_PATH: path.join(root, 'no-framework') };
+/** The developer's real machine must not leak in: framework.js also searches ~/projects, so HOME moves too. */
+function isolatedEnv(root, frameworkPath) {
+  const env = { ...process.env, QA_FRAMEWORK_PATH: frameworkPath, HOME: root, USERPROFILE: root };
   for (const k of CRED_ENV) delete env[k];
+  return env;
+}
+
+function doctor(root, mode = '--json') {
+  const env = isolatedEnv(root, path.join(root, 'no-framework'));
   const r = spawnSync(process.execPath, [path.join(root, 'scripts', 'doctor.mjs'), mode], { encoding: 'utf8', env, cwd: root });
   return { status: r.status, stdout: r.stdout, json: mode === '--json' ? JSON.parse(r.stdout) : null };
 }
@@ -72,6 +78,21 @@ test('filled in: the credentials and team pass, and no value is ever printed', (
   }
   assert.ok(byName(json.warnings, 'BrowserStack App Automate access key'), 'App Automate is a warning, not blocking');
   assert.ok(!stdout.includes(FAKE_TOKEN), 'a credential value leaked into the report');
+});
+
+test('App Automate keys in the Java framework\'s browserStackConfigs.properties count as set', () => {
+  const root = fakeRepo(`module.exports = { team: 'card-core' };`);
+  const fw = path.join(root, 'framework');
+  mkdirSync(path.join(fw, 'resources', 'environments'), { recursive: true });
+  writeFileSync(path.join(fw, 'pom.xml'), '<project/>');
+  writeFileSync(path.join(fw, 'resources', 'environments', 'browserStackConfigs.properties'),
+    `userName=qa_AbC123\naccessKey=${FAKE_TOKEN}\n`);
+  const env = isolatedEnv(root, fw);
+  const r = spawnSync(process.execPath, [path.join(root, 'scripts', 'doctor.mjs'), '--json'], { encoding: 'utf8', env, cwd: root });
+  const json = JSON.parse(r.stdout);
+  assert.ok(json.ok.includes('BrowserStack App Automate username'));
+  assert.ok(json.ok.includes('BrowserStack App Automate access key'));
+  assert.ok(!r.stdout.includes(FAKE_TOKEN));
 });
 
 test('a team whose profile still has TODO values is a warning that lists the fields', () => {
