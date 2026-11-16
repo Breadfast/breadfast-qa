@@ -1,0 +1,35 @@
+{
+  "_doc": {
+    "what": "One file per QA team. Copy this file to teams/<your-team-id>.json, replace every TODO, and commit it so your teammates get the same values. No secrets belong here; credentials stay in automation/config/credentials.local.js.",
+    "choose": "Each person picks their team once: `team: '<your-team-id>'` in automation/config/credentials.local.js, or the env var QA_TEAM=<your-team-id>.",
+    "TODO": "Any value still reading TODO stops the scripts that need it, with a message naming the field. Nothing falls back to another team's values.",
+    "jira.projectKey": "The Jira project your stories live in, e.g. B10.",
+    "jira.bugIssueTypeId": "The issue type id used for bugs in that project. Find it with GET /rest/api/2/issue/createmeta/<projectKey>/issuetypes, or open an existing bug and read issuetype.id.",
+    "jira.bug.web / jira.bug.mobile": "Squad (customfield_10183) and component values for web and mobile bugs. Delete a surface your team does not test. Values must match the Jira option text exactly.",
+    "jira.bug.labels / environment": "Optional. Defaults: labels ['ai-created','qa-found'], environment 'Egypt'.",
+    "browserstack.project": "The Test Management project identifier (PR-<n>), as shown in the API, not the numeric id from the URL.",
+    "browserstack.numericProject": "The numeric project id from a folder link: test-management.browserstack.com/projects/<numericProject>/folder/<id>.",
+    "browserstack.suiteFolder": "Your team's root folder of approved test cases (numeric id). Story folders are created inside it.",
+    "surfaces": "What your team tests: any of web, mobile, backend.",
+    "domains": "Knowledge skills under qa-workflow/domains/ to load for your stories (qa-workflow/registry/domains.yaml lists them)."
+  },
+  "id": "TODO",
+  "name": "TODO",
+  "jira": {
+    "projectKey": "TODO",
+    "bugIssueTypeId": "TODO",
+    "bug": {
+      "web": { "squad": ["TODO"], "components": ["TODO"] },
+      "mobile": { "squad": ["TODO"], "components": ["TODO"] },
+      "labels": ["ai-created", "qa-found"],
+      "environment": "Egypt"
+    }
+  },
+  "browserstack": {
+    "project": "TODO",
+    "numericProject": "TODO",
+    "suiteFolder": "TODO"
+  },
+  "surfaces": ["TODO"],
+  "domains": ["TODO"]
+}

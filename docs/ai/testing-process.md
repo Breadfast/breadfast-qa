@@ -85,7 +85,7 @@ Custom keypads · horizontal carousels · bottom sheets/modals (state preserved 
 Check PRD/AC → Figma → compare to other language → ask PO before classifying as bug → document as "Needs Clarification".
 
 ### 3.7 Test-case step structure — CANONICAL PROJECT STANDARD (mandatory)
-All generated test cases — for every story, every platform — MUST follow the structure of the **approved BrowserStack test cases** (project **BCard Squad**, canonical export `test_cases_BCard Squad (1).csv`, folder `48895703`; reference sample TC-49835). That approved set is the **source of truth** for test-case generation. Rules:
+All generated test cases — for every story, every platform, every team — MUST follow the structure of the **approved BrowserStack test cases** (format reference: the card squad's canonical export `test_cases_BCard Squad (1).csv`, folder `48895703`; reference sample TC-49835). Your team's approved set — the suite folder in `teams/<team>.json` — is the **source of truth** for your test-case generation. Rules:
 
 1. **Granular user-action steps.** Decompose the journey into one user action per step, in order: **Login → Navigate → Search → Open Details → Edit/Open form → Action → Verify**. Example sequence: "Log in to the Admin Portal with valid agent credentials" → "Navigate to Card Users > Search Cards and search for a customer by mobile number" → "Click 'More Details' to open the customer details page" → "Click 'Edit' to open the Edit Customer Details form" → "<the specific action>" → "<the verification>".
 2. **Every step has its own Expected Result.** No step may be left without a paired expected result. (A case with N steps has N expected results.)

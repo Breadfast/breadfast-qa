@@ -273,9 +273,9 @@ Expected  Around 14 pt of the next card is visible (~8%) — a subtle peek, not 
 | **Bug type** | `customfield_10079` | `Functional` \| `UI/UX` \| `Change Request ` \| `Performance` |
 | Environment | `customfield_10348` | `KSA` \| `Egypt` \| `Both (KSA, Egypt)` |
 | Platform | `customfield_10467` | `iOS` \| `Android` \| `Huawei` \| `Android/Huawei` \| `Both (iOS/Android)` \| `BE` \| `FE` \| `FE/BE` \| `None` |
-| Squad name | `customfield_10183` | array, e.g. `[{value:"Card Core"}]` / `[{value:"Card Ops Squad"}]` |
-| Components | `components` | the surface, e.g. `Bcard Dashboard` (card panel UI), `Bcard Cst app` (customer app), `Bcard BE` (backend). **Do not use a BE component for a UI defect.** |
-| Labels | `labels` | `["ai-created","qa-found"]` + any specific tag |
+| Squad name | `customfield_10183` | **from your team profile** (`jira.bug.web/mobile.squad` in `teams/<team>.json`). Card squad example: `[{value:"Card Core"}]` (web) / `[{value:"Card Ops Squad"}]` (mobile) |
+| Components | `components` | **from your team profile** (`jira.bug.web/mobile.components`) — the surface. Card squad example: `Bcard Dashboard` (card panel UI), `Bcard Cst app` (customer app), `Bcard BE` (backend). **Do not use a BE component for a UI defect.** |
+| Labels | `labels` | from the team profile, default `["ai-created","qa-found"]` + any specific tag |
 | **Description** | `description` | **LEAVE EMPTY.** (Operator decision 2026-07-28.) |
 
 **5 · Attachments — MANDATORY on every bug, before the bug is announced anywhere.**

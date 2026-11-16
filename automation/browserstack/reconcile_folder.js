@@ -16,7 +16,7 @@
  * deletes the wrong case. It maps every case in the approved CSV to either an existing TC id (update)
  * or null (create), and lists the ids to delete:
  *
- *   { "project": "PR-5", "folder": 54241929,
+ *   { "project": "PR-x", "folder": 54241929,      // project optional → the team profile's
  *     "cases":  [ {"n": 1, "tc": "TC-54946"}, ..., {"n": 11, "tc": null} ],
  *     "delete": [ "TC-54950", "TC-54957", ... ] }
  *
@@ -44,6 +44,7 @@ const path = require('path');
 const REPO = path.join(__dirname, '..', '..');
 const creds = require(path.join(REPO, 'automation/config/credentials.js'));
 const P = require(path.join(REPO, 'qa-workflow/lib/testcases/parse.js'));
+const team = require(path.join(REPO, 'automation/config/team.js'));
 
 const args = process.argv.slice(2);
 const flag = (n, d) => { const i = args.indexOf(`--${n}`); return i < 0 ? d : args[i + 1]; };
@@ -59,7 +60,13 @@ if (!STORY || !PLAN_PATH) {
 
 const storyDir = path.resolve(REPO, STORY);
 const plan = JSON.parse(fs.readFileSync(path.resolve(PLAN_PATH), 'utf8'));
-const PROJECT = plan.project || 'PR-5';
+let PROJECT;
+try {
+  PROJECT = team.resolveBrowserstackProject(plan.project);
+} catch (e) {
+  console.error(`reconcile_folder: no BrowserStack project — set "project" in the plan, or fix your team profile.\n${e.message}`);
+  process.exit(2);
+}
 const FOLDER = plan.folder;
 if (!FOLDER) { console.error('plan has no `folder`'); process.exit(2); }
 

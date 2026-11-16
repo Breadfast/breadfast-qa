@@ -146,7 +146,12 @@ function frameworkPath() {
   try { return require('../../automation/config/framework.js').resolve(); } catch { return null; }
 }
 function readStdin() { try { return fs.readFileSync(0, 'utf8'); } catch { return ''; } }
-function loadOrInit(dir, ticket) { return qs.load(dir) || qs.newState(ticket || 'B10-0'); }
+/** A story folder is named after its Jira key (any team's project), e.g. B10-57764/ or PAY-123/. */
+function ticketFromDir(dir) {
+  const base = path.basename(path.resolve(String(dir || '')));
+  return /^[A-Z][A-Z0-9]+-\d+$/.test(base) ? base : 'STORY-0';
+}
+function loadOrInit(dir, ticket) { return qs.load(dir) || qs.newState(ticket || ticketFromDir(dir)); }
 
 /**
  * VISUAL COVERAGE — the counterpart of `uncovered-ac`, added 2026-09-07.

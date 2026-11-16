@@ -1,0 +1,22 @@
+{
+  "_doc": "The Payment squad. Skeleton: replace every TODO on your first run (Claude asks for each one at the prerequisite step), then commit the file so the rest of the squad gets it. See teams/_template.json for what each field means.",
+  "id": "payment",
+  "name": "Payment",
+  "jira": {
+    "projectKey": "TODO",
+    "bugIssueTypeId": "TODO",
+    "bug": {
+      "web": { "squad": ["TODO"], "components": ["TODO"] },
+      "mobile": { "squad": ["TODO"], "components": ["TODO"] },
+      "labels": ["ai-created", "qa-found"],
+      "environment": "Egypt"
+    }
+  },
+  "browserstack": {
+    "project": "TODO",
+    "numericProject": "TODO",
+    "suiteFolder": "TODO"
+  },
+  "surfaces": ["TODO"],
+  "domains": ["payment"]
+}

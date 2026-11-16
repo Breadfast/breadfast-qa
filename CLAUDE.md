@@ -39,6 +39,7 @@ CLAUDE.md orchestrates; `docs/ai/` holds the detail. Routing:
 |------|------|
 | **Canonical QA methodology (authoritative — seven gated phases, Phase 0–6, + exit criteria)** | [docs/ai/QA_PROCESS.md](docs/ai/QA_PROCESS.md) |
 | **Prerequisite gate — what to settle BEFORE any phase (never block, always ask)** | [qa-workflow/skills/detect-prerequisites/SKILL.md](qa-workflow/skills/detect-prerequisites/SKILL.md) · [QA_PROCESS](docs/ai/QA_PROCESS.md) Phase 0 |
+| **Team values — Jira project, bug squad/components, BrowserStack project + suite folder (one file per team; no team's values are a default)** | [teams/README.md](teams/README.md) · `teams/<team>.json` · loader [automation/config/team.js](automation/config/team.js) |
 | **Claude Code ↔ QA Platform process parity (mismatches + resolved decisions)** | [docs/ai/process-parity-audit.md](docs/ai/process-parity-audit.md) |
 | **QA workflow architecture (Pre-Dev/Post-Dev split, artifact reuse contract, plugin-alignment)** | [docs/ai/architecture/adr-001-qa-workflow-independent-plugin-aligned.md](docs/ai/architecture/adr-001-qa-workflow-independent-plugin-aligned.md) · [contract](docs/ai/architecture/qa-artifact-contract.md) · [schema](docs/ai/architecture/qa-state.schema.json) · scaffold [qa-workflow/](qa-workflow/) |
 | **Which workflow to run** (pre-dev only · post-dev only · full lifecycle) | [qa-shift-left](qa-workflow/workflows/qa-shift-left.md) · [qa-implementation-validation](qa-workflow/workflows/qa-implementation-validation.md) · [qa-full](qa-workflow/workflows/qa-full.md) |
@@ -77,7 +78,12 @@ CLAUDE.md orchestrates; `docs/ai/` holds the detail. Routing:
 When given a Jira story, follow these steps **in order**. Do **not** generate test cases before story analysis + clarification are complete.
 
 ### STEP 0-pre — Prerequisite Gate (`detect-prerequisites`) ⟵ **runs before everything**
-Enumerate every input the run needs — access, destinations, targets, **test data the ACs name**, backend state,
+**First, the team.** This process serves every QA team. Team-specific values — Jira project, bug issue type,
+squad + components, BrowserStack project and suite folder — come ONLY from the selected **team profile**
+(`teams/<team>.json`, chosen via `team` in `credentials.local.js` or `QA_TEAM`; [teams/README.md](teams/README.md)).
+**Never use another team's values as a default** — the card squad's (`B10`, `PR-5`, `Card Core`) included. No team
+selected, or a needed value still `TODO` → ask in the same batch below, and write the answers into the team file.
+Then enumerate every input the run needs — access, destinations, targets, **test data the ACs name**, backend state,
 design links, **locale/platform scope** — verify each access item with **one real authenticated call**, and **ask for
 whatever is missing in a single batch**. Write `prerequisites.md` into the story folder.
 **Never report a step as blocked without asking first**, and treat a `401`/`404` from a destination as *probably our
@@ -136,7 +142,7 @@ HLS || <Story Name>
 Cover happy paths, negatives, edge cases, state transitions, validations, navigation, permissions, localization, error handling, regression risks.
 
 ### STEP 6 — Test Case Generation  ⟵ *pre-development (shift-left), before implementation*
-Generate detailed test cases in the **canonical project standard**: granular user-action steps (Login → Navigate → Search → Open Details → Edit → Action → Verify), **every step with its own Expected Result**, never combining actions, with navigation/validation/verification as explicit steps. Cover ACs, functional requirements, edge cases, validation rules, error/empty states, in-scope localization, permissions/state transitions, the **regression coverage from STEP 4**, and anything the (conditional) exploratory analysis surfaced. The **approved BrowserStack test cases are the source of truth** (folder `48895703` / `test_cases_BCard Squad (1).csv`). ([docs/ai/testing-process.md](docs/ai/testing-process.md) §3.7, [docs/ai/browserstack-process.md](docs/ai/browserstack-process.md) §10.0.)
+Generate detailed test cases in the **canonical project standard**: granular user-action steps (Login → Navigate → Search → Open Details → Edit → Action → Verify), **every step with its own Expected Result**, never combining actions, with navigation/validation/verification as explicit steps. Cover ACs, functional requirements, edge cases, validation rules, error/empty states, in-scope localization, permissions/state transitions, the **regression coverage from STEP 4**, and anything the (conditional) exploratory analysis surfaced. The **approved BrowserStack test cases in your team's suite folder are the source of truth** (`browserstack.suiteFolder` in `teams/<team>.json`; the CSV format reference is the card squad's export `test_cases_BCard Squad (1).csv`, folder `48895703`). ([docs/ai/testing-process.md](docs/ai/testing-process.md) §3.7, [docs/ai/browserstack-process.md](docs/ai/browserstack-process.md) §10.0.)
 
 > **Coverage is defined before development, then maintained (changed 2026-08-09).** STEPS 6–7 belong to
 > `qa-shift-left`; `qa-validate` **reconciles** the approved suite against what was built (add / update /
@@ -283,6 +289,7 @@ Before updating ANY documentation (CLAUDE.md, `docs/ai/**`, memory):
 
 | Item | Value / Rule |
 |------|--------------|
+| **Team values** (Jira project, bug issue type, squad + components, BrowserStack project + suite folder) | **`teams/<team>.json`** for the selected team (`team` in `credentials.local.js` / `QA_TEAM`) — read through `automation/config/team.js`. Never another team's values; no team or a `TODO` → ask ([teams/README.md](teams/README.md)) |
 | App build | `com.breadfast.testing` |
 | Devices | iPhone 14 / iOS 18 (`XCUITest`); Samsung Galaxy S23 / Android 13 (`UiAutomator2`) |
 | Arabic locale caps | `appium:language: ar`, `appium:locale: EG` — **top-level**, never in `bstack:options` |
@@ -346,7 +353,7 @@ On **B10-56652 (2026-07-28) five bugs were filed and all five were rejected** �
 5. **Read the script's post-create verify output before saying the bug is filed.** `HTTP 201` is not proof
    of a well-formed bug.
 
-**The shape (B10, verified against B10-58191…58197; Steps block corrected by the operator 2026-07-28):**
+**The shape (defined on B10, verified against B10-58191…58197; Steps block corrected by the operator 2026-07-28; applies to every team):**
 `Bug` is a **sub-task** → `parent` = the story key · title `[System Testing][<combo>] <specific actual wrong
 behaviour>` · **`description` left EMPTY** · the report lives in **Steps** `customfield_10042` /
 **Actual Result** `10043` / **Expected Result** `10044` · Steps opens with an **Environment block of version +
@@ -356,7 +363,9 @@ device/locale/account/session lines, `Language : Arabic` **only** when locale-sp
 them** — the fact, the number or exact string, the authority, stop; no methodology notes, hedging or
 "Note for triage" paragraphs ·
 fields Severity `10076`, Testing Phase `10078`, Bug type `10079`, Environment `10348`, Platform `10467`,
-Squad `10183`, Components, Priority, Labels · **no AC numbers in the title or ANY field** ·
+Squad `10183`, Components, Priority, Labels — **Jira project, bug issue type, Squad, Components, Labels and Environment
+come from the team profile** (`teams/<team>.json`; the filer fills them and rejects a parent outside the team's
+project) · **no AC numbers in the title or ANY field** ·
 **attachments are mandatory: `actual-*.png` + `design-*.png` + a `F-0N-*.mp4` screen recording**, and **every still and the recording must carry an INDICATOR marking where the issue is** (`automation/visual/annotate.js`; a change or drift needs a before/after pair on the same element) — §4.0b, uploaded
 via the REST attachments endpoint with the correct per-file `Content-Type`.
 

@@ -36,13 +36,15 @@ playwright-report/
 /*.png
 /*.pdf
 
-# Per-story folders at the repo root (B10-<key>/) are NEVER committed (changed 2026-08-10).
+# Per-story folders at the repo root (<JIRA-KEY>/, e.g. B10-57764/) are NEVER committed (changed 2026-08-10).
+# Any team's Jira project counts: the pattern below matches every <PROJECT>-<number>/ folder, so a
+# team whose stories live outside B10 cannot commit story evidence by accident.
 # This repo carries the WORKFLOW; a story run's output is local to whoever ran it.
 # Previously only the per-run artifacts were ignored and B10-*/automation/ was tracked — that
 # let 9 copies of upload_browserstack.js and 7 of gen_browserstack_csv.js accumulate, and made
 # STEP 7 depend on files that vanish whenever a story folder is cleaned up. The reusable parts
 # now live once in automation/browserstack/; anything story-specific stays out of git.
-/B10-*/
+/[A-Z]*-[0-9]*/
 /*-session.txt
 
 # Legacy execution engine — removed 2026-08-10 (zero runtime coupling; deferred since 2026-07-15).
@@ -51,7 +53,7 @@ playwright-report/
 
 # Orphaned image fixtures — nothing references these; PerksPage uses "automation/perks photos/".
 /perks-images/
-/B10-*/automation/**/*.zip
+/[A-Z]*-[0-9]*/automation/**/*.zip
 
 # bcard-user run log (phones, BCIDs) — local to whoever ran it
 automation/bcard-user/output/
