@@ -56,8 +56,9 @@ Walk these categories and, for each, state **needed / have / how verified**:
 
 | Category | Typical items |
 |---|---|
+| **Team profile (check FIRST)** | Which QA team runs this story, and is its `teams/<team>.json` complete? Selected via `team` in `automation/config/credentials.local.js` or `QA_TEAM`. It supplies the Jira project, bug issue type, squad + components per surface, and BrowserStack project + suite folder. **No team's values are ever a default** — if none is selected, ask which team; if fields still read `TODO`, ask for them in the same batch, write them into the team file, and tell the operator to commit it. `npm run doctor` lists what is missing ([teams/README.md](../../../teams/README.md)) |
 | **Access** | App/portal URL, username + password, API tokens (Jira, Figma, BrowserStack **Test Management**), DB/API read permission |
-| **Destinations** | BrowserStack project + **folder** id, Jira project/parent key, report output path |
+| **Destinations** | BrowserStack project (from the team profile) + this story's **folder** id, Jira parent key (must be in the team's Jira project), report output path |
 | **Targets** | Mobile app IDs (iOS + Android), build/version under test, device/OS matrix |
 | **Test data** | Records the ACs reference **by name** (e.g. AC-14's "General cashback 1%" perk), seeded lists, a disposable/unique-name strategy, a cleanup path |
 | **Backend state** | Migrations run? Feature flags on? Account in the required status? |
@@ -86,6 +87,7 @@ Walk these categories and, for each, state **needed / have / how verified**:
 # Prerequisites — <TICKET>
 | # | Prerequisite | Status | How verified / What's needed |
 |---|---|---|---|
+| 0 | Team profile | ✅ have | `payment` selected; `teams/payment.json` has no TODO (`npm run doctor`) |
 | 1 | Admin Portal URL + creds | ✅ have | GET /#/dashboard authenticated as `agent` |
 | 2 | BrowserStack TM token | ✅ have | GET /api/v2/projects → 200 |
 | 3 | BrowserStack destination folder | ❓ ASK | operator must name the project + folder |

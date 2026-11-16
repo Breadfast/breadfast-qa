@@ -1,0 +1,22 @@
+{
+  "_doc": "The card squad (BCard / Card Core). These values were previously hard-coded in the scripts and CLAUDE.md. See teams/_template.json for what each field means.",
+  "id": "card-core",
+  "name": "Card Core (BCard)",
+  "jira": {
+    "projectKey": "B10",
+    "bugIssueTypeId": "10084",
+    "bug": {
+      "web": { "squad": ["Card Core"], "components": ["Bcard Dashboard"] },
+      "mobile": { "squad": ["Card Ops Squad"], "components": ["Bcard Cst app"] },
+      "labels": ["ai-created", "qa-found"],
+      "environment": "Egypt"
+    }
+  },
+  "browserstack": {
+    "project": "PR-5",
+    "numericProject": "2407303",
+    "suiteFolder": 48895703
+  },
+  "surfaces": ["web", "mobile", "backend"],
+  "domains": ["card", "marketing"]
+}

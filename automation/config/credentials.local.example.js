@@ -9,6 +9,11 @@
  * variables on CI/shared machines; this file is the local-dev convenience fallback.
  */
 module.exports = {
+  // YOUR QA TEAM — the id of a file in teams/ (e.g. 'card-core', 'payment'). It decides the Jira
+  // project, the squad/components on bugs and the BrowserStack project. Nothing works until it is
+  // set; no team's values are used by default. New team? See teams/README.md. Env QA_TEAM overrides.
+  team: 'TODO',
+
   // Jira (Atlassian Cloud) — for REST calls the MCP can't do (e.g. attachments).
   jiraEmail:    'you@breadfast.com',
   jiraApiToken: 'ATATT...your-jira-api-token',   // id.atlassian.com > Security > API tokens
@@ -30,6 +35,7 @@ module.exports = {
   // browser-native PNG channel). Figma > Settings > Security > Personal access tokens.
   // figmaApiToken: 'figd_...your-figma-token',
 
+  // ── Card squad only (team 'card-core'). Other teams leave these out. ──────────────────────
   // Optional: card-panel admin password (else read from the Java framework's
   // cardServiceConfigs_testing.properties). Ask the card squad.
   // cardPanelAdminPassword: '...',

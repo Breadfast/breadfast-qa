@@ -12,6 +12,7 @@
  */
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -156,6 +157,32 @@ const firstLine = (s) => (s ? s.split(/\r?\n/)[0].trim() : s);
     } else {
       ok('Credentials safety', 'credentials.local.js is untracked, as it must be');
     }
+  }
+}
+
+// ── 5b. QA team profile (teams/<team>.json — no team's values are ever a default) ─
+{
+  const require = createRequire(import.meta.url);
+  try {
+    const team = require(path.join(repoRoot, 'automation', 'config', 'team.js'));
+    const id = team.selectedTeamId();
+    const known = team.availableTeams();
+    if (!id) {
+      fail('QA team', 'no team selected',
+        `Pick yours: add  team: '<id>'  to automation/config/credentials.local.js (or set QA_TEAM).\n` +
+        `      Teams with a profile: ${known.join(', ') || '(none)'} — new team: see teams/README.md`);
+    } else {
+      const profile = team.loadTeam({ id });
+      const todo = team.unfilledPaths(profile);
+      if (todo.length) {
+        warn('QA team', `${id} — ${todo.length} value(s) still TODO: ${todo.join(', ')}`,
+          `Fill them in teams/${id}.json (ask your squad lead) and commit the file. Scripts that need a TODO value stop and name it.`);
+      } else {
+        ok('QA team', `${id} (${profile.name}) — Jira ${profile.jira.projectKey}, BrowserStack ${profile.browserstack.project}`);
+      }
+    }
+  } catch (e) {
+    fail('QA team', e.message.split('\n')[0], 'See teams/README.md');
   }
 }
 

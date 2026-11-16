@@ -1,7 +1,13 @@
 'use strict';
 
 /**
- * File a B10 bug the ONE correct way — see docs/ai/bug-reporting.md §4.
+ * File a bug the ONE correct way — see docs/ai/bug-reporting.md §4.
+ *
+ * TEAM VALUES come from the selected team profile (teams/<team>.json, read through
+ * automation/config/team.js): the Jira project, the bug issue type, and the squad, components,
+ * labels and environment for web or mobile bugs. A spec may override squad/components/labels/
+ * environment; it never sets the project. No team selected, or a needed value still TODO → the
+ * spec is rejected before anything is written. Nothing falls back to another team's values.
  *
  * WHY THIS EXISTS
  * ---------------
@@ -46,9 +52,9 @@
  *     "bugType":     "Functional",              // Functional|UI/UX|Change Request |Performance
  *     "environment": "Egypt",                   // KSA|Egypt|Both (KSA, Egypt)   omit → "Egypt"
  *     "platform":    "Android",                 // iOS|Android|Both (iOS/Android)|BE|FE|FE/BE|…
- *     "squad":       ["Card Ops Squad"],
- *     "components":  ["Bcard Cst app"],
- *     "labels":      ["ai-created","qa-found"],
+ *     "squad":       ["…"],                     // OPTIONAL — omit → the team profile's value for this surface
+ *     "components":  ["…"],                     // OPTIONAL — omit → the team profile's value for this surface
+ *     "labels":      ["ai-created","qa-found"], // OPTIONAL — omit → the team profile's labels
  *     "attachments": ["…/actual-x.png", "…/design-x.png", "…/F-01-x.mp4"]
  *   }
  */
@@ -56,6 +62,7 @@
 const fs = require('fs');
 const path = require('path');
 const creds = require('./config/credentials.js');
+const team = require('./config/team.js');
 
 const BASE = 'https://breadfast.atlassian.net';
 const AUTH = creds.jira.authHeader();
@@ -162,17 +169,28 @@ const AI_TELLS = [
 function validate(spec) {
   const errors = [];
   const warn = [];
-  const need = ['parent', 'combo', 'title', 'actual', 'expected', 'severity', 'platform', 'squad', 'components'];
+  const need = ['parent', 'combo', 'title', 'actual', 'expected', 'severity', 'platform'];
   for (const k of need) {
     const v = spec[k];
     if (v == null || v === '' || (Array.isArray(v) && !v.length)) errors.push(`missing required: ${k}`);
+  }
+  // Team values: project, issue type, squad, components. A missing team or a TODO value is an error
+  // here, BEFORE any write, never a silent fallback to another team's values.
+  try {
+    const t = bugTeamValues(spec);
+    if (spec.parent && !String(spec.parent).startsWith(`${t.projectKey}-`)) {
+      errors.push(`parent ${spec.parent} is not in your team's Jira project ${t.projectKey} (teams/${team.selectedTeamId()}.json)`);
+    }
+  } catch (e) {
+    if (!(e instanceof team.TeamProfileError)) throw e;
+    errors.push(e.message);
   }
   for (const [k, list] of Object.entries(ALLOWED)) {
     if (spec[k] != null && !list.some((v) => v.trim() === String(spec[k]).trim())) {
       errors.push(`${k} = "${spec[k]}" is not allowed. Allowed: ${list.map((v) => `"${v}"`).join(' | ')}`);
     }
   }
-  if (spec.description) errors.push('description must be EMPTY for B10 bugs (operator decision 2026-07-28) — put the content in steps/actual/expected');
+  if (spec.description) errors.push('description must be EMPTY (operator decision 2026-07-28) — put the content in steps/actual/expected');
   if (spec.title) {
     if (/\bAC-?\d+/i.test(spec.title)) errors.push('title contains an AC number — forbidden in the title and in every field');
     if (/^\[System Testing\]\[/.test(spec.title)) errors.push('title must NOT include the prefix — it is added from `combo`; pass the statement only');
@@ -227,7 +245,7 @@ function validate(spec) {
 
   // Attachments: the whole point of the standard.
   const att = spec.attachments || [];
-  if (!att.length) errors.push('NO ATTACHMENTS. Every B10 bug needs the actual screenshot, the design/expected frame (if a design exists) and a short screen recording.');
+  if (!att.length) errors.push('NO ATTACHMENTS. Every bug needs the actual screenshot, the design/expected frame (if a design exists) and a short screen recording.');
   const missing = att.filter((f) => !fs.existsSync(f));
   if (missing.length) errors.push('attachment file(s) not found: ' + missing.join(', '));
   const names = att.map((f) => path.basename(f).toLowerCase());
@@ -240,12 +258,18 @@ function validate(spec) {
   return { errors, warn };
 }
 
+/** The selected team's values for this spec (spec overrides win). Throws TeamProfileError. */
+function bugTeamValues(spec) {
+  return team.bugDefaults(team.loadTeam(), spec);
+}
+
 function buildPayload(spec) {
   const severity = canon('severity', spec.severity);
+  const t = bugTeamValues(spec);
   const fields = {
-    project: { key: 'B10' },
+    project: { key: t.projectKey },
     parent: { key: spec.parent },
-    issuetype: { id: '10084' }, // Bug — a SUB-TASK in B10
+    issuetype: { id: t.issueTypeId }, // the team's bug issue type (a sub-task of the story in B10)
     summary: `[System Testing][${spec.combo}] ${spec.title}`,
     // description is deliberately ABSENT — operator decision 2026-07-28.
     [F.steps]: buildSteps(spec),
@@ -254,11 +278,11 @@ function buildPayload(spec) {
     [F.severity]: { value: severity },
     [F.testingPhase]: { value: spec.testingPhase || 'System Testing' },
     [F.bugType]: { value: canon('bugType', spec.bugType) || 'Functional' },
-    [F.environment]: { value: canon('environment', spec.environment) || 'Egypt' },
+    [F.environment]: { value: canon('environment', t.environment) },
     [F.platform]: { value: canon('platform', spec.platform) },
-    [F.squad]: (spec.squad || []).map((value) => ({ value })),
-    components: (spec.components || []).map((name) => ({ name })),
-    labels: spec.labels && spec.labels.length ? spec.labels : ['ai-created', 'qa-found'],
+    [F.squad]: t.squad.map((value) => ({ value })),
+    components: t.components.map((name) => ({ name })),
+    labels: t.labels,
     priority: { name: spec.priority || SEVERITY_TO_PRIORITY[String(severity).trim()] || 'Medium' },
   };
   return { fields };
@@ -470,10 +494,11 @@ cite the authority. No methodology notes, no hedging, no "note for triage" essay
   "expected": "Exactly five cards are reachable and the carousel stops at the fifth.\n\nRef: design node 9163-7909.",
   "severity": "Major",
   "platform": "Android",
-  "squad": ["Card Ops Squad"],
-  "components": ["Bcard Cst app"],
   "attachments": ["…/actual-carousel-six-cards.png", "…/design-pay-home.png", "…/F-01-carousel-six-cards.mp4"]
 }]
+
+Squad, components, labels and the Jira project come from YOUR team profile (teams/<team>.json),
+so the examples carry none. Add "squad"/"components" to a spec only to override the profile.
 
 ── Example spec — WEB (note: NO `builds`, so NO Environment block) ───────────
 [{
@@ -487,8 +512,6 @@ cite the authority. No methodology notes, no hedging, no "note for triage" essay
   "expected": "An X in the top-right of the modal header dismisses the modal and saves nothing.\n\nRef: design node 5893-401780.",
   "severity": "Major",
   "platform": "FE",
-  "squad": ["Card Core"],
-  "components": ["Bcard Dashboard"],
   "attachments": ["…/actual-modal-no-X.png", "…/design-modal-with-X.png", "…/F-01-no-x-close-icon.mp4"]
 }]
 

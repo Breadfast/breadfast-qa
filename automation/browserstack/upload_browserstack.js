@@ -8,7 +8,8 @@
  * case data are arguments now; everything below is story-independent.
  *
  * The operator pre-creates the destination folder; pass it in:
- *   --project PR-5            project identifier (NOT the numeric id)
+ *   --project PR-x            project identifier (NOT the numeric id). Optional: defaults to the
+ *                             selected team profile's `browserstack.project` (teams/<team>.json)
  *   --folder  54229453        the target folder id, which must be EMPTY
  *   --cases   <path>          module exporting { CASES, ISSUES } — normally the story's
  *                             gen_browserstack_csv.js (see gen_browserstack_csv.template.js)
@@ -41,8 +42,8 @@
  *     `/folders/{id}/test-cases` is **404 on GET** even though it is the correct POST path.
  *
  * Usage (from the repo root):
- *   node automation/browserstack/upload_browserstack.js --cases B10-xxxxx/automation/gen_browserstack_csv.js \
- *        --project PR-5 --folder 54229453 --dry
+ *   node automation/browserstack/upload_browserstack.js --cases <STORY>/automation/gen_browserstack_csv.js \
+ *        --folder 54229453 --dry
  *   node automation/browserstack/upload_browserstack.js --cases … --project … --folder …
  *   node automation/browserstack/upload_browserstack.js --cases … --project … --folder … --verify-only
  */
@@ -51,6 +52,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const creds = require('../config/credentials.js');
+const team = require('../config/team.js');
 
 const arg = (n, d) => { const i = process.argv.indexOf(n); return i !== -1 ? process.argv[i + 1] : d; };
 
@@ -59,13 +61,20 @@ const DRY = process.argv.includes('--dry');
 const VERIFY_ONLY = process.argv.includes('--verify-only');
 
 const CASES_PATH = arg('--cases');
-const PROJECT_ID = arg('--project');
 const FOLDER_ID = arg('--folder');
+let PROJECT_ID = arg('--project');
+let projectProblem = null;
+try {
+  PROJECT_ID = team.resolveBrowserstackProject(PROJECT_ID);
+} catch (e) {
+  PROJECT_ID = null;
+  projectProblem = e.message;
+}
 
 // ask-never-block: name what is missing and where it comes from, rather than failing obscurely.
 const missing = [];
 if (!CASES_PATH) missing.push('--cases <path to the story\'s gen_browserstack_csv.js, exporting { CASES, ISSUES }>');
-if (!PROJECT_ID) missing.push('--project <PR-x identifier, e.g. PR-5 — from the shared folder link>');
+if (!PROJECT_ID) missing.push('--project <PR-x identifier — from the shared folder link>, or fill browserstack.project in your team profile:\n    ' + projectProblem);
 if (!FOLDER_ID) missing.push('--folder <numeric target folder id — from the shared folder link>');
 if (missing.length) {
   console.error('upload_browserstack: missing required argument(s):\n  ' + missing.join('\n  '));

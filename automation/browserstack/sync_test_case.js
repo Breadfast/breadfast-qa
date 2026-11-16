@@ -8,8 +8,10 @@
  * `@TmsLink` (browserstack-process.md §10.5). There was no update tool; this is it.
  *
  * Usage:
- *   node automation/browserstack/sync_test_case.js --story-dir B10-57776 --project PR-5 \
+ *   node automation/browserstack/sync_test_case.js --story-dir B10-57776 [--project PR-x] \
  *        --tc TC-55007 [--dry]
+ *
+ * --project defaults to the selected team profile's `browserstack.project` (teams/<team>.json).
  *
  * The case body is rebuilt from the story's own `testcases/testcases.csv`, matched to the TC id via
  * `browserstack/tc-map.json`, so the sync always pushes exactly what the approved CSV says.
@@ -28,17 +30,24 @@ const path = require('path');
 const REPO = path.join(__dirname, '..', '..');
 const creds = require(path.join(REPO, 'automation/config/credentials.js'));
 const P = require(path.join(REPO, 'qa-workflow/lib/testcases/parse.js'));
+const team = require(path.join(REPO, 'automation/config/team.js'));
 
 const args = process.argv.slice(2);
 const flag = (n, d) => { const i = args.indexOf(`--${n}`); return i < 0 ? d : args[i + 1]; };
 const has = (n) => args.includes(`--${n}`);
 
 const STORY = flag('story-dir');
-const PROJECT = flag('project', 'PR-5');
 const TC = flag('tc');
 const DRY = has('dry');
 if (!STORY || !TC) {
-  console.error('usage: --story-dir <dir> --tc TC-xxxxx [--project PR-5] [--dry]');
+  console.error('usage: --story-dir <dir> --tc TC-xxxxx [--project PR-x] [--dry]');
+  process.exit(2);
+}
+let PROJECT;
+try {
+  PROJECT = team.resolveBrowserstackProject(flag('project'));
+} catch (e) {
+  console.error(`sync_test_case: no BrowserStack project — pass --project PR-x, or fix your team profile.\n${e.message}`);
   process.exit(2);
 }
 

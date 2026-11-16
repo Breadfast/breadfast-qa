@@ -54,6 +54,7 @@ const fs = require('fs');
 const path = require('path');
 const creds = require(path.join(__dirname, 'config', 'credentials.js'));
 const framework = require(path.join(__dirname, 'config', 'framework.js'));
+const team = require(path.join(__dirname, 'config', 'team.js'));
 
 const TM = 'https://test-management.browserstack.com/api/v2';
 const AA = 'https://api-cloud.browserstack.com/app-automate';
@@ -322,7 +323,9 @@ async function verifyRun(pr, runId) {
   const folder = await folderMeta(pr, folderId);
   const cases = await casesInFolder(pr, folderId);
   if (!cases.length) throw new Error(`no test cases in folder ${folderId} — upload them first`);
-  const storyKey = STORY || (String(cases[0].folder_path || '').match(/B10-\d+/) || (cases[0].tags || []).join(' ').match(/B10-\d+/) || [''])[0];
+  // The team's Jira project when a profile is selected, otherwise any Jira key — never a fixed project.
+  const keyRe = team.storyKeyPattern(team.tryLoadTeam());
+  const storyKey = STORY || (String(cases[0].folder_path || '').match(keyRe) || (cases[0].tags || []).join(' ').match(keyRe) || [''])[0];
   console.log(`cases in folder "${folder.name}": ${cases.length}${storyKey ? ` · story ${storyKey}` : ''}`);
 
   const index = tmsIndex(storyKey);

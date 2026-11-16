@@ -16,7 +16,7 @@ Follow it top to bottom. Total time: **~20 minutes**, most of it downloads.
 1. [Prerequisites](#1-prerequisites)
 2. [Clone the repositories](#2-clone-the-repositories)
 3. [Install dependencies](#3-install-dependencies)
-4. [Configure credentials](#4-configure-credentials)
+4. [Configure credentials](#4-configure-credentials) — and [choose your QA team](#41-choose-your-qa-team)
 5. [Claude Code: MCP servers and plugins](#5-claude-code-mcp-servers-and-plugins)
 6. [The Java framework's config files](#6-the-java-frameworks-config-files)
 7. [Verify the install](#7-verify-the-install)
@@ -118,14 +118,15 @@ Then fill in **your own** values:
 
 | Field | Where to get it |
 |---|---|
+| `team` | **your QA team's id** — the name of a file in [`teams/`](teams/) (`card-core`, `payment`, …). See [§4.1](#41-choose-your-qa-team) |
 | `jiraEmail` | your `@breadfast.com` address |
 | `jiraApiToken` | [id.atlassian.com → Security → API tokens](https://id.atlassian.com/manage-profile/security/api-tokens) → *Create* |
 | `browserstackEmail` / `browserstackPassword` | your BrowserStack login (team vault) |
 | `browserstackUsername` / `browserstackAccessKey` | BrowserStack → Account → Settings → *Authentication & Security* (the App Automate hub key) |
 | `bsTmUsername` / `bsTmApiToken` *(optional)* | BrowserStack → Profile → **API tokens**: the *Test Management* token, **not** the App Automate key |
 | `figmaApiToken` *(optional)* | Figma → Settings → Security → Personal access tokens (`file_content:read`). **Metadata only** |
-| `cardPanelAdminPassword` *(optional)* | card squad; otherwise read from the framework's `cardServiceConfigs_testing.properties` |
-| `cardDb*` / `cardCron*` *(optional)* | card squad: live card-service DB over the VPN, and the testing cron trigger |
+| `cardPanelAdminPassword` *(card squad only)* | the framework's `cardServiceConfigs_testing.properties` |
+| `cardDb*` / `cardCron*` *(card squad only)* | live card-service DB over the VPN, and the testing cron trigger. Other teams leave these out |
 
 `automation/config/credentials.local.js` is **gitignored**. `npm run doctor` fails loudly
 if it ever becomes tracked.
@@ -143,6 +144,22 @@ $env:JIRA_EMAIL="you@breadfast.com"; $env:JIRA_API_TOKEN="…"
 > **Never commit a real token.** If one is ever exposed, **revoke it at the source
 > first** (Atlassian / BrowserStack / Figma), then remove it from the repo. Deleting the
 > file is not enough, because git history keeps it.
+
+### 4.1 Choose your QA team
+
+The process is the same for every team. What differs is a handful of values, and they live in one
+file per team under [`teams/`](teams/): the Jira project, the bug issue type, the squad and
+components on bugs, and the BrowserStack project and suite folder.
+
+1. Set your team once, in `credentials.local.js` (`team: 'payment'`) or as `QA_TEAM=payment`.
+2. Run `npm run doctor`. The **QA team** line shows your team, or lists every value still `TODO`.
+3. If your team has **no file yet**, copy `teams/_template.json` to `teams/<your-team>.json`, fill it in
+   (the template explains where each value comes from) and commit it, so your teammates get it.
+4. If your team's file **still has `TODO`s**, that's fine for a first run. At the start of your first
+   story Claude asks for the missing values and writes them into the file. Commit it afterwards.
+
+**No team's values are ever used as a default.** With no team selected, scripts that file bugs or
+write to BrowserStack stop and say what to set. Details: [teams/README.md](teams/README.md).
 
 ---
 

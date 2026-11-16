@@ -226,7 +226,7 @@ See [exploratory-testing.md](exploratory-testing.md) §"Failure patterns" for th
 Generated test cases are managed in BrowserStack Test Management as CSV. **This spec is locked to the canonical BrowserStack export/import format** from `test_cases_BCard Squad (1).csv` (project **BCard Squad**, project id `2407303`). If a future import rejects this format, surface the divergence (governance: [release-validation.md](release-validation.md) §5) before changing the spec.
 
 ### 10.0 Canonical test-case standard (source of truth)
-The **approved BrowserStack test cases** (canonical export `test_cases_BCard Squad (1).csv`, folder `48895703`; reference sample TC-49835) are the **source of truth** for ALL future test-case generation. Every generated case must match them exactly in **structure, field mapping, naming convention, and writing style**. Non-negotiable step rules (see also [testing-process.md](testing-process.md) §3.7):
+The **approved BrowserStack test cases** in your team's suite folder (`browserstack.suiteFolder` in `teams/<team>.json`) are the **source of truth** for ALL future test-case generation. The **format reference** for every team is the card squad's canonical export (`test_cases_BCard Squad (1).csv`, folder `48895703`; reference sample TC-49835). Every generated case must match them exactly in **structure, field mapping, naming convention, and writing style**. Non-negotiable step rules (see also [testing-process.md](testing-process.md) §3.7):
 
 - **Granular user-action steps**, in order: **Login → Navigate → Search → Open Details → Edit/Open form → Action → Verify**. One user action per step.
 - **Every step has its own Expected Result** (N steps → N expected results; validate 0 steps missing an expected result before export).
@@ -324,7 +324,7 @@ This is the standing process — no extra instruction required:
 1b. **Pass the review + approval gate.** The cases are reviewed against the ten checks (no duplicates · no unrelated cases · no missing AC coverage **at clause level** · correct expected results · correct granularity · correct categorization · correct automatable classification · justified regression coverage · format conformance · **upstream coverage changes challenged**), revised until clean, and **explicitly approved by the operator** — `qa-cli.js approve "<storyDir>" testcases --by "<operator>"`. **Nothing below runs on unapproved cases**; recording the import is blocked without the approval. ([testcase-review skill](../../qa-workflow/skills/testcase-review/SKILL.md).)
 2. **Generate the BrowserStack-compatible CSV** per §10.1–10.4 (24-column header byte-exact; one row per step; every step has an Expected Result; Folder Path `>`-delimited).
 3. **Ask for BrowserStack credentials if not available** (saved as User env vars `BS_TM_USERNAME`/`BS_TM_API_TOKEN` + `BROWSERSTACK_USERNAME`/`BROWSERSTACK_ACCESS_KEY`). UI login (when API is SSO-blocked) uses the Test Management web login.
-4. **Ask for the project/folder destination if not provided** (project id `2407303` = BCard Squad; set Folder ID / Folder Path).
+4. **Take the project from the team profile** (`browserstack.project` / `browserstack.numericProject` in `teams/<team>.json` — never another team's; e.g. the card squad is `PR-5` = `2407303`), and **ask for the story folder if not provided** (set Folder ID / Folder Path).
 5. **Upload the test cases** (§10.6).
 6. **Verify the import succeeded** — folder count = expected case count (e.g. `28(28)`), cases land directly in the target folder (no nested/duplicate folder), open one case and confirm the Steps & Results render granularly with an expected result per step. Record destination + result in the story report.
 7. **After the automation exists and has run: mark the automated cases, create the run(s), attach the results** — one command, §10.8. Cases are uploaded `not_automated` (correct: at upload time nothing is automated yet) and are flipped to `automated` only once a test is actually bound to them by `@TmsLink`.
@@ -481,7 +481,7 @@ number**, not the story), which is what `--since` scopes.
 **To have the NEXT run post live instead of being back-filled**, pass the run id to the suite:
 
 ```bash
-mvn -o test -Dsurefire.suiteXmlFiles=<story>.xml     -Dtarget.browserstack.project.id=PR-5 -Dtarget.browserstack.run.id=TR-xxxx
+mvn -o test -Dsurefire.suiteXmlFiles=<story>.xml     -Dtarget.browserstack.project.id=<your team's PR-x> -Dtarget.browserstack.run.id=TR-xxxx
 ```
 
 Prefer these `-D` flags over editing `resources/environments/browserStackConfigs.properties`: that file is a
