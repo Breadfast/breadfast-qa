@@ -1,14 +1,10 @@
 {
   "extraKnownMarketplaces": {
-    "breadfast": {
-      "source": { "source": "github", "repo": "Breadfast/breadfast-workflow" }
-    },
     "humanizer": {
       "source": { "source": "git", "url": "https://github.com/blader/humanizer.git" }
     }
   },
   "enabledPlugins": {
-    "breadfast-workflow@breadfast": true,
     "humanizer@humanizer": true
   },
   "hooks": {
