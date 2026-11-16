@@ -7,7 +7,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "test": "node --test \"qa-workflow/**/*.test.js\" \"automation/config/*.test.js\" \"automation/*.test.js\"",
+    "test": "node --test \"qa-workflow/**/*.test.js\" \"automation/config/*.test.js\" \"automation/*.test.js\" \"scripts/*.test.mjs\"",
     "test:team": "node --test \"automation/config/*.test.js\" \"automation/*.test.js\"",
     "test:machinery": "node --test \"qa-workflow/lib/**/*.test.js\"",
     "test:visual": "node --test \"qa-workflow/capabilities/visual/**/*.test.js\"",
