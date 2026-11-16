@@ -173,11 +173,27 @@ const CREDENTIALS = [
   { name: 'BrowserStack Test Management API token', env: 'BS_TM_API_TOKEN', key: 'bsTmApiToken', level: 'fail', secret: true,
     needFor: 'importing/syncing test cases and runs (STEP 7, every story)',
     where: 'BrowserStack → Profile → API tokens → the Test Management token (NOT the App Automate key)' },
+  // App Automate also counts when it is in the Java framework's browserStackConfigs.properties — that is
+  // where automation/mobile/session.js and the framework itself read it (env first, then that file).
   { name: 'BrowserStack App Automate username', env: 'BROWSERSTACK_USERNAME', key: 'browserstackUsername', level: 'warn', secret: false,
+    framework: 'userName',
     needFor: 'mobile sessions and automated runs', where: 'BrowserStack → Account → Settings → Authentication & Security' },
   { name: 'BrowserStack App Automate access key', env: 'BROWSERSTACK_ACCESS_KEY', key: 'browserstackAccessKey', level: 'warn', secret: true,
+    framework: 'accessKey',
     needFor: 'mobile sessions and automated runs', where: 'BrowserStack → Account → Settings → Authentication & Security' },
 ];
+const FRAMEWORK_BS_FILE = 'browserStackConfigs.properties';
+/** A key from the framework's browserStackConfigs.properties, read the way automation/mobile/session.js reads it. */
+function frameworkBrowserStackValue(key) {
+  try {
+    const file = requireCjs(path.join(repoRoot, 'automation', 'config', 'framework.js')).environmentsFile(FRAMEWORK_BS_FILE);
+    if (!file) return undefined;
+    const m = readFileSync(file, 'utf8').match(new RegExp(`^${key}=(.*)$`, 'm'));
+    return m ? m[1].trim() : undefined;
+  } catch {
+    return undefined;
+  }
+}
 const PLACEHOLDER = /your-|\.\.\.|^you@|^todo$|^<.*>$/i;
 {
   const localFile = path.join(repoRoot, 'automation', 'config', 'credentials.local.js');
@@ -209,9 +225,14 @@ const PLACEHOLDER = /your-|\.\.\.|^you@|^todo$|^<.*>$/i;
   for (const c of CREDENTIALS) {
     const v = resolve(c.env, c.key) || (c.alt && resolve(c.alt.env, c.alt.key));
     if (isSet(v)) { ok(c.name, 'set'); continue; }
+    if (c.framework && isSet(frameworkBrowserStackValue(c.framework))) {
+      ok(c.name, `set (Java framework ${FRAMEWORK_BS_FILE})`);
+      continue;
+    }
     const placeholder = v != null && String(v).trim() !== '';
     const detail = `${placeholder ? 'still the template placeholder' : 'not set'} — needed for ${c.needFor}`;
-    const hint = `Set ${c.key} in ${CREDENTIALS_REL} (or env ${c.env}). Get it from: ${c.where}`;
+    const elsewhere = c.framework ? `, or ${c.framework} in the Java framework's resources/environments/${FRAMEWORK_BS_FILE}` : '';
+    const hint = `Set ${c.key} in ${CREDENTIALS_REL} (or env ${c.env}${elsewhere}). Get it from: ${c.where}`;
     const fix = { type: 'credential', key: c.key, env: c.env, file: CREDENTIALS_REL, secret: c.secret, where: c.where };
     if (c.level === 'fail') fail(c.name, detail, hint, fix);
     else warn(c.name, detail, hint, fix);
