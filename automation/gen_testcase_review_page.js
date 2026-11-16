@@ -179,6 +179,11 @@ const cases = parsed.cases.map((c, i) => ({
 
 const stepTotal = cases.reduce((a, c) => a + c.steps.length, 0);
 const recCount = cases.filter((c) => recommends(c.plan)).length;
+// `"preselect": false` at the plan's top level (e.g. automation deferred by the operator): the
+// recommendations are still shown per case, but nothing is pre-ticked and the export lists no
+// overrides, because there is no pre-selection to override. `preselectNote` explains why on the page.
+const preselect = !(plan && plan.preselect === false);
+const preselectNote = plan && plan.preselect === false ? String(plan.preselectNote || 'Nothing is pre-selected for this story.') : '';
 const acsCovered = [...new Set(cases.flatMap((c) => c.acs))]
   .sort((a, b) => Number(a.slice(3)) - Number(b.slice(3)));
 const folder = cases[0].folder || '';
@@ -442,6 +447,7 @@ const html = `<title>${esc(ticket)} — Test Case Review</title>
         <span id="aPickLabel">Automate this case</span>
       </label>
       <p class="noplan" id="aNoPlan" hidden>No automation plan authored for this story yet.</p>
+      ${preselectNote ? `<p class="noplan" id="aPreselectNote">${esc(preselectNote)}</p>` : ''}
     </div>
   </main>
 </div>
@@ -469,6 +475,7 @@ const html = `<title>${esc(ticket)} — Test Case Review</title>
 const TICKET = ${JSON.stringify(ticket)};
 const CASES = ${JSON.stringify(cases)};
 const HAS_PLAN = ${plan ? 'true' : 'false'};
+const PRESELECT = ${preselect ? 'true' : 'false'};
 const KEY = 'tc-review:' + TICKET;
 // One source of truth for "did I recommend automating this", mirroring recommends() on the Node side.
 // \`recommend\` arrives already normalized to yes/no/partial, and \`partial\` counts as a recommendation.
@@ -477,7 +484,7 @@ const RECOMMENDED = (c) => !!c.plan && (c.plan.recommend === 'yes' || c.plan.rec
 let R = {};
 try { R = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) { R = {}; }
 // first visit: pre-tick the recommended set so the operator overrides rather than starts from nothing
-if (HAS_PLAN && !localStorage.getItem(KEY + ':seeded')) {
+if (HAS_PLAN && PRESELECT && !localStorage.getItem(KEY + ':seeded')) {
   CASES.forEach((c) => {
     if (RECOMMENDED(c)) { R[c.n] = R[c.n] || { v: null, c: '' }; R[c.n].a = true; }
   });
@@ -684,7 +691,7 @@ $('bSummary').addEventListener('click', () => {
     const live = CASES.filter((c) => (R[c.n] || {}).v !== 'invalid');
     const chosen = live.filter((c) => (R[c.n] || {}).a);
     const declined = live.filter((c) => !(R[c.n] || {}).a);
-    const overrides = live.filter((c) => !!(R[c.n] || {}).a !== RECOMMENDED(c));
+    const overrides = PRESELECT ? live.filter((c) => !!(R[c.n] || {}).a !== RECOMMENDED(c)) : [];
     L.push('');
     L.push('=== AUTOMATE: ' + chosen.length + ' of ' + live.length + ' cases selected ===');
     chosen.forEach((c) => {
@@ -748,7 +755,8 @@ console.log(`${ticket}: ${cases.length} cases · ${stepTotal} steps · ${acsCove
 if (plan) {
   const n = (v) => cases.filter((c) => c.plan && c.plan.recommend === v).length;
   console.log(`automation plan: ${recCount} of ${cases.length} recommended `
-    + `(yes ${n('yes')} · partial ${n('partial')} · no ${n('no')}) — pre-ticked on first open`);
+    + `(yes ${n('yes')} · partial ${n('partial')} · no ${n('no')}) — `
+    + (preselect ? 'pre-ticked on first open' : 'NOT pre-ticked (plan.preselect = false)'));
   if (!recCount) console.error('WARNING: the plan recommends NOTHING — verify that is deliberate before reviewing.');
 } else {
   console.log(`automation plan: none authored (${planPath}) — the page will say so and fall back to the CSV`);

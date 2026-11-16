@@ -31,7 +31,7 @@
  * Spec shape (JSON) — see the bottom of this file for a complete example:
  *   {
  *     "parent":      "B10-56652",
- *     "combo":       "android-en",              // web | ios-en | ios-ar | android-en | android-ar
+ *     "combo":       "android-en",              // web | be | ios-en | ios-ar | android-en | android-ar  (be = backend-only, no UI)
  *     "title":       "<specific statement of the actual wrong behaviour>",
  *     "builds":      { "ios": {"version":"2026.31.0","build":"11084"},
  *                      "android": {"version":"2026.31.0","build":"1057"} },   // MOBILE ONLY. Omit for web.
@@ -85,7 +85,7 @@ const ALLOWED = {
   bugType: ['Functional', 'UI/UX', 'Change Request ', 'Performance'],
   environment: ['KSA', 'Egypt', 'Both (KSA, Egypt)'],
   platform: ['iOS', 'Android', 'Huawei', 'Android/Huawei', 'Both (iOS/Android)', 'BE', 'FE', 'FE/BE', 'None'],
-  combo: ['web', 'ios-en', 'ios-ar', 'android-en', 'android-ar'],
+  combo: ['web', 'be', 'ios-en', 'ios-ar', 'android-en', 'android-ar'],
 };
 
 const SEVERITY_TO_PRIORITY = {
@@ -129,7 +129,7 @@ function buildSteps(spec) {
   if (spec.steps) return spec.steps; // escape hatch: pre-assembled block
   const out = [];
   const b = spec.builds || {};
-  const isWeb = spec.combo === 'web';
+  const isWeb = spec.combo === 'web' || spec.combo === 'be';   // neither carries an Environment block
   if (!isWeb && (b.ios || b.android)) {
     out.push('Environment:');
     if (b.ios) out.push(`IOS : Version: ${b.ios.version}`, `Build Number: ${b.ios.build}`, '');
@@ -185,7 +185,7 @@ function validate(spec) {
   }
 
   // ── Steps block shape (operator-corrected 2026-07-28) ────────────────────
-  const isWeb = spec.combo === 'web';
+  const isWeb = spec.combo === 'web' || spec.combo === 'be';
   const hasBuilds = !!(spec.builds && (spec.builds.ios || spec.builds.android));
   if (!spec.steps && !(spec.stepList && spec.stepList.length)) errors.push('missing required: stepList (or a pre-assembled `steps` block)');
   if (isWeb && hasBuilds) errors.push('WEB bugs carry NO Environment block — drop `builds` for combo "web"');
@@ -300,7 +300,7 @@ async function verify(key) {
   const f = r.json.fields;
   const opt = (x) => (x && x.value) || (Array.isArray(x) ? x.map((y) => y.value || y.name).join('/') : null);
   const rows = [
-    ['Title', f.summary, /^\[System Testing\]\[(web|ios-en|ios-ar|android-en|android-ar)\] .{20,}/.test(f.summary || '')],
+    ['Title', f.summary, /^\[System Testing\]\[(web|be|ios-en|ios-ar|android-en|android-ar)\] .{20,}/.test(f.summary || '')],
     ['Steps', f[F.steps] ? `${String(f[F.steps]).length} chars` : null, !!f[F.steps]],
     ['Actual Result', f[F.actual] ? `${String(f[F.actual]).length} chars` : null, !!f[F.actual]],
     ['Expected Result', f[F.expected] ? `${String(f[F.expected]).length} chars` : null, !!f[F.expected]],

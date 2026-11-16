@@ -30,18 +30,21 @@ Accepted spellings: `01150211684`, `1150211684`, `+201150211684`.
 ## What the run prints
 
 Phone, breadfast id, card status, national id, **Pay passcode** (`123321`), **Pay OTP** (last 4 digits of the
-phone), package / BCID. Each user is also appended to `output/created-users.jsonl` (gitignored), which is how a
+phone), card PIN, package / BCID. Each user is also appended to `output/created-users.jsonl` (gitignored), which is how a
 later run finds the BCID of a card it collected.
 
-## Card PIN: mock MDP vs real MDP
+## Card PIN: real MDP vs mock MDP
 
-Testing runs on **mock MDP**: `set-pin` returns a static page that never reaches card-service. The default
-`--pin-mode mock` therefore opens no browser and calls `activate` straight after `set-pin`.
+Testing moved to **real MDP** on 2026-10-18: `set-pin` now returns a `devcarduat.mdp.global/pin-management` link.
+The default `--pin-mode auto` reads that link and picks the mode:
 
-When testing moves to **real MDP**, use `--pin-mode webview` (or `BCARD_PIN_MODE=webview`). It opens the
-`set-pin` link in headless Chromium, enters and confirms `--card-pin` (default `1111`; `--headed` to watch),
-then activates. Its locators come from the Java `SetCardPinPage` and **have not run against real MDP yet**,
-so check the first run. If the link is still the mock page, it says so.
+- **webview** (real MDP): opens the link in headless Chromium, enters and confirms `--card-pin` (default `1357`;
+  `--headed` to watch), waits for "Success!", then activates.
+- **mock** (a `data:` URI mock page): no browser, `activate` straight after `set-pin`.
+
+`--pin-mode mock|webview` (or `BCARD_PIN_MODE`) forces one. **Don't use `1111`.** The page drops weak PINs
+without any message: it stays on "Loading..." and never calls `api/setpin`. The script reports that as a
+rejected PIN.
 
 ## Known limit: brand-new registration is blocked right now
 
@@ -53,7 +56,7 @@ from there. The registration code is already in place and will work again once t
 
 ## Other options
 
-`--national-id`, `--bcid` (resume a Received user this script did not collect), `--count <n>` (n users in
+`--national-id`, `--bcid` (resume a Received user this script did not collect), `--passcode` (the user's Pay passcode when it isn't `123321`, e.g. an account registered in the app; without it, linking fails with "this number is not registered"), `--count <n>` (n users in
 parallel; random phones only), `--json`.
 
 ## Reused, not rebuilt

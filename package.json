@@ -13,7 +13,8 @@
     "doctor": "node scripts/doctor.mjs",
     "playwright:install": "npx playwright install chromium",
     "report": "npx playwright show-report",
-    "bcard-user": "node automation/bcard-user/create_bcard_user.js"
+    "bcard-user": "node automation/bcard-user/create_bcard_user.js",
+    "card-sandbox": "node automation/card-sandbox/server.js"
   },
   "dependencies": {
     "@playwright/test": "^1.60.0",

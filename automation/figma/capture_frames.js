@@ -114,7 +114,10 @@ async function captureFrame(page, spec, f, seen) {
     const clean = await clearClipboard(page);
     if (!clean) { console.log(`  attempt ${attempt}: clipboard still holds a PNG, retrying`); await sleep(2000); continue; }
 
-    await page.keyboard.press('Control+Shift+C');
+    // `ControlOrMeta` = Cmd on macOS, Ctrl elsewhere. Figma binds Copy as PNG to Cmd+Shift+C on a
+    // Mac; a literal `Control+Shift+C` there copies nothing and every frame fails "no PNG appeared"
+    // (confirmed 2026-10-15, B10-59507, after the workspace moved to macOS).
+    await page.keyboard.press('ControlOrMeta+Shift+C');
 
     let b64 = null;
     for (let poll = 0; poll < 10 && !b64; poll++) {
