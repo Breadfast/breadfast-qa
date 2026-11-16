@@ -72,6 +72,7 @@ Create a BCard test user at any card stage.
   --national-id <id>  national id for createCardUser (default: random, Luhn-valid)
   --kyc               also complete KYC when stopping at "registered"
   --bcid <bcid>       card BCID, when resuming a Received user this script did not collect
+  --passcode <6>      the user's Pay passcode, when it is not the default 123321 (e.g. set in the app)
   --pin-mode <m>      auto (default — from the set-pin link) | mock (no browser) | webview (real MDP)
                       also settable with env BCARD_PIN_MODE
   --card-pin <pin>    4-digit card PIN entered in the webview (default: 1357; 1111 is rejected) — webview only
@@ -98,6 +99,7 @@ function parseArgs(argv) {
       case '--count':        a.count = Number(next()); break;
       case '--kyc':          a.kyc = true; break;
       case '--bcid':         a.bcid = next(); break;
+      case '--passcode':     a.passcode = next(); break;
       case '--pin-mode':     a.pinMode = next().toLowerCase(); break;
       case '--card-pin':     a.cardPin = next(); break;
       case '--headed':       a.headed = true; break;
@@ -109,6 +111,8 @@ function parseArgs(argv) {
   if (!STAGES.includes(a.stage)) throw new Error(`--stage must be one of ${STAGES.join(', ')}`);
   if (!['auto', 'mock', 'webview'].includes(a.pinMode)) throw new Error('--pin-mode must be auto, mock or webview');
   if (!/^\d{4}$/.test(a.cardPin)) throw new Error('--card-pin must be 4 digits');
+  if (a.passcode !== undefined && !/^\d{6}$/.test(a.passcode)) throw new Error('--passcode must be 6 digits');
+  if (a.passcode) cfg.passcode = a.passcode;   // used for createPin and the passcode login
   if (!(a.count >= 1)) throw new Error('--count must be >= 1');
   if (a.phone && a.count > 1) throw new Error('--count cannot be combined with --phone');
   if (a.phone) a.phone = normalizePhone(a.phone);
@@ -239,6 +243,9 @@ async function toReceived(session, u) {
   const col = await f.collectViaApi(u.searchMobile, packageNumber);
   if (col.status !== 200) throw new Error(`collect failed: HTTP ${col.status} ${col.message}`);
   Object.assign(u, { packageNumber, bcid });
+  // Record the BCID now: nothing maps a package back to it, and a later step (link) can still fail.
+  fs.mkdirSync(path.dirname(OUTPUT_FILE), { recursive: true });
+  fs.appendFileSync(OUTPUT_FILE, JSON.stringify({ phone: u.phone, packageNumber, bcid, status: 'Received', partial: true }) + '\n');
 }
 
 async function userToken(session, u) {

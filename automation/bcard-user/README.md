@@ -56,7 +56,7 @@ from there. The registration code is already in place and will work again once t
 
 ## Other options
 
-`--national-id`, `--bcid` (resume a Received user this script did not collect), `--count <n>` (n users in
+`--national-id`, `--bcid` (resume a Received user this script did not collect), `--passcode` (the user's Pay passcode when it isn't `123321`, e.g. an account registered in the app; without it, linking fails with "this number is not registered"), `--count <n>` (n users in
 parallel; random phones only), `--json`.
 
 ## Reused, not rebuilt

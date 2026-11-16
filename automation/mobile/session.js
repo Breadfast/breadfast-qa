@@ -59,7 +59,7 @@ function req(method, p, body) {
  * Start a session. `locale` is 'en' or 'ar' — the Arabic caps go TOP-LEVEL
  * (`appium:language`/`appium:locale`), never inside bstack:options, which silently ignores them.
  */
-async function start({ platform, app, locale = 'en', build, name, device, osVersion }) {
+async function start({ platform, app, locale = 'en', build, name, device, osVersion, networkLogs = false }) {
   const isAndroid = platform === 'android';
   const caps = {
     platformName: isAndroid ? 'android' : 'ios',
@@ -71,7 +71,7 @@ async function start({ platform, app, locale = 'en', build, name, device, osVers
     'appium:newCommandTimeout': 600,
     'bstack:options': {
       projectName: 'Breadfast QA', buildName: build || 'adhoc', sessionName: name || 'session',
-      debug: true, networkLogs: false, deviceLogs: true, idleTimeout: 300,
+      debug: true, networkLogs: !!networkLogs, deviceLogs: true, idleTimeout: 300,
     },
   };
   if (locale === 'ar') { caps['appium:language'] = 'ar'; caps['appium:locale'] = 'EG'; }
