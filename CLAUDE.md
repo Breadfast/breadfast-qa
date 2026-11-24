@@ -7,13 +7,13 @@
 > business rules, page objects, helpers, coordinates, or story-specific data here.
 >
 > **Default testing scope is CONDITIONAL ON THE SURFACE UNDER TEST — establish it in Phase 0 before planning:**
-> - **Mobile-app stories (Breadfast Pay / Customer App):** iOS + Android × Arabic (ar/EG) + English (en/US) — **all four combos.**
-> - **Web-admin stories (card panel / control room / admin portal):** **web + English only — 1 combo.** These surfaces
->   have no mobile client, and the **card panel has no Arabic UI at all** (no locale switch; `html[lang]` is hard `en`;
->   forcing an `ar-EG` browser locale leaves it English/LTR — confirmed 2026-07-26). Arabic is still in scope as
->   **content**: `*_ar` fields are required, asserted, and render RTL *inside* their inputs.
->   Do **not** plan an AR/RTL UI sweep for them, and never report one as *passed* — report **Not Applicable** with evidence.
->   Note the Figma frames for these screens may still draw an `عربي` toggle; that is mock chrome, not a missing feature.
+> - **Mobile customer-app stories:** iOS + Android × Arabic (ar/EG) + English (en/US) — **all four combos** (org rule).
+> - **Web-admin stories (back-office / admin portals):** web. A surface's **locale support is a fact about that surface**:
+>   settle it in Phase 0 with one authenticated look and record it in the team context. A surface with **no Arabic UI**
+>   is **web + English only — 1 combo**; Arabic is still in scope as **content** (`*_ar` fields are required, asserted,
+>   and render RTL *inside* their inputs). Do **not** plan an AR/RTL UI sweep for it, and never report one as *passed* —
+>   report **Not Applicable** with evidence. Figma frames may still draw a language toggle the product doesn't have;
+>   that is mock chrome, not a missing feature. (Your domain's files name the surfaces already known to lack Arabic UI.)
 > - **Unsure?** The Phase 0 prerequisite gate settles it with one authenticated look at the app, before any HLS is written.
 >
 > **QA methodology authority:** [`docs/ai/QA_PROCESS.md`](docs/ai/QA_PROCESS.md) is the authoritative, platform-agnostic QA methodology (**seven** gated phases: **Prerequisites** → Requirements → Figma → Test Design → Execution → Visual Testing → QA Summary). This file stays scoped to execution behavior, orchestration, routing, and AI behavior — Section 2 below operationalizes that methodology against today's tooling, but QA_PROCESS.md wins on any conflict. The QA Platform (`qa-platform/`) is now a **legacy execution engine**: it receives completion of in-progress work, certification/hardening, critical bug fixes, and migration support only — no new platform-specific capabilities. Claude Code is the primary execution environment going forward.
@@ -55,13 +55,14 @@ CLAUDE.md orchestrates; `docs/ai/` holds the detail. Routing:
 | Impact analysis + smoke/application/activation/regression/hotfix playbooks | [docs/ai/regression-strategy.md](docs/ai/regression-strategy.md) |
 | **Bug filing — MANDATORY structure + the Defect Grounding Gate. READ §1.1 and §4 BEFORE filing anything** | [docs/ai/bug-reporting.md](docs/ai/bug-reporting.md) · skill [defect-reporting](qa-workflow/skills/defect-reporting/SKILL.md) · filer [automation/file_jira_bug.js](automation/file_jira_bug.js) |
 | Quality gates, HTML report standard, sign-off, **documentation governance** | [docs/ai/release-validation.md](docs/ai/release-validation.md) |
-| Business: overview / products / roles / **rules** | [docs/ai/business/](docs/ai/business/) |
+| **Product knowledge** (business rules, flows, test accounts, playbooks, history) — **team-scoped**: read only what `node qa-workflow/bin/qa-cli.js knowledge` lists; another team's domain needs `qa-cli.js cross-domain` | [qa-workflow/registry/knowledge.json](qa-workflow/registry/knowledge.json) · domains [qa-workflow/domains/](qa-workflow/domains/) · team context `teams/<team>/` |
+| Org-wide business overview + roles | [docs/ai/business/](docs/ai/business/) |
 | **Automation Generation (canonical contract)** — web→**Java/Selenium**, mobile→**Java/Appium**, framework discovery (configurable path), mandatory learning, story test classes, BrowserStack `@TmsLink` mapping | [docs/ai/automation/automation-generation.md](docs/ai/automation/automation-generation.md) |
 | **Canonical Java/Appium/Maven framework** (`D:\projects`): page-object modals, API clients, models, suites, config | [docs/ai/automation/java-framework.md](docs/ai/automation/java-framework.md) |
 | **Mobile native automation** (`androidNative`/`iosNative` — canonical reference for ALL new mobile automation generation: base-class contracts, locator/method conventions, reusable workflows, wiring steps) | [docs/ai/automation/mobile-native-framework.md](docs/ai/automation/mobile-native-framework.md) |
 | Other automation: Playwright (in-repo [`automation/`](automation/) + [`automation/legacy/`](automation/legacy/)), `bs_helper.js` mobile layer, coding standards, **page objects / helpers / fixtures / API clients / reusable components** | [docs/ai/automation/](docs/ai/automation/) |
 | Imported reference docs (Appium MCP setup, tech spec, suites, example CSV) | [docs/ai/reference/](docs/ai/reference/) |
-| Modules: customer-app, card-service, control-room, chatbot | [docs/ai/modules/](docs/ai/modules/) |
+| Org-wide modules: customer-app, control-room, chatbot (product modules live in their domain) | [docs/ai/modules/](docs/ai/modules/) |
 
 **Canonical automation framework = the Breadfast Java framework** (Java + Appium + Selenium + TestNG + Maven, 663 files; covers customerApp android/androidNative/ios/iosNative, cardService, controlRoom, mainAdminPortal, chatbot, fleet/midMile/rms). Default location `D:\projects`, but the **path is configurable, never assumed** (`QA_FRAMEWORK_PATH` → `automation/config/framework.js`; if it doesn't resolve, **ask for the location** — never fail generation over it). Since 2026-07-27 it is the **generation target for ALL new automation** (web→Selenium, mobile→Appium — contract: [docs/ai/automation/automation-generation.md](docs/ai/automation/automation-generation.md)); it is also the **config source of truth** (`resources/environments/config_testing.properties` + `cardServiceConfigs_testing.properties`) that `b55168_pom` reads. Reference it in place — do not copy its code or secrets here.
 
@@ -87,8 +88,14 @@ first message. ([skill — *Readiness*](qa-workflow/skills/detect-prerequisites/
 **Then the team.** This process serves every QA team. Team-specific values — Jira project, bug issue type,
 squad + components, BrowserStack project and suite folder — come ONLY from the selected **team profile**
 (`teams/<team>.json`, chosen via `team` in `credentials.local.js` or `QA_TEAM`; [teams/README.md](teams/README.md)).
-**Never use another team's values as a default** — the card squad's (`B10`, `PR-5`, `Card Core`) included. No team
+**Never use another team's values as a default** — the reference team's (`card-core`) included. No team
 selected, or a needed value still `TODO` → ask in the same batch below, and write the answers into the team file.
+**Then the team's knowledge (added 2026-11-24).** A team that has never been onboarded (no `teams/<team>/context.md`
+— the doctor blocks with `team-context`) runs [team-onboarding](qa-workflow/skills/team-onboarding/SKILL.md) **before
+the story is read**: it looks first, asks only what is missing, reads only repositories the tester grants, and writes
+confidence-tagged context (`qa-cli.js knowledge-lint`). Every run then reads product knowledge **only** from its plan —
+`node qa-workflow/bin/qa-cli.js knowledge` (core + the team's `domains` + its team context). Another team's domain is
+read only after an operator-approved `qa-cli.js cross-domain`; `record` and `complete-check` enforce it.
 Then enumerate every input the run needs — access, destinations, targets, **test data the ACs name**, backend state,
 design links, **locale/platform scope** — verify each access item with **one real authenticated call**, and **ask for
 whatever is missing in a single batch**. Write `prerequisites.md` into the story folder.
@@ -136,8 +143,8 @@ Generate HLS and **add them to Jira as a separate checklist section — never mo
 > `testcases/coverage-notes.md`. **A question reaches Jira only when the operator says it needs the
 > Product Owner** — then, and only then, post it as a **separate** comment containing just those
 > questions. Questions raised at the clarification gate and answered by the operator are **internal**
-> and never published. *(On B10-57764 nine questions were appended to the HLS comment unasked; four of
-> them the operator had already answered directly.)*
+> and never published. *(Lesson `card/L-03`: nine questions once went up
+> with an HLS comment unasked; the operator had already answered four of them.)*
 
 **Cap: ≤ 20 scenarios** — consolidate and prioritize the highest-risk coverage; do not pad. (Default 20; per-story override via execution instructions "no more than N HLS" → `directives.maxHls`, or globally via Settings `hls.maxScenarios` / env `QA_HLS_MAX`. The QA Platform enforces this in the prompt and hard-truncates as a backstop.) Format:
 ```
@@ -148,7 +155,7 @@ HLS || <Story Name>
 Cover happy paths, negatives, edge cases, state transitions, validations, navigation, permissions, localization, error handling, regression risks.
 
 ### STEP 6 — Test Case Generation  ⟵ *pre-development (shift-left), before implementation*
-Generate detailed test cases in the **canonical project standard**: granular user-action steps (Login → Navigate → Search → Open Details → Edit → Action → Verify), **every step with its own Expected Result**, never combining actions, with navigation/validation/verification as explicit steps. Cover ACs, functional requirements, edge cases, validation rules, error/empty states, in-scope localization, permissions/state transitions, the **regression coverage from STEP 4**, and anything the (conditional) exploratory analysis surfaced. The **approved BrowserStack test cases in your team's suite folder are the source of truth** (`browserstack.suiteFolder` in `teams/<team>.json`; the CSV format reference is the card squad's export `test_cases_BCard Squad (1).csv`, folder `48895703`). ([docs/ai/testing-process.md](docs/ai/testing-process.md) §3.7, [docs/ai/browserstack-process.md](docs/ai/browserstack-process.md) §10.0.)
+Generate detailed test cases in the **canonical project standard**: granular user-action steps (Login → Navigate → Search → Open Details → Edit → Action → Verify), **every step with its own Expected Result**, never combining actions, with navigation/validation/verification as explicit steps. Cover ACs, functional requirements, edge cases, validation rules, error/empty states, in-scope localization, permissions/state transitions, the **regression coverage from STEP 4**, and anything the (conditional) exploratory analysis surfaced. The **approved BrowserStack test cases in your team's suite folder are the source of truth** (`browserstack.suiteFolder` in `teams/<team>.json`; CSV format: [browserstack-process](docs/ai/browserstack-process.md) §10). ([docs/ai/testing-process.md](docs/ai/testing-process.md) §3.7, [docs/ai/browserstack-process.md](docs/ai/browserstack-process.md) §10.0.)
 
 > **Coverage is defined before development, then maintained (changed 2026-08-09).** STEPS 6–7 belong to
 > `qa-shift-left`; `qa-validate` **reconciles** the approved suite against what was built (add / update /
@@ -178,9 +185,8 @@ node qa-workflow/bin/qa-cli.js approve "<storyDir>" testcases --by "<operator>"
 > validation into behavioural, automated into manual, merges clauses, or declares a requirement untestable —
 > is a **coverage-changing decision**. It is recorded, and it is **not authoritative until the operator
 > ratifies it**: `approve … testcases` exits non-zero while one is `proposed`, and `complete-check` fails
-> the run. *(On **B10-57764**, clarification A-3 removed AC5's visual assertion; lint stayed green, all nine
-> checks passed, 3 manual cases and 18 automated tests passed, and two defects — **B10-59276**, **B10-59278**
-> — lived in the unasserted half of the AC.)*
+> the run. *(Lesson `card/L-04`: a clarification removed an AC's visual assertion; lint stayed green,
+> every check and every test passed, and two defects lived in the unasserted half of the AC.)*
 > ```
 > node qa-workflow/bin/qa-cli.js coverage-change list "<storyDir>"
 > node qa-workflow/bin/qa-cli.js coverage-change approve "<storyDir>" <id> --by "<operator>"
@@ -226,10 +232,10 @@ This changes the order of **work**, not the order of **recorded artifacts**: `PH
 'automation' }` in `qa-cli.js` still blocks recording `execution` until `automation` is complete, so the
 manual results sit on disk and are folded into the `execution` artifact after the automated run. If a run
 stops after the manual pass, **`automation` is owed** and needs a recorded operator deferral, never silence
-(the B10-56717 failure). Methodology: [QA_PROCESS](docs/ai/QA_PROCESS.md) Phase 4 · sequencing:
+(lesson `card/L-02`). Methodology: [QA_PROCESS](docs/ai/QA_PROCESS.md) Phase 4 · sequencing:
 [qa-implementation-validation](qa-workflow/workflows/qa-implementation-validation.md) phases 5–7.
 
-> **Clarify-first vs auto-run (resolved policy):** Steps 1–7 (analysis → test-case design → import) are **clarify-first** — stop and grill until scope is locked. They hold the run's **two planned stops**: the **clarification gate** (STEP 3) and the **test-case approval gate** (STEP 6b). **Once the cases are approved, the execution sessions below run end-to-end WITHOUT stopping** to ask. During execution, only pause for a genuine blocker (unknown OTP/BCID the system can't derive, a required backend status change, story content that cannot be found) — or a **re-approval** of test cases that execution itself changed.
+> **Clarify-first vs auto-run (resolved policy):** Steps 1–7 (analysis → test-case design → import) are **clarify-first** — stop and grill until scope is locked. They hold the run's **two planned stops**: the **clarification gate** (STEP 3) and the **test-case approval gate** (STEP 6b). **Once the cases are approved, the execution sessions below run end-to-end WITHOUT stopping** to ask. During execution, only pause for a genuine blocker (an unknown OTP or identifier the system can't derive, a required backend status change, story content that cannot be found) — or a **re-approval** of test cases that execution itself changed.
 
 ---
 
@@ -258,7 +264,7 @@ Execution detail (capabilities, OTP, taps, keypads, accumulators): [docs/ai/brow
 
 **Deferral is the operator's call, never yours (changed 2026-07-29, operator-approved).** This gate
 previously read *"Automation completed **(or deferred with reason)**"* — the only self-granted exemption
-in the list. On **B10-56717** that clause was invoked without ever asking: no story branch was created
+in the list. It was once invoked without ever asking (lesson `card/L-02`): no story branch was created
 (both repos stayed on the previous story's), **no automation was generated into the framework at all**,
 and the run still reported every gate met. A phase may now be skipped **only** with an explicit,
 recorded operator approval:
@@ -299,19 +305,12 @@ Before updating ANY documentation (CLAUDE.md, `docs/ai/**`, memory):
 | App build | `com.breadfast.testing` |
 | Devices | iPhone 14 / iOS 18 (`XCUITest`); Samsung Galaxy S23 / Android 13 (`UiAutomator2`) |
 | Arabic locale caps | `appium:language: ar`, `appium:locale: EG` — **top-level**, never in `bstack:options` |
-| Active session ID | `<storyDir>/current_session.txt` — **per story**, written by that story's own session script (e.g. `B10-57806/current_session.txt`). There is no global session file; the old `D:/BreadfastQA/current_session.txt` never existed at that path. |
+| Active session ID | `<storyDir>/current_session.txt` — **per story**, written by that story's own session script (e.g. `B10-XXXXX/current_session.txt`). There is no global session file; the old `D:/BreadfastQA/current_session.txt` never existed at that path. |
 | Login OTP | **Google Chat `#testing-otp` space** — the framework's `OtpFactory` reads it via `GoogleChatApiClient.findMessageForOTP(phone, method)`; enter with `typeDigitsW3C`. **Slack is retired** (its `#testing-otp` channel `C04TK0FM329` has carried nothing since 2026-06-24) |
-| Pay dual-authentication OTP | **Last 4 digits of the test phone** — the framework does the same (`enterOtpIfDisplayed(phone.substring(phone.length() - 4))`). **Nothing is sent to the OTP space for this gate**, so reading Chat for it hangs, and a wide lookback returns the LOGIN OTP from earlier in the same run |
-| Card application OTP (1/3) | last 4 digits of test phone |
-| Card activation OTP | last 4 digits of test phone |
-| Passcode / PIN | passcode = 6 digits; PIN = 4 digits (shared acct `01203365955` passcode `123321`) |
-| Pay "Get started" tap | coordinate tap **(195, 540)** — never label-based |
-| Activation "Got it" modal | coordinate tap **(195, 810)** — no a11y label |
+| **Product quick reference** (product OTP gates, test accounts, passcodes, coordinate taps) | **Team-scoped** — your domain's files, listed by `node qa-workflow/bin/qa-cli.js knowledge`. Never another team's. |
 | Arabic registration button | XPath label `إنشاء حساب` (no `ال`) |
-| Report generator | [`gen_report.js`](gen_report.js) — **in-repo at the repo root** → `test_report_[STORY_ID].html` |
-| Screenshot accumulators | iOS EN `screenshots_b64.json` · iOS AR `ios_ar_screenshots.json` · And EN `android_en_screenshots.json` · And AR `android_ar_screenshots.json` |
 
-Full coordinate table, keypad maps, API patterns, element/locator reference: [docs/ai/browserstack-process.md](docs/ai/browserstack-process.md).
+Session mechanics, keypad maps, API patterns, element/locator reference: [docs/ai/browserstack-process.md](docs/ai/browserstack-process.md); product coordinate taps: your domain's mobile flows.
 
 ---
 
@@ -334,7 +333,7 @@ Full coordinate table, keypad maps, API patterns, element/locator reference: [do
 ## 8.1 Defect filing — BINDING (do not file a bug from memory)
 
 Two failures keep recurring, so this is stated at the orchestration layer rather than only in `docs/ai/`.
-On **B10-56652 (2026-07-28) five bugs were filed and all five were rejected** — the filer had cited
+Five bugs on one story were once filed and **all five rejected** (lesson `card/L-05`) — the filer had cited
 `docs/ai/bug-reporting.md` in the defect log **without ever opening it**.
 
 **Before creating any Jira bug:**
@@ -359,7 +358,7 @@ On **B10-56652 (2026-07-28) five bugs were filed and all five were rejected** �
 5. **Read the script's post-create verify output before saying the bug is filed.** `HTTP 201` is not proof
    of a well-formed bug.
 
-**The shape (defined on B10, verified against B10-58191…58197; Steps block corrected by the operator 2026-07-28; applies to every team):**
+**The shape (the org-wide B10 bug schema — applies to every team; provenance: lesson `card/L-06`):**
 `Bug` is a **sub-task** → `parent` = the story key · title `[System Testing][<combo>] <specific actual wrong
 behaviour>` · **`description` left EMPTY** · the report lives in **Steps** `customfield_10042` /
 **Actual Result** `10043` / **Expected Result** `10044` · Steps opens with an **Environment block of version +
@@ -379,7 +378,7 @@ If a filed bug turns out to be invalid, **retract it explicitly** — comment th
 correct `defects.md`, the QA summary and every report that cited it.
 
 ## 9. Session Continuity
-Resuming: read memory (`MEMORY.md` + session files), verify the BrowserStack session is alive, take a fresh screenshot, read labels to orient, continue from the last known state. Memory dir: `~/.claude/projects/d--breadfast-qa/memory/` (per-user, outside the repo — each engineer has their own; the slug follows the repo path). The older `d--BreadfastQA/` directory is the pre-migration one and is **not** written to.
+Resuming: read memory (`MEMORY.md` + session files), verify the BrowserStack session is alive, take a fresh screenshot, read labels to orient, continue from the last known state. Memory dir: your per-user Claude memory for this repo (`~/.claude/projects/<repo-path-slug>/memory/` — outside the repo; each engineer has their own). It is personal: anything another team or engineer needs belongs in the repo (core, a domain, or `teams/<team>/`), never only in memory.
 
 ---
 *Restructured 2026-06-21 from the prior monolithic manual into an orchestration layer + `docs/ai/` knowledge base. Conflict resolutions on record: clarify-first during analysis/design + auto-run during execution; CLAUDE.md slimmed with a quick-ref; AGENTS.md reduced to a pointer; scope expanded to the full lifecycle incl. automation. The prior monolith's detail was migrated in full into `docs/ai/**` — nothing was discarded.*

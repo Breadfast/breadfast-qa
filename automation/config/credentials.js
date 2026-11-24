@@ -17,8 +17,13 @@
 let local = {};
 try { local = require('./credentials.local'); } catch (_) { /* no local overrides — env vars only */ }
 
-const pick = (envKey, localKey) =>
-  (process.env[envKey] != null && process.env[envKey] !== '') ? process.env[envKey] : local[localKey];
+/** First non-empty env var among `envKeys` (a name or a list of aliases), else the local key. */
+const pick = (envKeys, localKey) => {
+  for (const k of [].concat(envKeys)) {
+    if (process.env[k] != null && process.env[k] !== '') return process.env[k];
+  }
+  return local[localKey];
+};
 
 const required = (val, label, hint) => {
   if (!val) throw new Error(`Missing credential: ${label}.\n  -> ${hint}`);
@@ -51,27 +56,42 @@ module.exports = {
   // Live card-service DB (cards_hades_testing): SSH tunnel through a VPN-routed host, then MySQL.
   // Not the bastion copy in config_testing.properties — that one is a stale snapshot.
   // Returns a DbHelper config: new DbHelper(credentials.cardDb.config()).
+  // This is the ONLY resolver for the card DB (helpers/CardConfig.js delegates here). No value has a
+  // literal fallback: this file is tracked by git. The BF_CARD_* env names are the older aliases
+  // CardConfig.js used to read, kept so existing shells keep working.
   cardDb: {
-    config(database = 'cards_hades_testing') {
+    config(database = pick(['CARD_DB_NAME', 'BF_CARD_DB_NAME'], 'cardDbName') || 'cards_hades_testing') {
       const hint = (k, e) => `Set env ${e} or ${k} in credentials.local.js (ask the card squad for the live card-service DB access)`;
       return {
         db: {
-          host: required(pick('CARD_DB_HOST', 'cardDbHost'), 'card DB host', hint('cardDbHost', 'CARD_DB_HOST')),
-          port: Number(pick('CARD_DB_PORT', 'cardDbPort') || 3306),
-          user: required(pick('CARD_DB_USER', 'cardDbUser'), 'card DB user', hint('cardDbUser', 'CARD_DB_USER')),
-          password: required(pick('CARD_DB_PASSWORD', 'cardDbPassword'), 'card DB password', hint('cardDbPassword', 'CARD_DB_PASSWORD')),
+          host: required(pick(['CARD_DB_HOST', 'BF_CARD_DB_HOST'], 'cardDbHost'), 'card DB host', hint('cardDbHost', 'CARD_DB_HOST')),
+          port: Number(pick(['CARD_DB_PORT', 'BF_CARD_DB_PORT'], 'cardDbPort') || 3306),
+          user: required(pick(['CARD_DB_USER', 'BF_CARD_DB_USER'], 'cardDbUser'), 'card DB user', hint('cardDbUser', 'CARD_DB_USER')),
+          password: required(pick(['CARD_DB_PASSWORD', 'BF_CARD_DB_PASS'], 'cardDbPassword'), 'card DB password', hint('cardDbPassword', 'CARD_DB_PASSWORD')),
           database,
         },
         ssh: {
           required: true,
-          host: required(pick('CARD_DB_SSH_HOST', 'cardDbSshHost'), 'card DB SSH host', hint('cardDbSshHost', 'CARD_DB_SSH_HOST')),
-          port: Number(pick('CARD_DB_SSH_PORT', 'cardDbSshPort') || 22),
-          username: required(pick('CARD_DB_SSH_USER', 'cardDbSshUser'), 'card DB SSH user', hint('cardDbSshUser', 'CARD_DB_SSH_USER')),
-          password: required(pick('CARD_DB_SSH_PASSWORD', 'cardDbSshPassword'), 'card DB SSH password', hint('cardDbSshPassword', 'CARD_DB_SSH_PASSWORD')),
+          host: required(pick(['CARD_DB_SSH_HOST', 'BF_CARD_SSH_HOST'], 'cardDbSshHost'), 'card DB SSH host', hint('cardDbSshHost', 'CARD_DB_SSH_HOST')),
+          port: Number(pick(['CARD_DB_SSH_PORT', 'BF_CARD_SSH_PORT'], 'cardDbSshPort') || 22),
+          username: required(pick(['CARD_DB_SSH_USER', 'BF_CARD_SSH_USER'], 'cardDbSshUser'), 'card DB SSH user', hint('cardDbSshUser', 'CARD_DB_SSH_USER')),
+          password: required(pick(['CARD_DB_SSH_PASSWORD', 'BF_CARD_SSH_PASS'], 'cardDbSshPassword'), 'card DB SSH password', hint('cardDbSshPassword', 'CARD_DB_SSH_PASSWORD')),
           readyTimeout: 15000,
         },
       };
     },
+  },
+
+  // Repository grants for team onboarding / repo discovery. PER PERSON — never committed: which local clone
+  // to read and whether this tester authorized reading it. Shape in credentials.local.js:
+  //   repos: { '<id from teams/<team>/repos.json>': { path: '/abs/clone', granted: true, grantedAt: 'YYYY-MM-DD' } }
+  // A repo that exists on disk but is not granted here is NEVER read.
+  // env QA_REPO_GRANTS (the same object as JSON) overrides the file — for CI and tests.
+  repos() {
+    if (process.env.QA_REPO_GRANTS) {
+      try { return JSON.parse(process.env.QA_REPO_GRANTS); } catch (_) { throw new Error('QA_REPO_GRANTS is not valid JSON'); }
+    }
+    return (local && typeof local.repos === 'object' && local.repos) || {};
   },
 
   // Card-service test cron trigger: GET <cardServicesBaseURL>/api/v1/web/test?cronJobType=<type>

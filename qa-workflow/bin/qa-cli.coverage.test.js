@@ -10,6 +10,10 @@ const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
+// Hermetic: the CLI records the selected QA team at `init`. Pin it to the reference baseline (card-core)
+// so these tests never depend on the developer's QA_TEAM or credentials.local.js.
+process.env.QA_TEAM = 'card-core';
+
 const CLI = path.join(__dirname, 'qa-cli.js');
 const run = (args, input, opts = {}) => execFileSync(process.execPath, [CLI, ...args],
   { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], input: input || '', ...opts });

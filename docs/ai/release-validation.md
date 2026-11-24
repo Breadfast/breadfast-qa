@@ -113,12 +113,21 @@ Before any documentation update:
 
 Never silently overwrite project knowledge. Never silently modify CLAUDE.md. Store only **reusable** project knowledge (new business rule, workflow, user role, app state, automation pattern, BrowserStack convention, testing standard, regression rule) — not story-specific noise.
 
-Knowledge routing:
-- Reusable testing/process knowledge → `docs/ai/**`.
-- Framework intelligence (page objects, helpers, fixtures, API clients) → `docs/ai/automation/**`.
-- Module behavior → `docs/ai/modules/**`.
-- Business rules → `docs/ai/business/**`.
-- Session continuity / credentials / point-in-time state → Claude memory (`~/.claude/projects/d--breadfast-qa/memory/` — per-user, outside the repo; the slug follows the repo path, so each engineer gets their own automatically).
+Knowledge routing — **decide the layer first** (2026-11-24; registry: `qa-workflow/registry/knowledge.json`):
+- Reusable testing/process knowledge **true for every team** → `docs/ai/**` (core). It must carry no product
+  marker — `scripts/knowledge-isolation.test.mjs` fails the suite otherwise.
+- Framework intelligence (page objects, helpers, fixtures, API clients) → `docs/ai/automation/**` (catalogs of
+  the shared Java framework — never test accounts, OTPs, passcodes or coordinates).
+- Org-wide app modules (customer app, control room, chatbot) → `docs/ai/modules/**`; org-wide business facts →
+  `docs/ai/business/**`.
+- **Product** business rules, flows, test accounts, coordinate taps, playbooks, incident history → the owning
+  **domain**, `qa-workflow/domains/<domain>/`, registered in `knowledge.json` (only the domain's `owner` team
+  edits it; another team proposes the change). An incident becomes a numbered lesson in the domain's
+  `history.md`; the core rule it produced cites the lesson id, never the ticket.
+- What onboarding learns about a team's product (repos, architecture, stack, environments, unknowns) →
+  `teams/<team>/context.md`, confidence-tagged (`qa-cli.js knowledge-lint`).
+- Session continuity / credentials / point-in-time state → your per-user Claude memory (outside the repo; the
+  slug follows the repo path). It is personal: anything another engineer needs belongs in one of the layers above.
 
 ---
 
@@ -151,4 +160,3 @@ Rules:
 - **Runnable Playwright workspace (legacy):** the **repo itself** is the workspace — repo-root [`package.json`](../../package.json) + `node_modules` supply `@playwright/test`, `mysql2`, `ssh2`, `pdf-parse`. Playwright takes its config from `--config`, so run either the imported legacy suite (`npx playwright test --config=automation/legacy/playwright.config.js`) or a story suite (`npx playwright test --config=B10-<key>/automation/playwright.config.js`). **Nothing outside the repo is needed** — the former external framework `D:\Playwright\b55168_pom` was imported into [`automation/legacy/`](../../automation/legacy/) on 2026-08-10 because it was never a git repository and so was never pushed to anyone.
 - Reports must contain links/references to the stored evidence (§2.1).
 - Keep a root `README.md` in the story folder indexing the subfolders, the result, and Jira/artifact links.
-- First implemented for B10-56336.

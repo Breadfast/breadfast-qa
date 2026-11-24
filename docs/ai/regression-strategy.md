@@ -9,7 +9,7 @@
 Produce four lists:
 
 - **Impacted Areas** — modules, screens, APIs, databases, applications directly changed.
-- **Regression Areas** — adjacent flows that could break (auth, Pay home, card widget, navigation).
+- **Regression Areas** — adjacent flows that could break (auth, navigation, and the key journeys of your product; your domain's regression playbooks name them).
 - **Smoke Coverage** — the minimum launch/nav checks to re-run.
 - **Automation Impact** — existing specs/page-objects/helpers that need updating, and new automation opportunities.
 
@@ -17,7 +17,7 @@ Cross-reference module docs in [modules/](modules/) and the framework catalog in
 
 ---
 
-## 2. Smoke Test Playbook (all 4 combinations)
+## 2. Smoke Test Playbook (every in-scope combination)
 
 ```
 1 Start session (correct platform + locale caps)
@@ -25,58 +25,27 @@ Cross-reference module docs in [modules/](modules/) and the framework catalog in
 3 Snap home; verify bottom tab bar
    EN: Home, Search, Cart, Pay, More
    AR: الرئيسية, البحث, السلة, باي, المزيد
-4 Tap Pay tab; verify Pay home ("Wallet Balance" / "رصيد المحفظة")
-5 Snap Pay home
+4 Open the tab the story lives in; verify its landing screen in the session language (your domain's
+  regression playbooks give the exact landing-screen check)
+5 Snap that screen
 6 PASS if all labels present in correct language on correct platform
 7 Compare iOS vs Android — layout must be functionally equivalent
 ```
 
 ---
 
-## 3. Card Application Flow Playbook (all 4 combinations)
+## 3. Product regression playbooks
 
-```
-1  Pay tab → 2 tap card widget at (195,540) → 3 swipe through perks carousel
-4  Enter invitation code → 5 apply → OTP screen (1/3)
-6  OTP = last 4 digits of phone → 7 ID screen (2/3): name(s)+NID+expiry
-8  Submit (إرسال / Submit) → 9 Passcode intro (3/3) → Next (التالي / Next)
-10 Create passcode (Arabic-Indic numpad on AR) → 11 confirm → 12 Congratulations (مبروك! / Congratulations!)
-```
-Required screenshots: Pay home, perks carousel, invitation code, OTP 1/3, ID 2/3 (+ filled), passcode create 3/3, confirm, Congratulations, Pay home with stepper.
-Pass: correct language labels, 1/3→2/3→3/3 in sequence, Congratulations appears.
-Android notes: `android.widget.Button`/`EditText`; dump accessible elements for the custom passcode keypad.
+Flow playbooks (which screens, which order, which screenshots, pass criteria) are **product knowledge**: they
+live in each team's domain (`qa-workflow/domains/<domain>/regression-playbooks.md`) and reach a session
+through its knowledge plan (`node qa-workflow/bin/qa-cli.js knowledge`). Every playbook states a **TRIGGER**
+(what change runs it), a **SCOPE** (smoke → full flows per in-scope combo → step indicators → back navigation
+→ error states → iOS/Android parity), a **DURATION** and the **REPORT** it produces.
 
 ---
 
-## 4. Card Activation Flow Playbook
 
-```
-PRECONDITIONS: application complete; backend status registered→received; BCID available
-1 Pay home — Activate step active → 2 tap "ابدأ"/Start in widget
-3 Passcode verify "فتح بريدفاست باي" → enter 6-digit passcode
-4 (phone OTP verify if prompted = last 4 digits of phone)
-5 BCID screen "تفعيل بطاقتك" (1/2) → enter 12-digit BCID → التالي → "قيد التقدم" loading
-6 PIN intro "إعداد PIN" (2/2) → Next → PIN WebView (may fail in BrowserStack — env limitation)
-```
-Pass: 1/2 + 2/2 indicators confirmed, BCID validated, PIN intro visible. PIN = 4 digits; passcode = 6 digits.
-
----
-
-## 5. Regression Testing Playbook
-
-```
-TRIGGER: any change touching card flow, Pay home, or authentication.
-SCOPE: smoke (4 combos) → full card application iOS EN/AR + Android EN/AR →
-       verify step indicators → verify back nav from each screen →
-       error states (wrong OTP, duplicate NID, passcode mismatch) →
-       iOS vs Android parity check.
-DURATION: ~3–4h full four-combo; ~90min single-platform.
-REPORT: regenerate test_report_[STORY_ID].html with all 4 columns + Figma refs.
-```
-
----
-
-## 6. Hotfix Validation Playbook
+## 4. Hotfix Validation Playbook
 
 ```
 TRIGGER: emergency fix on testing env.
@@ -90,7 +59,7 @@ DURATION: 20–40 min per affected platform.
 
 ---
 
-## 7. New Feature Validation Playbook
+## 5. New Feature Validation Playbook
 
 ```
 1 Read PRD + extract AC (and STORY COMMENTS — they may override AC)

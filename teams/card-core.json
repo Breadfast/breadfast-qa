@@ -18,5 +18,5 @@
     "suiteFolder": 48895703
   },
   "surfaces": ["web", "mobile", "backend"],
-  "domains": ["card", "marketing"]
+  "domains": ["card", "payment", "marketing"]
 }

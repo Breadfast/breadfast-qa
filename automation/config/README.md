@@ -39,3 +39,17 @@ await page.fill('#email', creds.browserstack.email());
 await page.fill('#password', creds.browserstack.password());
 ```
 A missing credential throws a clear message telling you exactly which env var / local key to set.
+
+## Rule: a secret never has a literal fallback
+
+`process.env.X || '<the real value>'` puts the value in git history for good. That is how the card
+DB and SSH passwords leaked (`helpers/CardConfig.js`, removed 2026-11-24). Resolve every secret
+**env → `credentials.local.js` → error**, lazily (a getter), so requiring a module never needs the
+secret, only using it does. `credentials.js → cardDb.config()` and
+`environments/cardServiceConfigs_testing.js → adminPassword` are the reference implementations.
+
+Two guards enforce this:
+- `npm test` runs `scripts/secret-scan.mjs` over every tracked and new file (values are never printed).
+- `npm run hooks:install` once per clone enables `.githooks/pre-commit`, which scans staged files.
+
+A genuine test fixture goes in `scripts/secret-scan.allow.json` (file + line hash + reason).

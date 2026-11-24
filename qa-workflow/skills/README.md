@@ -6,6 +6,8 @@ that return the artifact **by path**, keeping the orchestrating workflow's conte
 
 | Skill | Phase | Workflow | runsAs | consumes (artifacts / sources / domains) | produces |
 |---|---|---|---|---|---|
+| `team-onboarding` | Phase 0b — team onboarding (**gate**, once per team) | all | inline | jira, team profile, granted repos | `teams/<team>/context.md` (not a story artifact) |
+| `repo-discovery` | Discovery (read-only, granted repos only) | all | subagent | granted repos | team context facts / `source-evidence.md` |
 | `story-analysis` | Requirements | W1 | subagent | jira | `requirements` |
 | `figma-analysis` | Figma | W1 | subagent | figma | `figma-analysis` |
 | `impact-analysis` | Impact | W1 | subagent | `requirements`, `figma-analysis` | `impact` |

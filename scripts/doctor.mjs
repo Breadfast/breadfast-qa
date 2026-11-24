@@ -139,7 +139,15 @@ if (!MODE_SESSION) {
       ok('Java QA framework', found);
       // The framework's environment files are gitignored there too: a fresh clone has none, and
       // OTP lookup, card-service config and BrowserStack runs all read them.
-      const needed = ['config_testing.properties', 'cardServiceConfigs_testing.properties', 'browserStackConfigs.properties'];
+      // cardServiceConfigs_testing.properties is the Card squad's file: only teams that load the `card`
+      // domain need it. With no team selected (yet) every file is checked, as before.
+      let needsCard = true;
+      try {
+        const teamMod = requireCjs(path.join(repoRoot, 'automation', 'config', 'team.js'));
+        const prof = teamMod.tryLoadTeam();
+        if (prof && Array.isArray(prof.domains) && !prof.domains.includes('TODO')) needsCard = prof.domains.includes('card');
+      } catch { /* the QA team section below reports profile problems */ }
+      const needed = ['config_testing.properties', ...(needsCard ? ['cardServiceConfigs_testing.properties'] : []), 'browserStackConfigs.properties'];
       const missing = needed.filter((f) => !framework.environmentsFile(f));
       if (!missing.length) ok('Framework config files', `${needed.length} found in resources/environments`);
       else warn('Framework config files', `missing: ${missing.join(', ')}`,
@@ -251,6 +259,8 @@ const PLACEHOLDER = /your-|\.\.\.|^you@|^todo$|^<.*>$/i;
 }
 
 // ── 5b. QA team profile (teams/<team>.json — no team's values are ever a default) ─
+/** Set when the selected team's profile is complete and valid: { id, domains, surfaces }. */
+let teamScope = null;
 {
   const require = createRequire(import.meta.url);
   try {
@@ -262,7 +272,7 @@ const PLACEHOLDER = /your-|\.\.\.|^you@|^todo$|^<.*>$/i;
         `Pick yours: add  team: '<id>'  to automation/config/credentials.local.js (or set QA_TEAM).\n` +
         `      Teams with a profile: ${known.join(', ') || '(none)'} — new team: see teams/README.md`,
         { type: 'team', key: 'team', env: 'QA_TEAM', file: CREDENTIALS_REL, available: known,
-          newTeam: 'copy teams/_template.json to teams/<id>.json and fill it in' });
+          newTeam: 'node qa-workflow/bin/qa-cli.js team-init <id> --name "<Squad>" --surfaces <web,mobile,backend> (org values pre-filled; then fill any TODO)' });
     } else {
       const profile = team.loadTeam({ id });
       const todo = team.unfilledPaths(profile);
@@ -271,12 +281,63 @@ const PLACEHOLDER = /your-|\.\.\.|^you@|^todo$|^<.*>$/i;
           `Fill them in teams/${id}.json (ask your squad lead) and commit the file. Scripts that need a TODO value stop and name it.`,
           { type: 'team-values', team: id, file: `teams/${id}.json`, fields: todo, explained: 'teams/_template.json' });
       } else {
-        ok('QA team', `${id} (${profile.name}) — Jira ${profile.jira.projectKey}, BrowserStack ${profile.browserstack.project}`);
+        // domains + surfaces decide which product knowledge the team's sessions load — an invalid
+        // value would silently load the wrong knowledge, so it blocks.
+        let scopeError = null;
+        try { teamScope = { id, domains: team.teamDomains(profile), surfaces: team.teamSurfaces(profile), contextDir: team.teamContextDir(profile) }; } catch (e) { scopeError = e.message; }
+        if (scopeError) {
+          fail('QA team', scopeError.split('\n')[0],
+            `Fix teams/${id}.json (domains: ids from qa-workflow/registry/knowledge.json, or []; surfaces: web, mobile, backend) and commit it.`,
+            { type: 'team-values', team: id, file: `teams/${id}.json`, fields: ['domains', 'surfaces'], explained: 'teams/_template.json' });
+        } else {
+          ok('QA team', `${id} (${profile.name}) — Jira ${profile.jira?.projectKey}, BrowserStack ${profile.browserstack?.project}`
+            + ` · domains ${teamScope.domains.join(', ') || '(none)'} · surfaces ${teamScope.surfaces.join(', ')}`);
+        }
       }
     }
   } catch (e) {
     fail('QA team', e.message.split('\n')[0], 'See teams/README.md',
       { type: 'team', key: 'team', env: 'QA_TEAM', file: CREDENTIALS_REL });
+  }
+}
+
+// ── 5c. Team context (teams/<team>/context.md — what onboarding learned about the team's product) ─
+// Without it a session analyses the team's first story with no product context at all, so it blocks:
+// the fix is to run team onboarding (qa-workflow/skills/team-onboarding), once per team.
+if (teamScope) {
+  const abs = path.join(teamScope.contextDir, 'context.md'); // honours QA_TEAMS_DIR, like the loader
+  const rel = path.relative(repoRoot, abs);
+  const onboarding = 'qa-workflow/skills/team-onboarding/SKILL.md';
+  if (!existsSync(abs)) {
+    fail('Team context', `${rel} missing — this team has not been onboarded`,
+      `Run team onboarding (${onboarding}): it asks about the product, repos, stack and docs, and writes ${rel}. Commit it for your teammates.`,
+      { type: 'team-context', team: teamScope.id, file: rel, run: onboarding });
+  } else {
+    let lint = null; let status = null;
+    try {
+      lint = requireCjs(path.join(repoRoot, 'qa-workflow', 'lib', 'knowledge', 'lint.js'));
+      status = requireCjs(path.join(repoRoot, 'qa-workflow', 'lib', 'knowledge', 'status.js'));
+    } catch { /* partial checkout: presence is all we can check */ }
+    if (!lint) ok('Team context', `${rel} present`);
+    else {
+      let registry = { domains: {} };
+      try { registry = JSON.parse(readFileSync(path.join(repoRoot, 'qa-workflow', 'registry', 'knowledge.json'), 'utf8')); } catch { /* reported elsewhere */ }
+      const res = lint.lintTeamContext(path.dirname(abs), { ownDomains: teamScope.domains, registry });
+      if (res.errors.length) {
+        fail('Team context', `${rel} fails knowledge-lint (${res.errors.length} error(s), first: ${res.errors[0].code})`,
+          `Run: node qa-workflow/bin/qa-cli.js knowledge-lint teams/${teamScope.id} — fix each fact's tag/source, then commit.`,
+          { type: 'team-context-invalid', team: teamScope.id, file: rel });
+      } else {
+        const st = status.knowledgeStatus(path.dirname(abs), {});
+        const s = res.stats;
+        const detail = `${rel} — verified ${s.verifiedAt} · ${s.confirmed} confirmed · ${s.unknown} unknown`;
+        if (st.stale) {
+          warn('Team context', `${detail} — STALE: ${st.reasons.join('; ')}`,
+            `Refresh it with team onboarding (${onboarding}); \`qa-cli.js knowledge-status\` shows what changed.`,
+            { type: 'team-context-stale', team: teamScope.id, file: rel, run: onboarding });
+        } else ok('Team context', detail);
+      }
+    }
   }
 }
 
@@ -348,9 +409,18 @@ if (MODE_SESSION) {
   const blocking = problems('fail');
   const warnings = problems('warn');
   const line = (r) => `- ${r.name}: ${r.detail}${r.fix && r.fix.key ? ` → set \`${r.fix.key}\` in ${r.fix.file || CREDENTIALS_REL}` : ''}`;
+  // Which team this session serves, and where its product knowledge comes from — said up front so no
+  // session starts by reading another team's domain.
+  const scopeLine = teamScope
+    ? `QA team: ${teamScope.id} — product knowledge for this session = \`node qa-workflow/bin/qa-cli.js knowledge --team ${teamScope.id}\``
+      + ` (domains: ${teamScope.domains.join(', ') || 'none'}; surfaces: ${teamScope.surfaces.join(', ')}). `
+      + 'Read product rules only from that plan; never from another team\'s domain or teams/<other>/ folder.'
+    : null;
   if (!blocking.length && !warnings.length) {
     console.log('QA environment check (scripts/doctor.mjs): ready — nothing missing.');
+    if (scopeLine) console.log(scopeLine);
   } else {
+    if (scopeLine) console.log(scopeLine);
     console.log(`QA environment check (scripts/doctor.mjs): ${blocking.length} blocking, ${warnings.length} warning(s).`);
     if (blocking.length) console.log('Blocking — a /qa-* workflow cannot complete without these:\n' + blocking.map(line).join('\n'));
     if (warnings.length) console.log('Warnings — only some paths need these:\n' + warnings.map(line).join('\n'));

@@ -21,7 +21,7 @@ metadata:
 > Ported from the QA Platform's `detect_prerequisites` node (`packages/shared/src/prompts.ts` in the
 > retired `qa-platform` app — removed from this repo 2026-08-10; see
 > [architecture/legacy-qa-platform/](../../../docs/ai/architecture/legacy-qa-platform/)),
-> which `qa-workflow/` was missing. Added 2026-07-26 after B10-56750 shipped a QA summary containing
+> which `qa-workflow/` was missing. Added 2026-07-26 after a QA summary shipped containing
 > **two** avoidable "blocked" outcomes — see *Why this exists*.
 
 ## Purpose
@@ -38,15 +38,15 @@ A run may end with "asked, awaiting X". It must not end with a flat "blocked on 
 was never given the chance to unblock.
 
 ## Why this exists (the failure it prevents)
-On **B10-56750** two items were reported as blocked in the final QA summary:
+Two items were once reported as blocked in the final QA summary (lesson `card/L-01`):
 
 1. **BrowserStack test-case upload** — reported as *"blocked: Test Management API returns 401/SSO"*.
    The credentials were **fine**. Our own `import_browserstack_csv.js` targeted the **v1** API, which
    returns `401 + auth/start-sso` for valid keys. A prerequisite check would have exercised the
    destination up front, found the 401 in minute one, and asked — instead of after execution, on a
    wrong diagnosis, having never asked.
-2. **AC-14 data migration** — reported *"Not Testable: the environment has zero perks"*. Asking
-   "does this environment contain the perks AC-14 refers to?" at the start would have had them seeded
+2. **AC-14 data migration** — reported *"Not Testable: the environment has zero records"*. Asking
+   "does this environment contain the records AC-14 refers to?" at the start would have had them seeded
    before execution. They were seeded on request afterwards, and AC-14 then **passed**.
 
 Both were discoverable in the first minutes. Neither needed to reach a report.
@@ -77,13 +77,16 @@ added before running the workflow — even when the team or the credentials are 
 
    | `fix.type` | What to do |
    |---|---|
-   | `team` | Ask which team, offering `fix.available` plus "a new team". Write `team: '<id>'` into `automation/config/credentials.local.js` (create it from the template first if it is missing). A new team: copy `teams/_template.json` to `teams/<id>.json` and continue with `team-values` |
+   | `team` | Ask which team, offering `fix.available` plus "a new team". Write `team: '<id>'` into `automation/config/credentials.local.js` (create it from the template first if it is missing). A new team (any squad): `node qa-workflow/bin/qa-cli.js team-init <id> --name "<Squad>" --surfaces …` — the org-wide values (Jira `B10`, bug type `10084`) are pre-filled — then continue with `team-values` for whatever is still TODO, and `team-context` (onboarding) |
    | `team-values` | Ask for each field in `fix.fields` (non-secret; `teams/_template.json` says where each comes from) and write them into `teams/<team>.json`. Tell the user to **commit that file** so their teammates get it |
    | `credential`, `secret: false` | Ask for the value (an email, a username) and write it under `fix.key` in `credentials.local.js` |
    | `credential`, `secret: true` | **Do not ask the user to paste a token or password into the chat** — chat history keeps it. Create the file if needed, then tell them the exact key (`fix.key`), where to get the value (`fix.where`), and to paste it into `automation/config/credentials.local.js` themselves and reply when done. If they paste it into the chat anyway, write it into the file and never repeat it back |
    | `command` | Ask once ("install now?"), then run `fix.run` (`npm install`, `npm run playwright:install`, the template copy) |
    | `path` | Ask for the folder (`fix.what`), or offer to clone `fix.clone`; set `QA_FRAMEWORK_PATH` |
    | `file` | The credentials file doesn't load — show the user the error line (never the file's contents) and fix it together |
+| `team-context` | The team has never been onboarded (`teams/<team>/context.md` missing). Run [`team-onboarding`](../team-onboarding/SKILL.md) **before reading the story** — it asks about the product, surfaces, repos and docs, and writes the team context. Blocking: a story is never analysed with no product context |
+| `team-context-invalid` | The team context fails `qa-cli.js knowledge-lint` — fix each reported fact (tag/source) with the tester, then commit |
+| `team-context-stale` | Offer a refresh via `team-onboarding` (`qa-cli.js knowledge-status` shows what changed). If the operator declines, record it in `prerequisites.md` and continue |
 
 5. **Re-run `node scripts/doctor.mjs --json` until `ready` is `true`** and the story-relevant warnings are
    cleared — or the user has explicitly said to go on without one *for this run* (record that in
@@ -96,15 +99,17 @@ Walk these categories and, for each, state **needed / have / how verified**:
 
 | Category | Typical items |
 |---|---|
+| **Team knowledge** | `node qa-workflow/bin/qa-cli.js knowledge --team <team>` — the ONLY product knowledge this run may read (core + the team's domains + `teams/<team>/context.md`). If the story needs another team's domain (e.g. it touches a surface that team owns), ask the operator and record `qa-cli.js cross-domain`; never read it silently |
+| **Source access** | Map the story's components / AC nouns / API paths onto `teams/<team>/repos.json → components`. For each mapped repo that is not granted (`qa-cli.js repos`), ask in this batch: *"this story changes X — may I read `<repo>` (read-only)?"*. Declined → a stated limitation, never a block. Granted → [`repo-discovery`](../repo-discovery/SKILL.md) during story analysis |
 | **Team profile (check FIRST)** | Which QA team runs this story, and is its `teams/<team>.json` complete? Selected via `team` in `automation/config/credentials.local.js` or `QA_TEAM`. It supplies the Jira project, bug issue type, squad + components per surface, and BrowserStack project + suite folder. **No team's values are ever a default** — if none is selected, ask which team; if fields still read `TODO`, ask for them in the same batch, write them into the team file, and tell the operator to commit it. `npm run doctor` lists what is missing ([teams/README.md](../../../teams/README.md)) |
 | **Access** | App/portal URL, username + password, API tokens (Jira, Figma, BrowserStack **Test Management**), DB/API read permission |
 | **Destinations** | BrowserStack project (from the team profile) + this story's **folder** id, Jira parent key (must be in the team's Jira project), report output path |
 | **Targets** | Mobile app IDs (iOS + Android), build/version under test, device/OS matrix |
-| **Test data** | Records the ACs reference **by name** (e.g. AC-14's "General cashback 1%" perk), seeded lists, a disposable/unique-name strategy, a cleanup path |
+| **Test data** | Records the ACs reference **by name** (e.g. a record an AC names, such as a specific catalogue item), seeded lists, a disposable/unique-name strategy, a cleanup path |
 | **Backend state** | Migrations run? Feature flags on? Account in the required status? |
 | **Design** | Figma file key + node ids for **this** story; is the Jira design link alive? |
-| **Locale/platform scope** | Does the surface under test even support the default locales? (B10-56750: the card panel has **no Arabic UI** — a scope fact worth settling at minute one) |
-| **Automation framework** | The Breadfast Java framework location resolves (`QA_FRAMEWORK_PATH` → `automation/config/framework.js`, default `D:\projects`; verified by its `pom.xml`) — if not, **ask for the path**; plus any one-time wiring the story's automation needs (e.g. the story-class `TypeName` checkstyle suppression — [automation-generation.md](../../../docs/ai/automation/automation-generation.md) §2, §5) |
+| **Locale/platform scope** | Does the surface under test even support the default locales? Read the team context's *Surfaces & locale support* first; settle anything it does not answer with one authenticated look at the app (an admin portal with **no Arabic UI** — lesson `card/L-01` — is a scope fact worth settling at minute one), then `qa-cli.js init <storyDir> <TICKET> --surfaces …` |
+| **Automation framework** | The Breadfast Java framework (org standard) location resolves (`QA_FRAMEWORK_PATH` → `automation/config/framework.js`, which also tries the sibling `../projects` and `~/projects`; verified by its `pom.xml`) — if not, **ask for the path**; plus any one-time wiring the story's automation needs (e.g. the story-class `TypeName` checkstyle suppression — [automation-generation.md](../../../docs/ai/automation/automation-generation.md) §2, §5) |
 
 ## Method
 1. **Read the story and the ACs for named dependencies.** Any AC that names a record, a migration, or a
@@ -131,7 +136,7 @@ Walk these categories and, for each, state **needed / have / how verified**:
 | 1 | Admin Portal URL + creds | ✅ have | GET /#/dashboard authenticated as `agent` |
 | 2 | BrowserStack TM token | ✅ have | GET /api/v2/projects → 200 |
 | 3 | BrowserStack destination folder | ❓ ASK | operator must name the project + folder |
-| 4 | Perks referenced by AC-14 | ❓ ASK | perks list returns 0 rows — need them seeded |
+| 4 | Records referenced by AC-14 | ❓ ASK | the list returns 0 rows — need them seeded |
 ```
 
 ## Exit criteria

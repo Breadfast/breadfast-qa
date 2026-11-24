@@ -163,7 +163,7 @@ set is the **eight-key baseline** plus any conditional artifact this story produ
 
 `coverageChanges` (qa-state, [schema](qa-state.schema.json) `$defs.coverageChangeRecord`) records a
 decision that **reduces or changes planned validation**. The authoritative rule — what counts, why it
-needs ratification, and the B10-57764 failure it comes from — is
+needs ratification, and the failure it comes from (lesson `card/L-04`) — is
 [`QA_PROCESS.md`](../QA_PROCESS.md) *Coverage-changing decisions*; this section states only how it
 interacts with freshness.
 
@@ -183,7 +183,7 @@ A Jira change flags `requirements`/`hls` stale mechanically, but **`clarificatio
 | Field | Type | Meaning |
 |---|---|---|
 | `schemaVersion` | int | contract version (currently `1`) |
-| `ticket` | string | Jira key, e.g. `B10-56729` |
+| `ticket` | string | Jira key, e.g. `B10-XXXXX` |
 | `updatedAt` | ISO datetime | last reconcile/update |
 | `generatedBy` | string | `<workflow>@<version>` that last wrote the file |
 | `sources.jira.updated` | ISO datetime | Jira issue `updated` at last reconcile |

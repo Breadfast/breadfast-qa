@@ -309,7 +309,11 @@ async function setCardPinInWebview(link, pin, { headed }) {
   try {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
     // The keypad is in the HTML before its (obfuscated) script binds the clicks — wait for the page to settle.
-    await page.goto(link, { waitUntil: 'networkidle' });
+    // networkidle alone timed out at 30 s on a slow connection (2026-11-23) although the page had loaded:
+    // wait for `load` with more headroom, then give networkidle a best-effort window. A dropped click
+    // still fails loudly on the per-digit placeholder check below.
+    await page.goto(link, { waitUntil: 'load', timeout: 60000 });
+    await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
     let setPinStatus = null;
     page.on('response', (r) => { if (r.url().includes('/api/setpin')) setPinStatus = r.status(); });
     for (const header of ['Create PIN', 'Confirm PIN']) {

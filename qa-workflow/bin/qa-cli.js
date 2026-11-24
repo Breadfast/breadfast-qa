@@ -6,7 +6,25 @@
  * Thin wrapper over lib/ so agent-followed workflow steps are deterministic & testable.
  *
  * Usage:
- *   node qa-workflow/bin/qa-cli.js init <storyDir> <TICKET>
+ *   node qa-workflow/bin/qa-cli.js init <storyDir> <TICKET> [--team <id>] [--surfaces web,mobile,backend]
+ *          # Records the story's TEAM (default: the selected team) and, once Phase 0 settles it, its surfaces.
+ *   node qa-workflow/bin/qa-cli.js knowledge [<storyDir>] [--team <id>] [--surfaces a,b] [--json]
+ *          # The knowledge plan: which files this session may read — core + surface packs + the team's
+ *          #   domains (+ approved cross-domains) + the team context. Skills read THIS, never a hardcoded list.
+ *   node qa-workflow/bin/qa-cli.js team-init <id> [--name ..] [--surfaces ..] [--web-squad ..] [--bs-project ..] …
+ *          # ANY squad: writes teams/<id>.json with the org-wide values (B10, bug type 10084) filled in.
+ *   node qa-workflow/bin/qa-cli.js domain-init <id> --owner <team> [--description ..] [--markers ..] [--terms ..]
+ *          # A new product domain: folder + SKILL.md + rules file + knowledge.json entry + the owner's `domains`.
+ *   node qa-workflow/bin/qa-cli.js knowledge-lint [teams/<id> | qa-workflow/domains/<id>] [--team <id>] [--json]
+ *          # Team context: confidence tags + sources on every fact, required sections, no secrets, no other
+ *          #   team's domain. Domain folder: provenance header, no secrets. EXITS 1 on any error.
+ *   node qa-workflow/bin/qa-cli.js knowledge-status [--team <id>] [--max-age-days 90] [--json]
+ *          # Is the team context still true? Age + confirmed facts whose cited code changed. Read-only.
+ *   node qa-workflow/bin/qa-cli.js repos [--team <id>] [--json]
+ *          # The team's repos.json joined with THIS tester's grants (credentials.local.js → repos).
+ *   node qa-workflow/bin/qa-cli.js cross-domain <storyDir> <domain> --by "<operator>" --reason "<why>"
+ *          # Operator-approved read of ANOTHER team's domain for this story. Without it, `record` refuses
+ *          #   that domain and `complete-check` reports domain-out-of-team.
  *   node qa-workflow/bin/qa-cli.js fingerprint-jira <storyDir>            # issue JSON on stdin
  *   node qa-workflow/bin/qa-cli.js fingerprint-figma <storyDir> --file <key> --nodes 1:1,1:2 [--version v] [--frames <sha256>] [--last <iso>]
  *   node qa-workflow/bin/qa-cli.js checksum <file>
@@ -83,10 +101,27 @@ const { fingerprintJira, fingerprintFigma, fileChecksum } = require('../lib/fres
 const { reconcile } = require('../lib/freshness/reconcile');
 const { loadGenerators, loadDomains, pickDomains } = require('../lib/freshness/generators');
 
+const team = require('../../automation/config/team');
+const { knowledgePlan, formatPlan } = require('../lib/knowledge/plan');
+
 const QA_ROOT = path.join(__dirname, '..');            // qa-workflow/
 const REPO_ROOT = path.join(QA_ROOT, '..');            // the companion repo
 const currentGenerators = () => loadGenerators(path.join(QA_ROOT, 'skills'));
 const currentDomains = () => loadDomains(path.join(QA_ROOT, 'domains'), REPO_ROOT);
+
+// --- Team-scoped knowledge (added 2026-11-24, P0 generalization) -------------------------------
+// The artifacts that consume business-domain knowledge. With a team recorded in qa-state.json,
+// `record` defaults their --domains to the team's domains and refuses any other domain unless an
+// operator approved a cross-domain read for this story. Before this, every team's story-analysis
+// recorded `card,payment` because the skill text said so.
+const DOMAIN_CONSUMERS = ['requirements', 'clarifications', 'impact', 'hls', 'testcases', 'testcase-review', 'testcase-reconciliation'];
+
+/** The domains this story may consume: its team's + approved cross-domains. null for a legacy state (no team). */
+function allowedDomainsFor(state) {
+  if (!state || !state.team) return null;
+  const profile = team.loadTeam({ id: state.team });
+  return [...new Set([...team.teamDomains(profile), ...Object.keys(state.crossDomains || {})])];
+}
 
 function parseFlags(argv) {
   const flags = {}; const positional = [];
@@ -279,6 +314,25 @@ async function main() {
       fs.mkdirSync(dir, { recursive: true });
       const state = qs.load(dir) || qs.newState(ticket);
       state.ticket = ticket;
+      // Record the team (scopes the knowledge plan and the domain guard in `record`/`complete-check`).
+      const teamId = flags.team ? String(flags.team) : (state.team || team.selectedTeamId());
+      if (teamId) {
+        try {
+          const profile = team.loadTeam({ id: teamId });
+          team.teamDomains(profile);
+          team.teamSurfaces(profile);
+          state.team = profile.id;
+        } catch (e) { die(e.message); }
+      } else {
+        process.stderr.write('qa-cli: no QA team selected — this story is not team-scoped (set QA_TEAM or `team` in '
+          + 'credentials.local.js, or pass --team). `npm run doctor` explains.\n');
+      }
+      if (flags.surfaces) {
+        const s = csv(flags.surfaces);
+        const bad = s.filter((x) => !team.SURFACES.includes(x));
+        if (!s.length || bad.length) die(`--surfaces takes any of ${team.SURFACES.join(', ')} (got: ${flags.surfaces})`);
+        state.storySurfaces = s;
+      }
       // Skeleton is intentionally incomplete (no jira fingerprint yet) — becomes valid after fingerprint-jira.
       const file = qs.save(dir, state, { validate: false });
       process.stdout.write(file + '\n');
@@ -346,7 +400,21 @@ async function main() {
         derivedFrom,
         checksum,
       };
-      const domains = csv(flags.domains);
+      let domains = csv(flags.domains);
+      // Team scoping: default to the team's domains; refuse another team's domain without an approval.
+      let allowed = null;
+      try { allowed = allowedDomainsFor(state); } catch (e) { die(e.message); }
+      if (allowed) {
+        if (!domains.length && DOMAIN_CONSUMERS.includes(key)) domains = allowed;
+        // Only judge KNOWN domains here; a typo falls through to the clearer "unknown domain" error below.
+        const knownNow = currentDomains();
+        const outside = domains.filter((d) => knownNow[d] && !allowed.includes(d));
+        if (outside.length) {
+          die(`cannot record "${key}" with domain(s) ${outside.join(', ')}: not in team ${state.team}'s domains `
+            + `(${allowed.join(', ') || 'none'}) and no operator-approved cross-domain read for this story.\n`
+            + `     -> if the story genuinely needs it: qa-cli.js cross-domain <storyDir> ${outside[0]} --by "<operator>" --reason "<why>"`);
+        }
+      }
       if (domains.length) {
         record.domains = domains;
         // Rule (e) compares the artifact's declared domains against the TOP-LEVEL fingerprint map, so
@@ -542,6 +610,142 @@ async function main() {
       }
       break;
     }
+    case 'knowledge': {
+      // Which product knowledge may this session read? Team profile (domains + surfaces) → file list.
+      // With a story dir it uses the story's team, surfaces and approved cross-domain reads.
+      const [dir] = positional;
+      const state = dir ? qs.load(dir) : null;
+      if (dir && !state) die('no qa-state.json in ' + dir + ' (run init first, or omit the dir and pass --team)');
+      const teamId = flags.team ? String(flags.team) : ((state && state.team) || team.selectedTeamId());
+      if (!teamId) die('no QA team selected — set QA_TEAM or `team` in automation/config/credentials.local.js, or pass --team <id>');
+      const storySurfaces = csv(flags.surfaces).length ? csv(flags.surfaces) : (state && state.storySurfaces) || undefined;
+      let plan;
+      try { plan = knowledgePlan({ teamId, storySurfaces, crossDomains: state && state.crossDomains }); } catch (e) { die(e.message); }
+      process.stdout.write(flags.json ? JSON.stringify(plan, null, 2) + '\n' : formatPlan(plan));
+      break;
+    }
+    case 'team-init': {
+      // Any squad bootstraps the same way: a profile with the org-wide values filled in (B10, bug type
+      // 10084) and the squad's own values from flags or TODO (the doctor then asks for each TODO).
+      const [id] = positional;
+      if (!id) die('team-init <id> [--name "<Squad>"] [--surfaces web,mobile,backend] [--domains a,b] [--web-squad ..] [--web-components ..] [--mobile-squad ..] [--mobile-components ..] [--bs-project PR-n] [--bs-numeric-project n] [--bs-folder n]');
+      const { initTeam } = require('../lib/knowledge/scaffold');
+      let r;
+      try {
+        r = initTeam(id, { name: flags.name, surfaces: flags.surfaces, domains: flags.domains, webSquad: flags['web-squad'], webComponents: flags['web-components'],
+          mobileSquad: flags['mobile-squad'], mobileComponents: flags['mobile-components'], bsProject: flags['bs-project'],
+          bsNumericProject: flags['bs-numeric-project'], bsFolder: flags['bs-folder'] });
+      } catch (e) { die(e.message); }
+      process.stdout.write(JSON.stringify({ created: path.relative(REPO_ROOT, r.file), todo: r.todo }, null, 2) + '\n');
+      process.stderr.write(`next: set  team: '${id}'  in credentials.local.js (or QA_TEAM=${id}), fill any TODO, then run team onboarding\n`
+        + `      (qa-workflow/skills/team-onboarding) — it creates your domain with \`qa-cli.js domain-init <id> --owner ${id}\`.\n`);
+      break;
+    }
+    case 'domain-init': {
+      // A new product domain: folder + SKILL.md (version, so `record` accepts it) + provenance-headed rules
+      // file + registry entry (owner, markers, terms) + the owner team's `domains`. Refuses to overwrite.
+      const [id] = positional;
+      if (!id || !flags.owner) die('domain-init <id> --owner <team> [--description "..."] [--markers "re1,re2"] [--terms "re1,re2"] [--no-team]');
+      const { initDomain } = require('../lib/knowledge/scaffold');
+      let r;
+      try {
+        r = initDomain(id, { owner: String(flags.owner), description: flags.description, markers: flags.markers, terms: flags.terms, addToTeam: !flags['no-team'] });
+      } catch (e) { die(e.message); }
+      process.stdout.write(JSON.stringify({ created: path.relative(REPO_ROOT, r.dir), registered: r.entry, addedToTeam: r.addedToTeam }, null, 2) + '\n');
+      if (!r.entry.markers.length) process.stderr.write('note: no --markers given — core files are not yet protected from this domain\'s knowledge. Add identifiers ONLY this domain uses (internal names, codes, tables) to knowledge.json.\n');
+      break;
+    }
+    case 'knowledge-lint': {
+      // Exit 1 on an untagged/unsourced fact, a missing section, a secret, or another team's domain in a
+      // team context; on a missing provenance header or a secret in a domain folder.
+      const target = positional[0];
+      const { lintTeamContext, lintDomain } = require('../lib/knowledge/lint');
+      let res; let what;
+      if (target && /qa-workflow[\\/]domains[\\/]/.test(path.resolve(target))) {
+        what = path.relative(REPO_ROOT, path.resolve(target));
+        res = lintDomain(path.resolve(target));
+      } else {
+        const teamId = flags.team ? String(flags.team) : (target ? path.basename(path.resolve(target)) : team.selectedTeamId());
+        if (!teamId) die('knowledge-lint [teams/<id> | qa-workflow/domains/<id>] [--team <id>] — no team selected');
+        let profile;
+        try { profile = team.loadTeam({ id: teamId }); } catch (e) { die(e.message); }
+        const dir = target ? path.resolve(target) : team.teamContextDir(profile);
+        what = path.relative(REPO_ROOT, dir);
+        res = lintTeamContext(dir, { ownDomains: team.teamDomains(profile), registry: require('../registry/knowledge.json') });
+      }
+      if (flags.json) process.stdout.write(JSON.stringify({ target: what, ok: !res.errors.length, ...res }, null, 2) + '\n');
+      else {
+        for (const e of res.errors) process.stderr.write(`   ✗ ${e.at}  ${e.code}: ${e.message}\n`);
+        for (const w of res.warnings) process.stderr.write(`   ! ${w.at}  ${w.code}: ${w.message}\n`);
+        const s = res.stats;
+        process.stdout.write(`knowledge-lint ${what}: ${res.errors.length ? 'FAILED' : 'OK'}`
+          + (s ? ` — ${s.confirmed} confirmed · ${s.tester} tester-provided · ${s.inferred} inferred · ${s.unknown} unknown · ${s.outdated} outdated` : '') + '\n');
+      }
+      if (res.errors.length) process.exit(1);
+      break;
+    }
+    case 'knowledge-status': {
+      // Is the team context still true? Age + whether confirmed facts cite code that has since changed.
+      // Read-only; always exits 0 (it reports, the doctor decides).
+      const teamId = flags.team ? String(flags.team) : team.selectedTeamId();
+      if (!teamId) die('knowledge-status [--team <id>] [--max-age-days 90] [--json] — no team selected');
+      let profile;
+      try { profile = team.loadTeam({ id: teamId }); } catch (e) { die(e.message); }
+      const { knowledgeStatus } = require('../lib/knowledge/status');
+      const creds = require('../../automation/config/credentials');
+      const st = knowledgeStatus(team.teamContextDir(profile), { repos: creds.repos(), maxAgeDays: flags['max-age-days'] != null ? Number(flags['max-age-days']) : undefined });
+      if (flags.json) { process.stdout.write(JSON.stringify({ team: profile.id, ...st }, null, 2) + '\n'); break; }
+      if (!st.exists) { process.stdout.write(`${profile.id}: no team context — run team onboarding\n`); break; }
+      process.stdout.write(`${profile.id}: verified ${st.verifiedAt} (${st.ageDays} days ago, threshold ${st.maxAgeDays}) · ${st.unknown} unknown · ${st.outdated} outdated\n`);
+      for (const c of st.citations) process.stdout.write(`   ${c.state.padEnd(12)} repo:${c.repo}@${c.sha.slice(0, 10)}:${c.path}\n`);
+      process.stdout.write(st.stale ? `   → STALE: ${st.reasons.join('; ')}\n` : '   → fresh\n');
+      break;
+    }
+    case 'repos': {
+      // The team's repositories (teams/<team>/repos.json) joined with THIS tester's grants
+      // (credentials.local.js → repos). Only `git rev-parse HEAD` runs, and only on granted clones.
+      const teamId = flags.team ? String(flags.team) : team.selectedTeamId();
+      if (!teamId) die('repos [--team <id>] [--json] — no team selected');
+      let profile;
+      try { profile = team.loadTeam({ id: teamId }); } catch (e) { die(e.message); }
+      const file = path.join(team.teamContextDir(profile), 'repos.json');
+      let listed = [];
+      try { listed = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { listed = []; }
+      const grants = require('../../automation/config/credentials').repos();
+      const rows = listed.map((r) => {
+        const g = grants[r.id] || {};
+        const located = !!(g.path && fs.existsSync(g.path));
+        let headSha = null;
+        if (g.granted === true && located) {
+          try { headSha = require('child_process').execFileSync('git', ['-C', g.path, 'rev-parse', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { headSha = null; }
+        }
+        return { id: r.id, role: r.role, url: r.url, components: r.components || [], granted: g.granted === true, located, path: located ? g.path : null, headSha };
+      });
+      if (flags.json) { process.stdout.write(JSON.stringify({ team: profile.id, repos: rows }, null, 2) + '\n'); break; }
+      if (!rows.length) process.stdout.write(`${profile.id}: no repositories listed (${path.relative(REPO_ROOT, file)})\n`);
+      for (const r of rows) {
+        const state = r.granted ? (r.located ? `granted · HEAD ${r.headSha ? r.headSha.slice(0, 10) : '?'}` : 'granted · path NOT FOUND') : 'NOT granted — never read';
+        process.stdout.write(`  ${r.id.padEnd(24)} ${String(r.role).padEnd(9)} ${state}\n`);
+      }
+      break;
+    }
+    case 'cross-domain': {
+      // Record an OPERATOR-APPROVED read of another team's domain for THIS story (e.g. a payment story
+      // that touches the card panel). Without it, `record` refuses that domain. A name is attached so
+      // "someone decided" and "it leaked" never look alike.
+      const [dir, domain] = positional;
+      if (!dir || !domain || !flags.by || !flags.reason) die('cross-domain <storyDir> <domain> --by "<operator>" --reason "<why>"');
+      const known = team.knownDomains();
+      if (!known.includes(domain)) die(`unknown domain "${domain}" (known: ${known.join(', ')})`);
+      const state = qs.load(dir);
+      if (!state) die('no qa-state.json in ' + dir + ' (run init first)');
+      if (!state.team) die('this story has no team recorded (a legacy qa-state.json) — run: qa-cli.js init <storyDir> <TICKET> --team <id>');
+      state.crossDomains = state.crossDomains || {};
+      state.crossDomains[domain] = { approvedBy: String(flags.by), reason: String(flags.reason), at: new Date().toISOString() };
+      qs.save(dir, state, { validate: !!(state.sources && state.sources.jira) });
+      process.stdout.write(JSON.stringify({ team: state.team, crossDomain: domain, ...state.crossDomains[domain] }, null, 2) + '\n');
+      break;
+    }
     case 'skip': {
       // Record that a CONDITIONAL phase was deliberately not run. Distinct from `defer`: a deferral
       // postpones something the run owed you; a skip states that a conditional artifact was not needed.
@@ -665,10 +869,23 @@ async function main() {
       const outdatedKeys = rows.filter((r) => r.methodologyOutdated);
       const out = { ticket: state.ticket, profile, updatedAt: state.updatedAt, rows, conditional, next, blockers,
         methodologyOutdated: outdatedKeys.map((r) => `${r.key}: ${r.generator} → ${r.currentGenerator}`) };
+      // Team scope — only for team-scoped states, so a legacy state's output is unchanged.
+      let scope = null;
+      if (state.team) {
+        let domains = null;
+        try { domains = team.teamDomains(team.loadTeam({ id: state.team })); } catch (e) { domains = `error: ${e.message.split('\n')[0]}`; }
+        scope = { team: state.team, domains, crossDomains: Object.keys(state.crossDomains || {}), storySurfaces: state.storySurfaces || null };
+        out.scope = scope;
+      }
 
       if (flags.json) { process.stdout.write(JSON.stringify(out, null, 2) + '\n'); break; }
       const done = rows.filter((r) => r.status === 'complete' || r.status === 'modified' || r.status === 'deferred').length;
-      process.stdout.write(`${state.ticket}  ·  profile ${profile}  ·  ${done}/${rows.length} complete  ·  updated ${state.updatedAt || '—'}\n\n`);
+      process.stdout.write(`${state.ticket}  ·  profile ${profile}  ·  ${done}/${rows.length} complete  ·  updated ${state.updatedAt || '—'}\n`);
+      if (scope) {
+        process.stdout.write(`  team ${scope.team}  ·  domains ${Array.isArray(scope.domains) ? scope.domains.join(',') || '—' : scope.domains}`
+          + `  ·  cross-domain ${scope.crossDomains.join(',') || '—'}  ·  surfaces ${scope.storySurfaces ? scope.storySurfaces.join(',') : 'team default'}\n`);
+      }
+      process.stdout.write('\n');
       for (const r of rows) {
         const mark = r.status === 'complete' ? '✓' : r.status === 'modified' ? '±' : r.status === 'deferred' ? '–' : r.status === 'missing' ? ' ' : '!';
         const extra = [r.approvedBy ? `approved by ${r.approvedBy}` : null, r.note,
@@ -788,9 +1005,26 @@ async function main() {
         }
       }
 
+      // Knowledge isolation: every artifact's consumed domains must be the team's, or an approved
+      // cross-domain read. Legacy states (no team) are exempt, so their result is unchanged.
+      if (state.team) {
+        let allowed = null;
+        try { allowed = allowedDomainsFor(state); } catch (e) { problems.push({ key: 'team', issue: e.message.split('\n')[0] }); }
+        if (allowed) {
+          for (const [key, a] of Object.entries(state.artifacts || {})) {
+            const outside = (a.domains || []).filter((d) => !allowed.includes(d));
+            if (outside.length) {
+              problems.push({ key, issue: `domain-out-of-team: consumed ${outside.join(',')}, which is not team ${state.team}'s and has no approved cross-domain read` });
+            }
+          }
+        }
+      }
+
       const deferred = Object.entries(state.deferrals || {}).map(([k, v]) => ({ key: k, ...v }));
       const approved = Object.entries(state.approvals || {}).map(([k, v]) => ({ key: k, approvedBy: v.approvedBy, at: v.at }));
-      process.stdout.write(JSON.stringify({ ticket: state.ticket, profile: flags.expect ? 'custom' : profile, required: required.length, problems, deferred, approved, ok: problems.length === 0 }, null, 2) + '\n');
+      const result = { ticket: state.ticket, profile: flags.expect ? 'custom' : profile, required: required.length, problems, deferred, approved, ok: problems.length === 0 };
+      if (state.team) result.team = state.team;
+      process.stdout.write(JSON.stringify(result, null, 2) + '\n');
       if (problems.length) {
         process.stderr.write('qa-cli: complete-check FAILED — the run is not complete:\n');
         problems.forEach((p) => process.stderr.write(`     ${p.key}: ${p.issue}\n`));

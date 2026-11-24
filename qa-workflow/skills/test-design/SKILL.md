@@ -10,7 +10,7 @@ metadata:
   consumes:
     sources: []
     artifacts: [requirements, figma-analysis, impact, clarifications, exploratory-notes]
-    domains: [card, payment, marketing]
+    domains: team          # = the story team's domains, resolved by `qa-cli.js knowledge` — never a fixed list
   produces:
     artifacts: [hls, testcases, testcase-reconciliation]
   methodology: docs/ai/testing-process.md
@@ -31,7 +31,7 @@ metadata:
 
 ## Phase A — HLS (in `qa-shift-left`) → `hls`
 ### Inputs (by path)
-`requirements` · `figma-analysis` · `impact` · `clarifications` (+ domains `card`, `payment`, `marketing`).
+`requirements` · `figma-analysis` · `impact` · `clarifications` (+ domain knowledge: the story team's: run `node qa-workflow/bin/qa-cli.js knowledge "<storyDir>" --json` and read only the `domain` and `team` layer files it lists. Never read another team's `qa-workflow/domains/**` or `teams/<other>/`; if the story needs an excluded domain, STOP and ask the operator, and on approval run `qa-cli.js cross-domain "<storyDir>" <domain> --by "<operator>" --reason "<why>"`.)
 ### Steps (per methodology)
 1. Read the baseline artifacts.
 2. Generate **≤ 20** high-level scenarios (happy/negative/edge/state/validation/nav/permissions/localization/error/regression). Consolidate; do not pad. Honor any per-story `maxHls` override.
@@ -46,7 +46,7 @@ metadata:
 ```
 node qa-workflow/bin/qa-cli.js record "<storyDir>" hls \
      --path hls/hls.md --generator test-design@2.1 \
-     --derive-artifacts requirements,figma-analysis,impact --domains card,payment,marketing
+     --derive-artifacts requirements,figma-analysis,impact    # --domains defaults to the story team's
 ```
 
 ## Phase B — Test Cases (in `qa-shift-left`) → `testcases`
@@ -92,7 +92,7 @@ grounded rather than speculative)*.
 ```
 node qa-workflow/bin/qa-cli.js record "<storyDir>" testcases \
      --path testcases/testcases.csv --generator test-design@2.1 \
-     --derive-artifacts hls,requirements,impact --domains card,payment,marketing
+     --derive-artifacts hls,requirements,impact    # --domains defaults to the story team's
 ```
 **Then hand off to [`testcase-review`](../testcase-review/SKILL.md) — do NOT import.** `browserstack-mgmt`
 cannot record its import until the review artifact is `complete` **and** an operator approval is recorded
@@ -122,7 +122,7 @@ node qa-workflow/bin/qa-cli.js record "<storyDir>" testcase-reconciliation \
      --path testcases/reconciliation.md --generator test-design@2.1 --derive-artifacts testcases
 node qa-workflow/bin/qa-cli.js record "<storyDir>" testcases \
      --path testcases/testcases.csv --generator test-design@2.1 \
-     --derive-artifacts hls,requirements,impact --domains card,payment,marketing
+     --derive-artifacts hls,requirements,impact    # --domains defaults to the story team's
 node qa-workflow/bin/qa-cli.js approve "<storyDir>" testcases --by "<operator>" --note "<what changed>"
 ```
 > The approved baseline is never overwritten: `approve` snapshots it as `testcases/testcases.approved.csv`

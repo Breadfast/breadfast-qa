@@ -107,8 +107,34 @@ test('shipped profiles: card-core is complete; payment and the template are vali
   assert.equal(card.jira.projectKey, 'B10');
   assert.equal(card.browserstack.project, 'PR-5');
   const payment = team.loadTeam({ dir: REPO_TEAMS, id: 'payment' });
-  assert.ok(team.unfilledPaths(payment).includes('jira.projectKey'));
+  assert.ok(team.unfilledPaths(payment).includes('browserstack.project'));
+  assert.equal(payment.jira.projectKey, 'B10'); // D-15: every team files stories in B10
   assert.deepEqual(payment.domains, ['payment']);
   assert.ok(!team.availableTeams(REPO_TEAMS).includes('_template'));
   JSON.parse(fs.readFileSync(path.join(REPO_TEAMS, '_template.json'), 'utf8'));
+});
+
+// ── domains / surfaces: the switch for knowledge loading (P0 generalization, 2026-11-24) ────────
+test('teamDomains validates against the knowledge registry; [] is allowed', () => {
+  const known = ['card', 'marketing', 'payment'];
+  assert.deepEqual(team.teamDomains({ id: 'x', domains: ['payment', 'payment'] }, known), ['payment']);
+  assert.deepEqual(team.teamDomains({ id: 'x', domains: [] }, known), []);
+  assert.throws(() => team.teamDomains({ id: 'x', domains: ['orders'] }, known), /unknown domain\(s\): orders/);
+  assert.throws(() => team.teamDomains({ id: 'x', domains: ['TODO'] }, known), /not filled in yet/);
+  assert.throws(() => team.teamDomains({ id: 'x' }, known), /must be a list/);
+});
+
+test('teamSurfaces accepts only web | mobile | backend, at least one', () => {
+  assert.deepEqual(team.teamSurfaces({ id: 'x', surfaces: ['backend'] }), ['backend']);
+  assert.throws(() => team.teamSurfaces({ id: 'x', surfaces: [] }), /at least one/);
+  assert.throws(() => team.teamSurfaces({ id: 'x', surfaces: ['TODO'] }), /not filled in yet/);
+  assert.throws(() => team.teamSurfaces({ id: 'x', surfaces: ['desktop'] }), /unknown value\(s\): desktop/);
+});
+
+test('the real registry knows card, marketing, payment; card-core loads all three (D-6)', () => {
+  assert.deepEqual(team.knownDomains(), ['card', 'marketing', 'payment']);
+  const card = team.loadTeam({ dir: REPO_TEAMS, id: 'card-core' });
+  assert.deepEqual(team.teamDomains(card), ['card', 'payment', 'marketing']);
+  assert.deepEqual(team.teamSurfaces(card), ['web', 'mobile', 'backend']);
+  assert.equal(team.teamContextDir(card, REPO_TEAMS), path.join(REPO_TEAMS, 'card-core'));
 });

@@ -7,7 +7,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "test": "node --test \"qa-workflow/**/*.test.js\" \"automation/config/*.test.js\" \"automation/*.test.js\" \"scripts/*.test.mjs\"",
+    "test": "node --test \"qa-workflow/**/*.test.js\" \"automation/config/*.test.js\" \"automation/*.test.js\" \"automation/helpers/*.test.js\" \"scripts/*.test.mjs\"",
     "test:team": "node --test \"automation/config/*.test.js\" \"automation/*.test.js\"",
     "test:machinery": "node --test \"qa-workflow/lib/**/*.test.js\"",
     "test:visual": "node --test \"qa-workflow/capabilities/visual/**/*.test.js\"",
@@ -15,7 +15,9 @@
     "playwright:install": "npx playwright install chromium",
     "report": "npx playwright show-report",
     "bcard-user": "node automation/bcard-user/create_bcard_user.js",
-    "card-sandbox": "node automation/card-sandbox/server.js"
+    "card-sandbox": "node automation/card-sandbox/server.js",
+    "secret-scan": "node scripts/secret-scan.mjs",
+    "hooks:install": "git config core.hooksPath .githooks"
   },
   "dependencies": {
     "@playwright/test": "^1.60.0",

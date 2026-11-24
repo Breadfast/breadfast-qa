@@ -6,8 +6,8 @@ description: >-
   figma-analysis/clarifications/impact/HLS AND the approved test cases, their review and the
   BrowserStack import — reusing everything the story and design did not change. Then reconciles the
   test suite against what was actually built (add/update/remove, logged and re-approved), syncs
-  BrowserStack, and runs automation, execution (4 combos), visual testing, defect reporting and the
-  QA summary. Does NOT regenerate the suite from scratch. Takes a Jira ticket key (e.g. B10-56729).
+  BrowserStack, and runs automation, execution (the story's platform × locale combos), visual testing, defect reporting and the
+  QA summary. Does NOT regenerate the suite from scratch. Takes a Jira ticket key (e.g. B10-XXXXX).
 ---
 
 # qa-validate — entrypoint
@@ -21,7 +21,10 @@ description: >-
    story also the App Automate keys; for automation the Java framework path) in ONE batch, exactly as in the
    *Readiness* section of [`detect-prerequisites`](../../../qa-workflow/skills/detect-prerequisites/SKILL.md).
    Re-run the doctor until `ready` is `true`. Do not start the story on a half-configured machine.
-1. Determine the **ticket** (e.g. `B10-56729`) and optional `appUrl` / `mobileAppIds`.
+   **Team knowledge:** the brief names the selected team. Its product knowledge is ONLY what
+   `node qa-workflow/bin/qa-cli.js knowledge` lists. Never read another team's domain (`qa-workflow/domains/<d>/`)
+   or `teams/<other>/` folder. A story that needs one gets an operator-approved `qa-cli.js cross-domain` first.
+1. Determine the **ticket** (e.g. `B10-XXXXX`) and optional `appUrl` / `mobileAppIds`.
 2. Execute **[`qa-workflow/workflows/qa-implementation-validation.md`](../../../qa-workflow/workflows/qa-implementation-validation.md)** exactly:
    - **Reconcile first** (`qa-cli.js reconcile`): reuse the **eight-key** shift-left baseline — including
      `testcases`, `testcase-review` and `browserstack-import`; regenerate only the stale set (+ cascade);

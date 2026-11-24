@@ -1,0 +1,6 @@
+{
+  "_doc": "Lines in always-loaded files that legitimately match a domain marker. Matched by file + a hash of the trimmed line (scripts/knowledge-isolation.mjs lineHash), so an entry stops applying when the line changes. Every entry needs a reason.",
+  "allow": [
+    { "file": "teams/README.md", "hash": "de10901f1b3a7dac", "reason": "The team index must name each team, including the Card team (Card Core / BCard)." }
+  ]
+}

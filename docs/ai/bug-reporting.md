@@ -22,31 +22,26 @@ Checklist:
 
 ### 1.1 Defect Grounding Gate (precision — prevents false positives)
 
-A finding becomes a **filed Defect only if it passes ALL of the checks below**. Otherwise it is a **report-only observation** (put it in notes / the report), never a Jira bug. Added after the B10-56337 certification run filed 4 false positives out of 7 (B10-57364/65/66/68) — each failed one of these; checks **7–8** were added after B10-56750 (2026-07-26) produced two more, both from over-trusting the Figma frame:
+A finding becomes a **filed Defect only if it passes ALL of the checks below**. Otherwise it is a **report-only observation** (put it in notes / the report), never a Jira bug. Each check was added after a real false positive (lesson `card/L-07`); checks **7–8** came from two more, both from over-trusting the Figma frame (lesson `card/L-08`):
 
-> **Apply this gate to your OWN findings, not just to inherited ones.** On B10-56750 the gate existed and
-> was quoted in the report, yet a finding that plainly failed check 2 was still filed (B10-58196) — because
-> the gate was never run against my own list before filing. Run it as an explicit pass over every candidate
+> **Apply this gate to your OWN findings, not just to inherited ones.** The gate once existed and was
+> quoted in the report, yet a finding that plainly failed check 2 was still filed (lesson `card/L-08`) —
+> because the gate was never run against the filer's own list before filing. Run it as an explicit pass over every candidate
 > defect immediately before creating tickets.
 
-1. **Source cited.** Name the exact thing it violates — a specific **AC**, a **Figma** element, or an **established business rule**. If you can't name it, it is not a defect — never invent an "ideal" expectation the spec never states (an extra dialog, a disabled state, a copy tweak). **But check the AC first: if the AC _does_ state it (e.g. "the Confirm button must be disabled until Package Number is entered" — a real B10-56337 AC), a deviation IS a valid defect.**
-2. **Not test data.** Seeded/garbage values in the testing env — dropdown entries like `test`, `dsa`, `{{7*7}}`, `@SUM(...)`, duplicate demo branches — are not product defects. → *B10-57364*
-3. **Reproducible.** Re-run the exact steps ≥ once more. A single non-repeating observation is unconfirmed/flaky, not a defect. → *B10-57366*
-4. **Not a tooling artifact.** `pdf-parse` reverses/re-orders Arabic (RTL) numerals and shaping. A digit-order/RTL difference seen **only in extracted text** is not a defect unless confirmed by eyeballing the rendered PDF/screenshot. *(Note: a genuine RTL render defect confirmed visually IS valid — cf. B10-57367.)*
-5. **No cross-language / derived-field false mismatches.** Don't assert an English UI label must equal an Arabic stored value (a correct branch **code** = valid mapping, regardless of the Arabic name → *B10-57365*). Don't flag derived fields as inconsistent with a display label (Gender is derived from the **Egyptian NID 13th digit**: odd = male, even = female → *B10-57368*).
-6. **One defect = one problem.** Never bundle two distinct issues (or a strong issue + a weak one) into one bug — split them. → *B10-57363* bundled a valid AC-based disabled-button defect with a flaky "no-op" observation. (Reinforces the one-defect-per-bug standard.)
+1. **Source cited.** Name the exact thing it violates — a specific **AC**, a **Figma** element, or an **established business rule**. If you can't name it, it is not a defect — never invent an "ideal" expectation the spec never states (an extra dialog, a disabled state, a copy tweak). **But check the AC first: if the AC _does_ state it (e.g. "the Confirm button must be disabled until Package Number is entered" — a real AC), a deviation IS a valid defect.**
+2. **Not test data.** Seeded/garbage values in the testing env — dropdown entries like `test`, `dsa`, `{{7*7}}`, `@SUM(...)`, duplicate demo branches — are not product defects.
+3. **Reproducible.** Re-run the exact steps ≥ once more. A single non-repeating observation is unconfirmed/flaky, not a defect.
+4. **Not a tooling artifact.** `pdf-parse` reverses/re-orders Arabic (RTL) numerals and shaping. A digit-order/RTL difference seen **only in extracted text** is not a defect unless confirmed by eyeballing the rendered PDF/screenshot. *(Note: a genuine RTL render defect confirmed visually IS valid.)*
+5. **No cross-language / derived-field false mismatches.** Don't assert an English UI label must equal an Arabic stored value (a correct **code** = valid mapping, regardless of the Arabic name). Don't flag derived fields as inconsistent with a display label (e.g. a value computed from an ID number's digits) — examples: lesson `card/L-07`.
+6. **One defect = one problem.** Never bundle two distinct issues (or a strong issue + a weak one) into one bug — split them. (Reinforces the one-defect-per-bug standard; example: lesson `card/L-07`.)
 7. **Is the design actually the AUTHORITY for this thing?** A Figma frame is authoritative for *layout,
    copy, states and affordances*. It is **not** authoritative for **user-created content** or for
-   **page chrome it merely happens to draw**. Ask "who owns this value?" before filing. Added after
-   **B10-56750** produced two findings from exactly this error — both raised against the design and both
-   wrong:
-   - **Filed and retracted (B10-58196):** the design's Section dropdown draws `Food & Beverage` /
-     `Fitness`. Those are **user-created sections**, not a seeded set — an absent one is not a fault, it
-     can just be added. Diffing the live list against the frame's list produced a defect out of ordinary
-     content. *(Also fails check 2 above.)*
-   - **Nearly filed (F-09):** the same frames show an `عربي` locale toggle in the header. The card panel
-     has **no Arabic UI at all** and none is in scope, so the toggle is mock chrome — not a missing
-     feature. Withdrawn before filing.
+   **page chrome it merely happens to draw**. Ask "who owns this value?" before filing. Added after two
+   findings raised against the design were both wrong (lesson `card/L-08`): a dropdown whose entries are
+   **user-created** was diffed against the frame's sample list (an absent entry is not a fault — it can
+   just be added; also fails check 2), and a locale toggle the frame drew as page chrome was nearly filed
+   as a missing feature on a surface with no such feature in scope.
 
    **Test:** if the "expected" value is something a user or admin creates, configures, or seeds at will,
    the design cannot make its absence a defect. If the element is outside the story's ACs and is only
@@ -54,7 +49,7 @@ A finding becomes a **filed Defect only if it passes ALL of the checks below**. 
 8. **Verify the observation is real before it is a finding — transient and lazily-rendered state lies.**
    A toast that auto-dismisses, an in-flight spinner lasting ~400 ms, a `placeholder` attribute that is
    `null` until the field is focused, a screenshot taken while scrolled away from the element: each of
-   these will "prove" something is missing when it is present. **B10-56750** produced a false
+   these will "prove" something is missing when it is present. Real examples (lesson `card/L-08`): a false
    "no success toast" finding (viewport scrolled + toast expired) and a false "Arabic placeholder is
    missing" finding (Material floating label removes the attribute while unfocused). Poll for transient
    state, focus before reading focus-dependent attributes, and re-check a negative before reporting it.
@@ -66,9 +61,9 @@ the capture or the route was wrong — none of which says the underlying require
 records **what was disproved, what remains unresolved, and who owns the surviving question**; it never
 records "the requirement is satisfied", and it never counts as verification.
 Record shape: [`visual-testing/CLAUDE_CODE_OPERATOR.md`](visual-testing/CLAUDE_CODE_OPERATOR.md) §7.3 ·
-rule: [`QA_PROCESS.md`](QA_PROCESS.md) §5.7. *(Added after B10-57764 V-01: a false colour claim was
-correctly rejected, its true substance was never re-tested, and the rejection read as settled for four
-days until the operator found the defect by hand — B10-59276.)*
+rule: [`QA_PROCESS.md`](QA_PROCESS.md) §5.7. *(Added after a false colour claim was correctly
+rejected, its true substance was never re-tested, and the rejection read as settled for four days until
+the operator found the defect by hand — lesson `card/L-04`.)*
 
 Enforced in the QA Platform execution node (`apps/worker/src/nodes.ts`) as a mandatory pre-filing gate in the execution prompt.
 
@@ -78,7 +73,7 @@ Enforced in the QA Platform execution node (`apps/worker/src/nodes.ts`) as a man
 
 | Severity | Definition | Examples |
 |----------|-----------|----------|
-| **Critical** | Blocks core flow completely | Login fails, card application crashes, passcode unenterable |
+| **Critical** | Blocks core flow completely | Login fails, the main flow under test crashes, passcode unenterable |
 | **High** | Breaks a key feature, workaround exists | Wrong error message, wrong step indicator, broken RTL layout |
 | **Medium** | Functional issue, low impact | Wrong button style, minor text overlap, non-blocking validation gap |
 | **Low** | Cosmetic | Spacing, minor color mismatch, animation timing |
@@ -97,8 +92,8 @@ Enforced in the QA Platform execution node (`apps/worker/src/nodes.ts`) as a man
 ## 4. Jira Bug Structure — B10 (Breadfast 1.0)
 
 > **This is the ONLY bug shape for B10. It is not a template to adapt — every field below has a place and
-> the bug is wrong if any of them is missing.** Verified against the reference set
-> **B10-58191 … B10-58197** (B10-56750, filed 2026-07-27) and re-verified 2026-07-28.
+> the bug is wrong if any of them is missing.** Verified against a reference set
+> of filed bugs (lesson `card/L-06`) and re-verified 2026-07-28.
 >
 > **Revision 2026-07-28 (operator decision):** the **`description` field is NO LONGER USED — leave it
 > empty.** Everything a bug needs lives in the title plus the three template fields. This *supersedes* the
@@ -106,9 +101,9 @@ Enforced in the QA Platform execution node (`apps/worker/src/nodes.ts`) as a man
 > been removed from this document so it cannot be copied again. Rationale: the report was being written
 > twice, and a description-shaped bug hides the fields the squad actually reads.
 >
-> **Why this section is so blunt:** on **B10-56652 (2026-07-28) five bugs were filed with the whole report
+> **Why this section is so blunt:** five bugs on one story were once filed with **the whole report
 > crammed into `description`, no template fields, no Severity/Environment, and zero attachments** — all five
-> were rejected. The filer had cited this document without reading it. **Use the script in §4.3; do not
+> were rejected (lesson `card/L-05`). The filer had cited this document without reading it. **Use the script in §4.3; do not
 > hand-assemble a bug.**
 
 ### 4.0a Voice — MANDATORY. Every bug reads as the operator wrote it (standing rule, 2026-09-07)
@@ -119,18 +114,17 @@ these bugs reach developers as **his** reports, and a ticket that reads machine-
 differently from one that reads like the QA lead wrote it, whatever evidence is attached. Applies to
 every bug, functional and visual, on every story, with no exception.
 
-Added after B10-59822 and B10-59823 were filed in plainly machine-written prose (rgb values, an
-ink-ratio derivation, "the component library's default styling") and had to be rewritten. B10-59719,
-B10-59720 and B10-59826 were rewritten in the same pass.
+Added after bugs were filed in plainly machine-written prose (rgb values, an ink-ratio derivation, "the
+component library's default styling") and had to be rewritten (lesson `card/L-09`).
 
 #### The format, learned from bugs he reported himself
-Source: B10-50328, B10-48678, B10-48218, B10-46923, B10-46653, B10-46368.
+Source: six bugs the operator reported directly (ticket list: lesson `card/L-09`).
 
 - **Title** — the wrong behaviour, stated plainly. No AC numbers, no internal vocabulary, no severity
   words. *"Passcode is not displayed when opening saved cards screen then go back to home screen."*
 - **Steps** — a `Builds :` / `Environment :` block for **mobile only** (version + build number), then
   `Steps :`, then `1-`, `2-`, `3-` with **no space after the dash**. First step capitalised
-  (`1-Open the card panel and login with an ops user`), the rest lowercase imperatives (`navigate to`,
+  (`1-Open the admin portal and login with an ops user`), the rest lowercase imperatives (`navigate to`,
   `click on "Edit"`), UI labels in double quotes, and the **last step is the observation**:
   `check the behavior` / `check the display of X` / `check the time format`.
 - **Actual** — short and direct, usually a restatement of the title. No measurements, no derivations,
@@ -140,7 +134,7 @@ Source: B10-50328, B10-48678, B10-48218, B10-46923, B10-46653, B10-46368.
 - He writes a space before some punctuation (`Steps :`, `X , Y`). Keep it; it is his rhythm.
 - **Never imitate his typos.** Match brevity, structure and word choice only.
 
-#### Worked example (B10-59823, before and after)
+#### Worked example (before and after — lesson `card/L-09`)
 
 | | |
 |---|---|
@@ -168,12 +162,11 @@ listed attachment that is not already there, and re-reads the issue to show what
 **Mark where the issue is. On every still, and in the video.** Operator instruction 2026-09-07, said
 after two rounds of evidence that showed a screen without saying what in it to look at:
 
-- B10-59719's first recording *"does not specify what actually happens"*, and its stills showed a form
-  full of dates with nothing distinguishing the value entered from the value displayed. One of them,
-  named *"window grows on every save"*, was the locations **list** with a success toast and contained
-  no closure at all.
-- B10-59832's stills carried a caption but no mark, so the reader had to locate the success message and
-  the empty section unaided.
+- A first recording *"does not specify what actually happens"*, and its stills showed a form full of
+  dates with nothing distinguishing the value entered from the value displayed; one still, named for the
+  defect, did not contain it at all.
+- Stills that carried a caption but no mark, so the reader had to locate the success message and the
+  empty section unaided. (Both: lesson `card/L-10`.)
 
 Use [`automation/visual/annotate.js`](../../automation/visual/annotate.js), which annotates the **live
 page**, so one call covers the screenshot and the video frame:
@@ -193,7 +186,7 @@ For a **before/after** defect, one labelled image beats two crops:
 1. **A drift or a change needs a before/after pair on the same element.** One frame of a form shows a
    date; nothing in it says whether that date is the one that was saved.
 2. **Check the mark landed.** `mark` reports rather than throws. Collect the results and **fail the
-   capture run** when one is missing — on B10-59832 the success-message selector matched nothing
+   capture run** when one is missing — once a success-message selector matched nothing (lesson `card/L-10`)
    (`[class*=alert]` against an Angular Material `mat-snack-bar-container`) and the still was attached
    with no indicator on the only thing it was about.
 3. **Never let an annotation cover the evidence.** A caption at the bottom hid the calendar day it
@@ -215,7 +208,7 @@ For a **before/after** defect, one labelled image beats two crops:
   and the wrong result. Quote the on-screen string where it helps.
 - ✅ `[System Testing][web] "Add section" modal has no X close icon to dismiss it`
 - ✅ `[System Testing][web] Section list is not ordered alphabetically after Breadfast`
-- ❌ `[System Testing][web] Modal issue` · ❌ `[Android][Pay home] …` (wrong prefix shape)
+- ❌ `[System Testing][web] Modal issue` · ❌ `[Android][Home] …` (wrong prefix shape)
 - **Never put AC numbers in the title or in ANY field** — ACs get renumbered and reworded.
 
 **3 · The three template fields** — plain-text `textarea` custom fields. **Pass STRINGS, not ADF.**
@@ -256,7 +249,7 @@ estimates”*), hedging (*“plausibly”*, *“arguably”*, *“this may well 
 
 Good:
 ```
-Actual    Only 24 pt of the third perk card is visible — 15% of the card.
+Actual    Only 24 pt of the third card in the carousel is visible — 15% of the card.
           Card width 163 pt, gutter 12 pt. On a 390 pt screen the third card starts at x=366.
 Expected  Around 14 pt of the next card is visible (~8%) — a subtle peek, not a partially-shown card.
           Ref: design node 9163-7909.
@@ -273,8 +266,8 @@ Expected  Around 14 pt of the next card is visible (~8%) — a subtle peek, not 
 | **Bug type** | `customfield_10079` | `Functional` \| `UI/UX` \| `Change Request ` \| `Performance` |
 | Environment | `customfield_10348` | `KSA` \| `Egypt` \| `Both (KSA, Egypt)` |
 | Platform | `customfield_10467` | `iOS` \| `Android` \| `Huawei` \| `Android/Huawei` \| `Both (iOS/Android)` \| `BE` \| `FE` \| `FE/BE` \| `None` |
-| Squad name | `customfield_10183` | **from your team profile** (`jira.bug.web/mobile.squad` in `teams/<team>.json`). Card squad example: `[{value:"Card Core"}]` (web) / `[{value:"Card Ops Squad"}]` (mobile) |
-| Components | `components` | **from your team profile** (`jira.bug.web/mobile.components`) — the surface. Card squad example: `Bcard Dashboard` (card panel UI), `Bcard Cst app` (customer app), `Bcard BE` (backend). **Do not use a BE component for a UI defect.** |
+| Squad name | `customfield_10183` | **from your team profile** (`jira.bug.web/mobile.squad` in `teams/<team>.json`), sent as `[{value:"<squad>"}]` |
+| Components | `components` | **from your team profile** (`jira.bug.web/mobile.components`) — the surface (web UI, customer app, backend). **Do not use a BE component for a UI defect.** |
 | Labels | `labels` | from the team profile, default `["ai-created","qa-found"]` + any specific tag |
 | **Description** | `description` | **LEAVE EMPTY.** (Operator decision 2026-07-28.) |
 
@@ -319,7 +312,7 @@ actually landed** (fields + attachment list) so a silent omission cannot pass.
 ```
 node automation/file_jira_bug.js --spec <bug.json>        # file it
 node automation/file_jira_bug.js --spec <bug.json> --dry  # validate + preview, no write
-node automation/file_jira_bug.js --verify B10-58191       # audit an existing bug against this standard
+node automation/file_jira_bug.js --verify B10-XXXXX       # audit an existing bug against this standard
 ```
 
 **Always `--dry` first, and always read the verify output before telling anyone the bug is filed.**

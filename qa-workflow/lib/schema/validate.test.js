@@ -68,3 +68,15 @@ test('missing sources.jira rejected', () => {
 test('non-object root rejected', () => {
   assert.equal(validateQaState(null).valid, false);
 });
+
+test('team scope fields are optional and validated when present (2026-11-24)', () => {
+  assert.equal(validateQaState(valid()).valid, true); // legacy: no team
+  const s = { ...valid(), team: 'card-core', storySurfaces: ['web', 'mobile'],
+    crossDomains: { marketing: { approvedBy: 'Lead', reason: 'perk display', at: '2026-11-24T00:00:00Z' } } };
+  assert.equal(validateQaState(s).valid, true);
+  const bad = { ...valid(), team: 'Card Core', storySurfaces: ['tv'], crossDomains: { card: { reason: 'x' } } };
+  const paths = validateQaState(bad).errors.map((e) => e.path);
+  assert.ok(paths.includes('team'));
+  assert.ok(paths.includes('storySurfaces'));
+  assert.ok(paths.includes('crossDomains.card.approvedBy'));
+});

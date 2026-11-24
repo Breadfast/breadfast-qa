@@ -6,7 +6,7 @@ description: >-
   figma-analysis, clarifications, impact, optional exploratory analysis, HLS (published to
   Jira), test cases, the mandatory test-case review/approval gate, and the BrowserStack
   import of the approved cases. Two planned stops: clarification and test-case approval.
-  Takes a Jira ticket key (e.g. B10-56729).
+  Takes a Jira ticket key (e.g. B10-XXXXX).
 ---
 
 # qa-shift-left — entrypoint
@@ -20,7 +20,10 @@ description: >-
    exactly as in the *Readiness* section of
    [`detect-prerequisites`](../../../qa-workflow/skills/detect-prerequisites/SKILL.md). Re-run the doctor
    until `ready` is `true`. Do not start the story on a half-configured machine.
-1. Determine the **ticket** from the user's input (e.g. `B10-56729`) and optional `figmaUrl`/`appUrl`.
+   **Team knowledge:** the brief names the selected team. Its product knowledge is ONLY what
+   `node qa-workflow/bin/qa-cli.js knowledge` lists. Never read another team's domain (`qa-workflow/domains/<d>/`)
+   or `teams/<other>/` folder. A story that needs one gets an operator-approved `qa-cli.js cross-domain` first.
+1. Determine the **ticket** from the user's input (e.g. `B10-XXXXX`) and optional `figmaUrl`/`appUrl`.
 2. Execute the workflow in **[`qa-workflow/workflows/qa-shift-left.md`](../../../qa-workflow/workflows/qa-shift-left.md)** exactly, in order:
    - Init story dir + `qa-state.json` (`qa-workflow/bin/qa-cli.js`).
    - Run each phase skill from `qa-workflow/skills/<name>/SKILL.md` — read-heavy ones as **subagents** returning artifacts by path.

@@ -41,6 +41,9 @@ module.exports = {
   // cardPanelAdminPassword: '...',
 
   // Live card-service DB (cards_hades_testing) over the VPN: SSH tunnel host + MySQL account.
+  // REQUIRED for card-user teardown / KYC / audit helpers and the card sandbox — there is no
+  // built-in default any more (the old one was a committed password). Env alternatives:
+  // CARD_DB_HOST/USER/PASSWORD, CARD_DB_SSH_HOST/USER/PASSWORD (older BF_CARD_* names also work).
   // cardDbSshHost: 'ssh-host', cardDbSshUser: 'your-ssh-user', cardDbSshPassword: '...',
   // cardDbHost: 'db-host', cardDbUser: 'your-db-user', cardDbPassword: '...',
 

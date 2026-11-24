@@ -32,6 +32,10 @@ cp automation/config/credentials.local.example.js automation/config/credentials.
 npm run doctor                    # tells you exactly what is still missing
 ```
 
+**Another team adopting this?** The process and the org standards are shared; product knowledge is per team.
+Add `teams/<your-team>.json`, onboard once (the doctor blocks until `teams/<your-team>/context.md` exists),
+and your sessions load only your team's knowledge — [SETUP.md §4.2](SETUP.md#42-your-teams-knowledge--onboard-once-then-only-your-knowledge-loads).
+
 Then open this folder in Claude Code, approve the project MCP servers and plugins it offers
 (`.mcp.json`, `.claude/settings.json`), authenticate Atlassian and Figma with `/mcp`, and run
 `/qa-shift-left`, `/qa-validate`, or `/qa-full`.

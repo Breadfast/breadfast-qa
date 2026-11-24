@@ -8,7 +8,7 @@
 
 ## 1. Environment Setup (before every session)
 
-1. Active session ID lives in `<storyDir>/current_session.txt` — **per story**, written by that story's own session script (e.g. `B10-57806/current_session.txt`). Read it before starting. (There is no global session file; the old `D:/BreadfastQA/current_session.txt` path never existed.)
+1. Active session ID lives in `<storyDir>/current_session.txt` — **per story**, written by that story's own session script (e.g. `B10-XXXXX/current_session.txt`). Read it before starting. (There is no global session file; the old `D:/BreadfastQA/current_session.txt` path never existed.)
 2. Check the session is alive:
    ```js
    const r = await bsReq('GET', `/wd/hub/session/${SID}`);
@@ -38,7 +38,7 @@ const capabilities = {
   'appium:locale': 'EG',        // MUST be top-level, NOT inside bstack:options
   'bstack:options': {
     userName: process.env.BS_USER, accessKey: process.env.BS_KEY,
-    projectName: 'Breadfast Card QA', buildName: '[STORY_ID] iOS Arabic',
+    projectName: 'Breadfast QA', buildName: '[STORY_ID] iOS Arabic',
     sessionName: 'iOS Arabic — [Flow Name]'
   }
 };
@@ -103,14 +103,12 @@ async function tapByLabel(lbl) {
 ```
 When coordinates fail: try alternate regex orderings → `accessibility id` → `xpath` → dump all buttons → known-good hardcoded coords.
 
-**EXCEPTION — Pay screen always uses coordinate taps, never label-based.** Confirmed coords (device 390×844):
+**Some product screens only work with coordinate taps** (custom React Native views with no a11y label).
+Those coordinates are **product knowledge**: they live in your domain's mobile flows, listed by
+`node qa-workflow/bin/qa-cli.js knowledge`. Customer-app tab bar (org-wide, device 390×844):
 | Element | Coord |
 |---------|-------|
-| Card widget "Get started" / "ابدأ الآن" | (195, 540) |
-| Activation "Got it" modal (no a11y label, RN view) | (195, 810) |
-| Activation "Start" | XPath `//*[@label='Start']` + clickEl (~315, 580) |
-| FAQ X close | (355, 57) |
-| Pay tab | (273, 819) | 
+| Pay tab | (273, 819) |
 | Home tab | (39, 819) |
 | "Enter invitation code" | scroll down first (off-screen ~y1087 → ~y742), then tap |
 
@@ -138,7 +136,7 @@ RTL: digit ١(1) on the RIGHT of the top row, ٣(3) on the LEFT — reversed fro
 - Bottom sheet dismiss: swipe down (pointer move 195,400 → 195,700).
 
 ### 4.6 Loading states
-Look for `قيد التقدم` (In Progress). Poll `sleep(2000)` up to 8× before declaring timeout. BCID validation: server-side, poll up to ~16s.
+Look for `قيد التقدم` (In Progress). Poll `sleep(2000)` up to 8× before declaring timeout. Slow server-side validations: poll up to ~16s.
 
 ---
 
@@ -147,9 +145,7 @@ Look for `قيد التقدم` (In Progress). Poll `sleep(2000)` up to 8× befor
 | OTP type | Rule | Entry method |
 |----------|------|--------------|
 | **Login OTP** | Fetch automatically from the **Google Chat `#testing-otp` space** — the framework's `OtpFactory` reads it via `GoogleChatApiClient.findMessageForOTP(phone, method)`; the Node port is [automation/mobile/otp_google_chat.js](../../automation/mobile/otp_google_chat.js). Find the latest message for the phone (+20 prefix), write to the polling file (e.g. `ios_en_act_otp.txt`); `pollForOtp()` picks it up. **Slack is deprecated and no longer works** (channel `C04TK0FM329` silent since 2026-06-24). | `typeDigitsW3C` (W3C keyboard) — never `tapDigitArabic` (fails on repeated digits). |
-| **Pay dual-authentication OTP** | The **last 4 digits of the test phone**, as the framework does (`enterOtpIfDisplayed(phone.substring(phone.length() - 4))`). **Nothing is sent to the OTP space for this gate** — reading Chat hangs, and a wide lookback returns the login OTP from earlier in the same run and gets rejected here. | Segmented field: real key events only (Android keycodes). A bulk `element/value` lands one digit and auto-submits an incomplete code. |
-| **Card application OTP (1/3)** | Last 4 digits of test phone (01012350020 → 0020). | `typeDigitsW3C(PHONE.slice(-4))` |
-| **Card activation OTP** (phone verify after "Start") | Last 4 digits of test phone — same rule. | `typeDigitsW3C` |
+| **Product OTP gates** (in-app gates that do not use the login OTP) | **Product knowledge** — your domain's business rules name each gate and its rule (`qa-cli.js knowledge`). Never read the login-OTP space for a gate the domain says is not sent there: it hangs, or returns an older login OTP. | Segmented fields: real key events only (Android keycodes). A bulk `element/value` lands one digit and auto-submits an incomplete code. |
 
 ```js
 async function typeDigitsW3C(code) {
@@ -223,10 +219,10 @@ See [exploratory-testing.md](exploratory-testing.md) §"Failure patterns" for th
 
 ## 10. BrowserStack Test Management — CSV Field-Mapping Spec
 
-Generated test cases are managed in BrowserStack Test Management as CSV. **This spec is locked to the canonical BrowserStack export/import format** from `test_cases_BCard Squad (1).csv` (project **BCard Squad**, project id `2407303`). If a future import rejects this format, surface the divergence (governance: [release-validation.md](release-validation.md) §5) before changing the spec.
+Generated test cases are managed in BrowserStack Test Management as CSV. **This spec is locked to the canonical BrowserStack export/import format** defined column by column below (and enforced by `qa-cli.js testcase-lint`). If a future import rejects this format, surface the divergence (governance: [release-validation.md](release-validation.md) §5) before changing the spec.
 
 ### 10.0 Canonical test-case standard (source of truth)
-The **approved BrowserStack test cases** in your team's suite folder (`browserstack.suiteFolder` in `teams/<team>.json`) are the **source of truth** for ALL future test-case generation. The **format reference** for every team is the card squad's canonical export (`test_cases_BCard Squad (1).csv`, folder `48895703`; reference sample TC-49835). Every generated case must match them exactly in **structure, field mapping, naming convention, and writing style**. Non-negotiable step rules (see also [testing-process.md](testing-process.md) §3.7):
+The **approved BrowserStack test cases** in your team's suite folder (`browserstack.suiteFolder` in `teams/<team>.json`) are the **source of truth** for ALL future test-case generation. The **format** for every team is the canonical 24-column export below, enforced by `qa-cli.js testcase-lint`. Every generated case must match them exactly in **structure, field mapping, naming convention, and writing style**. Non-negotiable step rules (see also [testing-process.md](testing-process.md) §3.7):
 
 - **Granular user-action steps**, in order: **Login → Navigate → Search → Open Details → Edit/Open form → Action → Verify**. One user action per step.
 - **Every step has its own Expected Result** (N steps → N expected results; validate 0 steps missing an expected result before export).
@@ -248,7 +244,7 @@ Test Case ID,Title,Folder ID,Folder Path,State,Owner,Priority,Type of Test Case,
 |---|--------|--------|---------|--------------------------|
 | 1 | **Test Case ID** | system | BrowserStack ID | `TC-49841` (assigned on import; blank for new) |
 | 2 | **Title** | author | Full descriptive title | Sentence form, e.g. `Verify DOB for a user exactly 15 years old is accepted in Admin Portal` |
-| 3 | **Folder ID** | author/system | Target folder numeric id | `48895703` |
+| 3 | **Folder ID** | author/system | Target folder numeric id | `12345678` |
 | 4 | **Folder Path** | author | Human folder path (`>`-delimited) | `2026.Q2.S5>Update date-of-birth minimum age configuration in Admin Portal from 16 to 15` |
 | 5 | **State** | author | Case lifecycle state | `Active` |
 | 6 | **Owner** | author | Owner name | `Fintech` |
@@ -260,7 +256,7 @@ Test Case ID,Title,Folder ID,Folder Path,State,Owner,Priority,Type of Test Case,
 | 12 | **Template** | author | Case template type | Always `Steps` |
 | 13 | **Steps** | author | One test step | Free text. **One row per step.** |
 | 14 | **Expected Result** | author | Expected outcome of that step | Free text, paired with the Step on the same row |
-| 15 | **Issues** | author | Linked Jira key | Story id, e.g. `B10-55294` |
+| 15 | **Issues** | author | Linked Jira key | Story id, e.g. `B10-XXXXX` |
 | 16 | **Tags** | author | Tags | `ai-created` for generated cases |
 | 17 | **Status (latest)** | system | Latest run status | Blank until executed |
 | 18 | **Attachments** | system/author | Attachment refs | Blank |
@@ -268,7 +264,7 @@ Test Case ID,Title,Folder ID,Folder Path,State,Owner,Priority,Type of Test Case,
 | 20 | **Created By** | system | Creator | `Fintech` |
 | 21 | **Last Updated At** | system | Update timestamp | `MM/DD/YYYY HH:MM:SS` |
 | 22 | **Last Updated By** | system | Last editor | `Fintech` |
-| 23 | **Project Name** | author | BrowserStack project | `BCard Squad` |
+| 23 | **Project Name** | author | BrowserStack project | `<your BrowserStack project name>` |
 | 24 | **Test Case URL** | system | Direct case URL | `https://test-management.browserstack.com/projects/2407303/folder/<folderId>/test-cases/<id>` |
 
 ### 10.2a Traceability tags — `ac:` and `screen:` (added 2026-08-09, MANDATORY on generated cases)
@@ -277,7 +273,7 @@ Column 16 **Tags** is author-owned, so it carries the machine-readable traceabil
 has nowhere else to put. Comma-separated inside the quoted cell:
 
 ```
-"ai-created,ac:AC-1,ac:AC-3,screen:perks-list"
+"ai-created,ac:AC-1,ac:AC-3,screen:list-page"
 ```
 
 | Tag | Meaning | Rule |
@@ -307,7 +303,7 @@ Each test case spans **one row per step**:
 
 Example (first row + one continuation row):
 ```
-TC-49826,Verify DOB for a user 14 years and 364 days old is rejected in Admin Portal,48895703,2026.Q2.S5>Update date-of-birth minimum age configuration in Admin Portal from 16 to 15,Active,Fintech,High,Functional,Not Automated,"Validates that a DOB making the user 14 years and 364 days old (one day short of 15) is rejected ...","Agent is logged into the Admin Portal. A customer record is accessible via Search Cards.",Steps,"Log in to the Admin Portal and navigate to Card Users > Search Cards","Agent is logged in and Search Cards page is displayed",B10-55294,ai-created,"","",06/08/2026 10:01:13,Fintech,06/08/2026 11:29:36,Fintech,BCard Squad,https://test-management.browserstack.com/projects/2407303/folder/48895703/test-cases/111691123
+TC-49826,Verify DOB for a user 14 years and 364 days old is rejected in Admin Portal,12345678,2026.Q2.S5>Update date-of-birth minimum age configuration in Admin Portal from 16 to 15,Active,Fintech,High,Functional,Not Automated,"Validates that a DOB making the user 14 years and 364 days old (one day short of 15) is rejected ...","Agent is logged into the Admin Portal. A customer record is accessible via Search Cards.",Steps,"Log in to the Admin Portal and navigate to Card Users > Search Cards","Agent is logged in and Search Cards page is displayed",B10-XXXXX,ai-created,"","",06/08/2026 10:01:13,Fintech,06/08/2026 11:29:36,Fintech,Your Squad,https://test-management.browserstack.com/projects/1234567/folder/12345678/test-cases/111691123
 ,,,,,,,,,,,,"Search for a customer and open their details page, then click 'Edit'","Edit Customer Details modal is displayed",,,,,,,,,,
 ```
 (For brand-new cases being imported, leave the **system** columns — Test Case ID, Created/Updated At/By, Test Case URL, and Status (latest) — blank; BrowserStack fills them.)
@@ -324,7 +320,7 @@ This is the standing process — no extra instruction required:
 1b. **Pass the review + approval gate.** The cases are reviewed against the ten checks (no duplicates · no unrelated cases · no missing AC coverage **at clause level** · correct expected results · correct granularity · correct categorization · correct automatable classification · justified regression coverage · format conformance · **upstream coverage changes challenged**), revised until clean, and **explicitly approved by the operator** — `qa-cli.js approve "<storyDir>" testcases --by "<operator>"`. **Nothing below runs on unapproved cases**; recording the import is blocked without the approval. ([testcase-review skill](../../qa-workflow/skills/testcase-review/SKILL.md).)
 2. **Generate the BrowserStack-compatible CSV** per §10.1–10.4 (24-column header byte-exact; one row per step; every step has an Expected Result; Folder Path `>`-delimited).
 3. **Ask for BrowserStack credentials if not available** (saved as User env vars `BS_TM_USERNAME`/`BS_TM_API_TOKEN` + `BROWSERSTACK_USERNAME`/`BROWSERSTACK_ACCESS_KEY`). UI login (when API is SSO-blocked) uses the Test Management web login.
-4. **Take the project from the team profile** (`browserstack.project` / `browserstack.numericProject` in `teams/<team>.json` — never another team's; e.g. the card squad is `PR-5` = `2407303`), and **ask for the story folder if not provided** (set Folder ID / Folder Path).
+4. **Take the project from the team profile** (`browserstack.project` / `browserstack.numericProject` in `teams/<team>.json` — never another team's), and **ask for the story folder if not provided** (set Folder ID / Folder Path).
 5. **Upload the test cases** (§10.6).
 6. **Verify the import succeeded** — folder count = expected case count (e.g. `28(28)`), cases land directly in the target folder (no nested/duplicate folder), open one case and confirm the Steps & Results render granularly with an expected result per step. Record destination + result in the story report.
 7. **After the automation exists and has run: mark the automated cases, create the run(s), attach the results** — one command, §10.8. Cases are uploaded `not_automated` (correct: at upload time nothing is automated yet) and are flipped to `automated` only once a test is actually bound to them by `@TmsLink`.
@@ -355,7 +351,7 @@ This is the standing process — no extra instruction required:
 Create cases **individually** (more reliable and more controllable than a CSV import):
 
 ```
-GET  /api/v2/projects?p=1                                  → identifiers like PR-5
+GET  /api/v2/projects?p=1                                  → identifiers like PR-<n>
      ↳ match a folder URL's numeric project id against projects[].urls.self
 GET  /api/v2/projects/{PR-x}/folders                       → folder tree
 GET  /api/v2/projects/{PR-x}/folders/{id}/sub-folders      → walk for nested folders
@@ -376,7 +372,7 @@ DELETE /api/v2/projects/{PR-x}/test-cases/{TC-xxxxx}         ← remove
     "template": "test_case_steps",
     "automation_status": "not_automated",
     "tags": ["ai-created"],
-    "issues": ["B10-56750"],           // ← array of PLAIN STRINGS on input
+    "issues": ["B10-XXXXX"],           // ← array of PLAIN STRINGS on input
     "test_case_steps": [               // ← `test_case_steps`, NOT `steps`
       { "step": "<p>…</p><br/>", "result": "<p>…</p><br/>" }
     ] } }
@@ -392,8 +388,8 @@ DELETE /api/v2/projects/{PR-x}/test-cases/{TC-xxxxx}         ← remove
    created at `POST /projects/{p}/folders/{id}/test-cases` but listed at
    `GET /projects/{p}/test-cases?folder_id={id}`. A **GET on the create path returns
    `404 "You have stumbled on an invalid endpoint"`**, which reads like "the folder is empty" and makes a
-   verify step silently report zero cases even though the upload succeeded. (Hit on B10-57393: 22 cases
-   uploaded fine, first `--verify` reported `listed 0`.) Make the verifier fail loudly on an empty
+   verify step silently report zero cases even though the upload succeeded. (Hit for real: 22 cases
+   uploaded fine, the first `--verify` reported `listed 0`.) Make the verifier fail loudly on an empty
    listing rather than printing a reassuring "all cases have steps".
 
 Generate the case data once and share it: `gen_browserstack_csv.js` exports its `cases` array, so the
@@ -410,10 +406,9 @@ Use only if the API is unavailable. UI flow (logged in):
 **Gotchas (learned, must apply):**
 - **File upload root**: the Playwright MCP only allows files under `d:\BreadfastQA` and the drive letter must be **lowercase `d:`** — copy the CSV to `d:\BreadfastQA\.playwright-mcp\` first.
 - **Two file inputs**: the AI-generate input's `accept` also contains `.csv`; target the IMPORT input (whose `accept` **starts with `text/csv`**) to arm the chooser, else the file lands in the AI panel.
-- **Folder Path mapping**: when importing into a PRESELECTED folder (`?folder=<id>`), set **Folder Path → "Ignore This Field"** at Map Fields. Leaving it mapped to "Folder Name" CREATES a duplicate nested folder subtree inside the target (had to be deleted on B10-56336). The CSV still carries Folder Path (canonical format) — it's just ignored at map time.
+- **Folder Path mapping**: when importing into a PRESELECTED folder (`?folder=<id>`), set **Folder Path → "Ignore This Field"** at Map Fields. Leaving it mapped to "Folder Name" CREATES a duplicate nested folder subtree inside the target (it happened once; the subtree had to be deleted). The CSV still carries Folder Path (canonical format) — it's just ignored at map time.
 - **Delete cases**: select-all-on-page → toolbar overflow "⋮" → **Delete Permanently** → type `delete` → confirm. **Delete a folder**: tree-node kebab → **Delete Folder Permanently**.
 
-First successful run: **B10-56336**, 28 cases / 157 steps imported into folder `50396881` (Card.Core.Sprint.3 > Extend Admin Portal with All KYC Fields).
 
 ---
 
@@ -504,13 +499,13 @@ The run name is **derived** — `<STORY> — <folder name> (<Platform>)` — bec
 hand-written names are what make a second invocation create duplicates instead of updating the run it made
 last time. Exact-name lookup over the paginated `GET /projects/{p}/test-runs` is verified to resolve. A run
 **cannot be renamed** (`PATCH /projects/{p}/test-runs/{id}` → 404), so a run created under some other name can
-only be targeted with `--run-map` — which is exactly the state B10-56711's `TR-6742`/`TR-6743` are in.
+only be targeted with `--run-map` — runs created before this rule existed are in exactly that state.
 
 ---
 
 ### 10.7 Test NAMES are the contract between automation and BrowserStack (**required**)
 
-> Added 2026-07-26 (B10-56750), by operator instruction: *"the testcase names in the automation script
+> Added 2026-07-26, by operator instruction: *"the testcase names in the automation script
 > should match the testcase name in BrowserStack — same name for all automatable test cases — so the
 > test run just runs the automatable testcases from BrowserStack."*
 
@@ -535,7 +530,7 @@ Why it matters:
 - Do **not** cover two cases with one test (split them, e.g. "lists bilingual labels" and "shows no
   numeric IDs" become two tests).
 - Do **not** cover one case with several tests (fold them into one, e.g. a case that says "for all four
-  perk types" loops the four types *inside* a single test).
+  item types" loops the four types *inside* a single test).
 - A case that is deliberately **not** automated simply has no test, and is declared as such (see below)
   and left `not_automated` in BrowserStack.
 

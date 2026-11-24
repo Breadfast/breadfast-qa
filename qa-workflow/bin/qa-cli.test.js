@@ -6,6 +6,10 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
+// Hermetic: the CLI records the selected QA team at `init`. Pin it to the reference baseline (card-core)
+// so these tests never depend on the developer's QA_TEAM or credentials.local.js.
+process.env.QA_TEAM = 'card-core';
+
 const CLI = path.join(__dirname, 'qa-cli.js');
 const run = (args, input) => execFileSync(process.execPath, [CLI, ...args], { input, encoding: 'utf8' });
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'qa-cli-'));

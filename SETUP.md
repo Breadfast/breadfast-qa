@@ -153,13 +153,36 @@ components on bugs, and the BrowserStack project and suite folder.
 
 1. Set your team once, in `credentials.local.js` (`team: 'payment'`) or as `QA_TEAM=payment`.
 2. Run `npm run doctor`. The **QA team** line shows your team, or lists every value still `TODO`.
-3. If your team has **no file yet**, copy `teams/_template.json` to `teams/<your-team>.json`, fill it in
-   (the template explains where each value comes from) and commit it, so your teammates get it.
+3. If your team has **no file yet** (any squad), run
+   `node qa-workflow/bin/qa-cli.js team-init <your-team> --name "<Squad>" --surfaces web,mobile,backend` — the
+   org-wide Jira values are pre-filled — then fill any `TODO` (the template explains each value) and commit it.
 4. If your team's file **still has `TODO`s**, that's fine for a first run. At the start of your first
    story Claude asks for the missing values and writes them into the file. Commit it afterwards.
 
 **No team's values are ever used as a default.** With no team selected, scripts that file bugs or
 write to BrowserStack stop and say what to set. Details: [teams/README.md](teams/README.md).
+
+### 4.2 Your team's knowledge — onboard once, then only your knowledge loads
+
+Every team shares one QA process and the org standards (BrowserStack, the Java framework, the B10 bug
+schema). **Product knowledge is per team**: each session reads only what its team's plan lists.
+
+1. **`domains`** in `teams/<your-team>.json` — the product domains your stories need (ids from
+   [`qa-workflow/registry/knowledge.json`](qa-workflow/registry/knowledge.json)), or `[]` if yours isn't there yet.
+   **`surfaces`** — any of `web`, `mobile`, `backend`.
+2. **Onboard the team once.** Until `teams/<your-team>/context.md` exists, the doctor **blocks** with
+   *Team context*. Start Claude Code and run any `/qa-*` workflow (or ask Claude to run *team onboarding*): it
+   looks at what already exists, asks only what is missing about your product, surfaces, environments, repos
+   and docs, reads only the repositories you grant, and writes a context where every fact is tagged
+   *confirmed / inferred / tester-provided / unknown / outdated*. Commit `teams/<your-team>/`.
+3. **Repository access is per person.** The repos are listed in `teams/<your-team>/repos.json` (committed);
+   which local clone may be read is yours alone, in `credentials.local.js`:
+   ```js
+   repos: { 'orders-service': { path: '/Users/me/src/orders-service', granted: true, grantedAt: '2026-11-24' } }
+   ```
+   A clone on disk that isn't granted there is never read. `node qa-workflow/bin/qa-cli.js repos` shows the state.
+4. See your plan any time: `node qa-workflow/bin/qa-cli.js knowledge` — the exact files your sessions may read,
+   and the domains that are **not** loaded for you.
 
 ---
 
@@ -228,7 +251,8 @@ setx QA_FRAMEWORK_PATH "D:\projects"
 
 ```bash
 npm run doctor      # every prerequisite, with fix-it hints
-npm test            # 221 tests, 0 fail — the workflow engine, team profiles and the doctor
+npm test            # 280+ tests, 0 fail — the engine, team profiles, the doctor, the secret scan, knowledge isolation
+npm run hooks:install  # once per clone: blocks a commit that stages a credential-looking value
 ```
 
 **You don't have to remember this.** Claude runs the same check for you:
@@ -316,6 +340,8 @@ breadfast-qa/                    COMMITTED — the QA process
 ├── qa-workflow/                 the engine (zero runtime dependencies)
 ├── automation/                  shared page objects, helpers, config (NO secrets)
 ├── scripts/doctor.mjs           environment checker
+├── teams/<team>.json            team values · teams/<team>/ = onboarding output (context.md, repos.json)
+├── qa-workflow/domains/<d>/     product knowledge per domain (loaded only for teams that list it)
 └── B10-*/                       LOCAL ONLY — your story runs (gitignored)
 
 projects/                        the Java framework (its own repo)
@@ -327,7 +353,8 @@ projects/                        the Java framework (its own repo)
 ```
 
 Story folders, evidence, screenshots, videos and reports are **gitignored by design**.
-Anything reusable a story produces is promoted into `automation/` or `docs/ai/`.
+Anything reusable a story produces is promoted into `automation/`, `docs/ai/` (true for every team), the
+team's domain (`qa-workflow/domains/<d>/`) or its team context (`teams/<team>/`) — never only into personal memory.
 
 ---
 

@@ -57,13 +57,13 @@ node qa-workflow/bin/qa-cli.js coverage-change approve <storyDir> <id> --by "<op
 evidence actually covers*. Generalising a correct measurement of **one** state into a decision about a
 **whole requirement** is the specific failure this whole rule exists to prevent.
 
-> **Motivating failure — B10-57764 (2026-08-24).** Clarification **A-3** pixel-diffed the design's
+> **Motivating failure — lesson `card/L-04` (2026-08-24).** Clarification **A-3** pixel-diffed the design's
 > *unchecked* disabled checkbox against the enabled one, correctly found them byte-identical, and
 > concluded *"'the box is dimmed' has no visual oracle"*. The **checked** box differed plainly in the same
 > two frames (`#F3F4F5`/`#D8D8D8` vs `#AA0082`/white). That inference removed **all** visual assertion
 > from AC5 and replaced it with a behavioural model asserted in **one direction only**. Lint stayed green
 > (four cases carried `ac:AC-5`), the nine review checks passed, 3 manual cases and 18 automated tests
-> passed — and two defects (**B10-59276**, **B10-59278**) lived in the unasserted half until the operator
+> passed — and two defects lived in the unasserted half until the operator
 > found them by hand on a build already signed off PASS 6/6.
 
 **Interaction with the clarifications materiality gate** ([contract](architecture/qa-artifact-contract.md)
@@ -146,7 +146,16 @@ minutes.
    base URL, **API version**, path or payload shape as a permissions problem. Consult the vendor's current
    API reference before declaring an access blocker.
 5. **Settle platform/locale scope here**, against the real application — not from the design or a default.
-   A surface that has no locale switch cannot be given a localisation sweep.
+   A surface that has no locale switch cannot be given a localisation sweep. Start from the team context's
+   *Surfaces & locale support*; record what you settle (`qa-cli.js init … --surfaces`).
+5a. **Know the product before the story (2026-11-24).** A team with no team context is onboarded first
+   (`qa-workflow/skills/team-onboarding`): look before asking, ask only what is missing, read only granted
+   repositories, and record every fact with its confidence (confirmed / inferred / tester-provided / unknown /
+   outdated) — an unknown is stated, never filled with a guess. The run's product knowledge is exactly its
+   knowledge plan (`qa-cli.js knowledge`); another team's domain needs a recorded operator approval.
+5b. **Ask for source access where it changes the answer.** When the story changes a business rule, a state
+   machine, validation limits or a contract consumed by another layer, ask for read-only access to the repos
+   that own it (`qa-workflow/skills/repo-discovery`); declined access is a stated limitation, not a block.
 6. Ask for everything still missing **in one batch**, naming each value and where it comes from.
 
 **Outputs:** `prerequisites.md` in the story folder — every category marked **have / ask / not-applicable**,
@@ -282,7 +291,7 @@ filter/mode · remove it **with** the submit action · remove it **without** it 
 return · browser Back · enabled → disabled and disabled → enabled transitions · a value changed
 in-session versus loaded from the server.
 
-> **Motivating failure — B10-59278.** On the card panel the perks list re-queries only on **Search**, so
+> **Motivating failure — lesson `card/L-13`.** On an admin-portal list that re-queries only on **Search**,
 > `Category → All` **with** Search and `Category → All` **without** Search are genuinely different
 > routes into the same *displayed* state. Three routes were tested; the fourth held the defect. The
 > automated suite touched the Category filter in only two ways across all 18 tests — read as `"All"` on
@@ -362,8 +371,8 @@ Execute across the applicable surfaces:
 > **This does not reorder the recorded artifacts.** `automation` is still recorded before `execution` —
 > `PHASE_DEPS = { execution: 'automation' }` in `qa-cli.js` is a real gate and is **not** bypassed. The
 > manual pass is written to `execution-reports/manual-execution.md` as it happens, automation follows, and
-> the automated results are then appended before `execution` is recorded. That gate exists because on
-> **B10-56717** the phases were reordered and automation fell off the end of the run entirely; manual-first
+> the automated results are then appended before `execution` is recorded. That gate exists because on a
+> real run (lesson `card/L-02`) the phases were reordered and automation fell off the end of the run entirely; manual-first
 > satisfies the QA requirement without reopening that hole.
 
 ### Activities
@@ -427,7 +436,7 @@ For each screen, pair the expected design frame with the actual screenshot (**by
 
 Layers run cheapest/most-structural first; a component flagged missing at L2 is not re-flagged downstream.
 
-> **L5 copy severity sub-class:** a **pure casing / whitespace / punctuation-spacing** difference (e.g. `Card Perks` vs `Card perks`, `ID*` vs `ID *`, `Insert Arabic Text Here` vs `Insert Arabic text here`) is **minor**. A difference that changes a **word, meaning, number, or localized string** is **major**. Missing/empty required copy remains **major**.
+> **L5 copy severity sub-class:** a **pure casing / whitespace / punctuation-spacing** difference (e.g. `Order History` vs `Order history`, `ID*` vs `ID *`, `Insert Arabic Text Here` vs `Insert Arabic text here`) is **minor**. A difference that changes a **word, meaning, number, or localized string** is **major**. Missing/empty required copy remains **major**.
 
 ### 5.4 Run Residual AI (only when required)
 Invoke AI **only** for screens the deterministic layers could not fully evaluate — no structured dump, no expected data, or an unstructured surface — plus an optional small audit sample of clean screens. A fully-evaluated screen consumes **zero** AI. AI findings are labelled as AI-sourced.
@@ -454,13 +463,13 @@ exported), and — the check that matters most — **`engine-screen-not-found`**
 cannot be declared compared by assertion. `complete-check` runs the same check and fails the run; an
 operator deferral on `visual-findings` waives it.
 
-> **Motivating failure — B10-58669 (2026-09-07).** Phase 2 exported 12 primary frames. Phase 5 compared
+> **Motivating failure — lesson `card/L-14` (2026-09-07).** Phase 2 exported 12 primary frames. Phase 5 compared
 > **6**, by eye, reported all six matching, and filed nothing. Nothing counted the other six, so every
 > gate stayed green and the QA summary said the visual pass was done. The operator then found three real
-> deviations by looking: **B10-59822** (the date picker keeps ngx-bootstrap's default green theme and an
+> deviations by looking: one (the date picker keeps ngx-bootstrap's default green theme and an
 > ISO week-number column, in the picker-open state that `f03`/`f04` draw and no capture ever produced),
-> **B10-59823** (the `Frequency` label lost its bold — no story had ever measured a font weight), and
-> **B10-59826** (`13:00` where `f09` shows `01:00 PM` — in a frame the reference set excluded, and
+> one where a label lost its bold — no story had ever measured a font weight), and
+> one with `13:00` where `f09` shows `01:00 PM` — in a frame the reference set excluded, and
 > previously *rejected* on the false claim that the design showed the dropdown closed). AC coverage
 > could never fail this way, because it is computed (`uncovered-ac`). Visual coverage was prose.
 > Postmortem: the story's `execution-reports/visual-postmortem.md`.
@@ -482,11 +491,11 @@ If the surviving question is *"is this requirement actually met?"*, the requirem
 passed. If it is closed instead, that is a **coverage-changing decision** (Principles) and needs
 ratification like any other.
 
-> **Motivating failure — B10-57764 V-01.** The finding claimed the disabled checkbox rendered `#AA0082`
+> **Motivating failure — lesson `card/L-04` (finding V-01).** The finding claimed the disabled checkbox rendered `#AA0082`
 > magenta. That claim was false — the build paints `#B0B0B0` — and it was rejected on gate checks 3/4
 > with a mechanism that was also unsound. But its **substance** — *this is not the dimmed state the
 > design specifies* — was never re-tested against the design, and the rejection was read by every later
-> phase as *settled*. It was true, and became **B10-59276**.
+> phase as *settled*. It was true, and became a filed defect.
 
 
 ### Outputs / Artifacts

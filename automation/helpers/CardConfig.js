@@ -14,6 +14,7 @@
 
 const { load } = require('./PropertiesReader');
 const framework = require('../config/framework');
+const credentials = require('../config/credentials');
 
 // Cross-platform: resolve the Java framework's resources/environments via
 // automation/config/framework.js (QA_FRAMEWORK_PATH / BF_JAVA_FRAMEWORK_DIR /
@@ -56,22 +57,12 @@ module.exports = {
 
   // Live card-service DB (where card-panel-testing actually writes — separate host from the
   // breadfast/OTP DB). The Java config_testing.properties points at a STALE card DB host
-  // (frozen 2026-03-14), so these are configured here, env-overridable. Used for teardown only;
+  // (frozen 2026-03-14), so this does NOT come from the property files. Used for teardown only;
   // OTP reads still use the default breadfast DB connection (PropertiesReader → config_testing).
-  cardDb: {
-    db: {
-      host:     process.env.BF_CARD_DB_HOST || '192.168.77.66',
-      port:     Number(process.env.BF_CARD_DB_PORT || 3306),
-      user:     process.env.BF_CARD_DB_USER || 'breadfast_hades',
-      password: process.env.BF_CARD_DB_PASS || '2cW*nKx8(9XWE!!b',
-      database: process.env.BF_CARD_DB_NAME || 'cards_hades_testing',
-    },
-    ssh: {
-      required: true,
-      host:     process.env.BF_CARD_SSH_HOST || '192.168.76.20',
-      port:     Number(process.env.BF_CARD_SSH_PORT || 22),
-      username: process.env.BF_CARD_SSH_USER || 'testing_user',
-      password: process.env.BF_CARD_SSH_PASS || '88vMX6qZperEXALK',
-    },
-  },
+  //
+  // Resolved lazily through automation/config/credentials.js → cardDb.config() — env CARD_DB_* (or the
+  // older BF_CARD_* names), then credentials.local.js `cardDb*`. There is deliberately NO literal
+  // fallback: this file is tracked by git. Requiring this module never throws; using the card DB
+  // without those values throws an error naming the missing key.
+  get cardDb() { return credentials.cardDb.config(); },
 };
