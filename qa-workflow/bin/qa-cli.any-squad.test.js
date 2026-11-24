@@ -41,7 +41,7 @@ const ok = (teamId, args, input) => {
 };
 const doctor = (teamId) => JSON.parse(spawnSync(process.execPath, [path.join(ROOT, 'scripts/doctor.mjs'), '--json'],
   { encoding: 'utf8', env: env(teamId), cwd: ROOT }).stdout);
-const teamContextRow = (d) => [...d.blocking, ...d.warnings].find((r) => r.name === 'Team context') || (d.ok.includes('Team context') ? 'ok' : null);
+const teamContextRow = (d) => [...d.blocking, ...(d.ask || []), ...d.warnings].find((r) => r.name === 'Team context') || (d.ok.includes('Team context') ? 'ok' : null);
 
 const SQUADS = [
   { id: 'growth', name: 'Growth', surfaces: 'mobile,backend', marker: 'promo_engine_rules', fact: '- First-order cashback offers and referral perks. [confirmed: jira:B10-61234; 2026-11-24]' },
@@ -66,7 +66,7 @@ for (const s of SQUADS) {
     assert.equal(profile.jira.projectKey, 'B10');
     assert.equal(profile.jira.bugIssueTypeId, '10084');
 
-    // 2. Not onboarded → the doctor blocks before any story.
+    // 2. Not onboarded → the doctor asks for onboarding first (it never blocks).
     const before = teamContextRow(doctor(s.id));
     assert.equal(before && before.fix && before.fix.type, 'team-context');
 

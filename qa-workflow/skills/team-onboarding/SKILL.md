@@ -20,7 +20,9 @@ metadata:
 
 ## When it runs
 - `node scripts/doctor.mjs --json` reports **`Team context`** with `fix.type: team-context` (no
-  `teams/<team>/context.md` yet) — **blocking**: no story is analysed for a team the workflow knows nothing about.
+  `teams/<team>/context.md` yet) — **offered first, before the story is read**. If the tester skips it, record
+  *"no team context — product knowledge limited to core + the team's domains"* in `prerequisites.md`, carry on,
+  and offer it again at the next run. It never blocks (operator rule 2026-11-24).
 - `fix.type: team-context-stale` (older than the threshold, or confirmed facts cite code that changed —
   `qa-cli.js knowledge-status`) — offer a refresh; if the operator declines, record that in the story's
   `prerequisites.md` and continue.
@@ -36,7 +38,9 @@ another team owns: changes there are proposed to their owner.
    Jira project already answer.
 2. **Never invent.** Every fact is tagged (format below). Anything not established is `[unknown]` **and** an
    open question. An empty section is better than a plausible guess.
-3. **Explain every question.** Say why it is needed and what becomes unavailable if it is skipped.
+3. **Explain every question.** Say why it is needed and what becomes unavailable if it is skipped. Even a
+   *Required* question can be skipped: it becomes `[unknown]` + an open question, and onboarding still writes
+   the file.
 4. **Skipping is allowed and recorded.** A skipped optional item becomes `[unknown]` + an open question and is
    copied into every story's `prerequisites.md` as a stated limitation. It never blocks.
 5. **Repositories are read only when this tester grants them**, per repository, read-only. A clone existing on

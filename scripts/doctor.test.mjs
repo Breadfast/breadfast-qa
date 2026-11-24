@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { cpSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -25,6 +25,8 @@ function fakeRepo(credentialsBody) {
   cpSync(path.join(repo, 'teams'), path.join(root, 'teams'), { recursive: true });
   // team.js validates a profile's `domains` against the knowledge registry.
   cpSync(path.join(repo, 'qa-workflow', 'registry'), path.join(root, 'qa-workflow', 'registry'), { recursive: true });
+  // The /qa-* entrypoints: a real clone has them, so a fresh copy must not fail on "Workflow skills".
+  cpSync(path.join(repo, '.claude', 'skills'), path.join(root, '.claude', 'skills'), { recursive: true });
   writeFileSync(path.join(root, 'CLAUDE.md'), '');
   if (credentialsBody != null) writeFileSync(path.join(root, 'automation', 'config', 'credentials.local.js'), credentialsBody);
   return root;
@@ -45,17 +47,36 @@ function doctor(root, mode = '--json') {
 
 const byName = (list, name) => list.find((p) => p.name === name);
 
-test('fresh clone, nothing configured: not ready, and every gap says exactly what to set', () => {
+test('fresh clone, nothing configured: NOTHING blocks — every gap is a question with the step that needs it', () => {
+  // Operator rule 2026-11-24: a step the tester has not done yet is asked for, never a block.
   const { status, json } = doctor(fakeRepo(null));
-  assert.equal(status, 1);
-  assert.equal(json.ready, false);
-  const team = byName(json.blocking, 'QA team');
-  assert.equal(team.fix.type, 'team');
+  assert.equal(status, 0);
+  assert.equal(json.ready, true);
+  assert.equal(json.complete, false);
+  assert.deepEqual(json.blocking, []);
+  const team = byName(json.ask, 'QA team');
+  assert.deepEqual([team.fix.type, team.fix.when], ['team', 'start']);
   assert.deepEqual(team.fix.available, ['card-core', 'payment']);
-  const token = byName(json.blocking, 'Jira API token');
-  assert.deepEqual([token.fix.type, token.fix.key, token.fix.env, token.fix.secret], ['credential', 'jiraApiToken', 'JIRA_API_TOKEN', true]);
-  assert.ok(byName(json.blocking, 'BrowserStack Test Management API token'));
-  assert.equal(byName(json.warnings, 'Credentials file').fix.type, 'command');
+  const token = byName(json.ask, 'Jira API token');
+  assert.deepEqual([token.fix.type, token.fix.key, token.fix.env, token.fix.secret, token.fix.when],
+    ['credential', 'jiraApiToken', 'JIRA_API_TOKEN', true, 'bug-filing']);
+  assert.equal(byName(json.ask, 'BrowserStack Test Management API token').fix.when, 'import');
+  assert.equal(byName(json.ask, 'Java QA framework').fix.when, 'automation');
+  assert.equal(byName(json.ask, 'Credentials file').fix.type, 'command');
+  assert.equal(json.firstRun, true);
+  assert.equal(byName(json.ask, 'First-run setup').fix.run, '/qa-setup');
+  // Asked in the order the run reaches them: start-of-run items first.
+  const order = ['start', 'import', 'bug-filing', 'mobile', 'automation'];
+  const whens = json.ask.map((a) => order.indexOf(a.fix.when));
+  assert.deepEqual(whens, [...whens].sort((a, b) => a - b));
+});
+
+test('only what makes the scripts impossible to run is a hard failure', () => {
+  const root = fakeRepo(null);
+  rmSync(path.join(root, '.claude'), { recursive: true });
+  const { status, json } = doctor(root);
+  assert.equal(status, 1);
+  assert.deepEqual(json.blocking.map((b) => b.name), ['Workflow skills']);
 });
 
 test('template copied but not filled in: placeholders count as missing, and TODO is not a team', () => {
@@ -63,9 +84,9 @@ test('template copied but not filled in: placeholders count as missing, and TODO
   const root = fakeRepo(null);
   cpSync(template, path.join(root, 'automation', 'config', 'credentials.local.js'));
   const { json } = doctor(root);
-  assert.match(byName(json.blocking, 'Jira API token').detail, /still the template placeholder/);
-  assert.match(byName(json.blocking, 'Jira email').detail, /still the template placeholder/);
-  assert.ok(byName(json.blocking, 'QA team'), 'team: TODO must not count as a selected team');
+  assert.match(byName(json.ask, 'Jira API token').detail, /still the template placeholder/);
+  assert.match(byName(json.ask, 'Jira email').detail, /still the template placeholder/);
+  assert.ok(byName(json.ask, 'QA team'), 'team: TODO must not count as a selected team');
 });
 
 test('filled in: the credentials and team pass, and no value is ever printed', () => {
@@ -75,10 +96,10 @@ test('filled in: the credentials and team pass, and no value is ever printed', (
   };`);
   const { json, stdout } = doctor(root);
   for (const name of ['QA team', 'Jira email', 'Jira API token', 'BrowserStack Test Management username', 'BrowserStack Test Management API token']) {
-    assert.ok(!byName(json.blocking, name), `${name} should not be blocking`);
+    assert.ok(!byName(json.ask, name), `${name} should not be asked for`);
     assert.ok(json.ok.includes(name), `${name} should be ok`);
   }
-  assert.ok(byName(json.warnings, 'BrowserStack App Automate access key'), 'App Automate is a warning, not blocking');
+  assert.equal(byName(json.ask, 'BrowserStack App Automate access key').fix.when, 'mobile');
   assert.ok(!stdout.includes(FAKE_TOKEN), 'a credential value leaked into the report');
 });
 
@@ -97,20 +118,23 @@ test('App Automate keys in the Java framework\'s browserStackConfigs.properties 
   assert.ok(!r.stdout.includes(FAKE_TOKEN));
 });
 
-test('a team whose profile still has TODO values is a warning that lists the fields', () => {
+test('a team whose profile still has TODO values is asked for before the import, listing the fields', () => {
   const root = fakeRepo(`module.exports = { team: 'payment' };`);
   const { json } = doctor(root);
-  const team = byName(json.warnings, 'QA team');
-  assert.equal(team.fix.type, 'team-values');
+  const team = byName(json.ask, 'QA team');
+  assert.deepEqual([team.fix.type, team.fix.when], ['team-values', 'import']);
   assert.ok(team.fix.fields.includes('browserstack.project'));
 });
 
 test('session-start brief: always exits 0, tells Claude what to ask for, never prints values', () => {
   const missing = doctor(fakeRepo(null), '--session-start');
   assert.equal(missing.status, 0);
-  assert.match(missing.stdout, /blocking/);
+  assert.match(missing.stdout, /item\(s\) to add/);
+  assert.match(missing.stdout, /NEVER a reason to stop a run/);
   assert.match(missing.stdout, /jiraApiToken/);
+  assert.match(missing.stdout, /needed before a bug is filed/);
   assert.match(missing.stdout, /Readiness step/);
+  assert.match(missing.stdout, /FIRST RUN on this machine/);
 
   const filled = doctor(fakeRepo(`module.exports = { team: 'card-core', jiraEmail: 'a@b.co', jiraApiToken: '${FAKE_TOKEN}',
     bsTmUsername: 'a@b.co', bsTmApiToken: '${FAKE_TOKEN}', browserstackUsername: 'a', browserstackAccessKey: '${FAKE_TOKEN}' };`),
@@ -136,11 +160,12 @@ test('session brief names the team and its knowledge plan command', () => {
   assert.match(stdout, /domains: card, payment, marketing/);
 });
 
-test('an unknown domain or surface in the team profile is blocking (it would load the wrong knowledge)', () => {
+test('an unknown domain or surface in the team profile is asked for at the start (it would load the wrong knowledge)', () => {
   const root = fakeRepo(FILLED_CREDS('orders'));
   writeFileSync(path.join(root, 'teams', 'orders.json'), ORDERS({ domains: ['fintech'] }));
-  const t = byName(doctor(root).json.blocking, 'QA team');
-  assert.ok(t, 'expected a blocking QA team problem');
+  const t = byName(doctor(root).json.ask, 'QA team');
+  assert.ok(t, 'expected a QA team question');
+  assert.equal(t.fix.when, 'start');
   assert.match(t.detail, /unknown domain\(s\): fintech/);
   assert.equal(t.fix.type, 'team-values');
 });
@@ -156,7 +181,7 @@ test('a valid non-card team passes, and is not asked for the Card squad\'s frame
   const r = spawnSync(process.execPath, [path.join(root, 'scripts', 'doctor.mjs'), '--json'], { encoding: 'utf8', env, cwd: root });
   const json = JSON.parse(r.stdout);
   assert.ok(json.ok.includes('QA team'));
-  assert.ok(json.ok.includes('Framework config files'), JSON.stringify(json.warnings));
+  assert.ok(json.ok.includes('Framework config files'), JSON.stringify(json.ask));
 });
 
 test('a profile without a browserstack block does not crash the team check', () => {
@@ -164,17 +189,32 @@ test('a profile without a browserstack block does not crash the team check', () 
   const p = JSON.parse(ORDERS()); delete p.browserstack;
   writeFileSync(path.join(root, 'teams', 'orders.json'), JSON.stringify(p));
   const { json } = doctor(root);
-  const t = byName(json.blocking, 'QA team') || byName(json.warnings, 'QA team');
+  const t = byName(json.ask, 'QA team');
   assert.ok(!t || !/TypeError|Cannot read properties/.test(t.detail), t && t.detail);
 });
 
-test('a team with no team context is blocked until onboarding writes one; card-core\'s context passes', () => {
+test('a team with no team context is offered onboarding at the start, without blocking; card-core\'s context passes', () => {
   const root = fakeRepo(FILLED_CREDS('orders'));
   writeFileSync(path.join(root, 'teams', 'orders.json'), ORDERS());
-  const blocked = byName(doctor(root).json.blocking, 'Team context');
-  assert.ok(blocked, 'missing context must block');
-  assert.equal(blocked.fix.type, 'team-context');
-  assert.match(blocked.fix.run, /team-onboarding/);
+  const { status, json } = doctor(root);
+  assert.equal(status, 0);
+  const missing = byName(json.ask, 'Team context');
+  assert.ok(missing, 'missing context must be asked for');
+  assert.deepEqual([missing.fix.type, missing.fix.when], ['team-context', 'start']);
+  assert.match(missing.fix.run, /team-onboarding/);
   const card = doctor(fakeRepo(FILLED_CREDS('card-core'))).json;
-  assert.ok(card.ok.includes('Team context'), JSON.stringify([...card.blocking, ...card.warnings].map((r) => r.name)));
+  assert.ok(card.ok.includes('Team context'), JSON.stringify(card.ask.map((r) => r.name)));
+});
+
+test('setup is a one-time workflow: after setup.mjs --done the doctor stops asking for it', () => {
+  const root = fakeRepo(FILLED_CREDS('card-core'));
+  cpSync(path.join(repo, 'scripts', 'setup.mjs'), path.join(root, 'scripts', 'setup.mjs'));
+  const env = isolatedEnv(root, path.join(root, 'no-framework'));
+  const r = spawnSync(process.execPath, [path.join(root, 'scripts', 'setup.mjs'), '--done', '--deferred', 'Java QA framework'],
+    { encoding: 'utf8', env, cwd: root });
+  assert.equal(r.status, 0, r.stderr);
+  const { json, stdout } = { ...doctor(root), stdout: doctor(root, '--session-start').stdout };
+  assert.equal(json.firstRun, false);
+  assert.match(byName(json.ok.map((n) => ({ name: n })), 'First-run setup').name, /First-run setup/);
+  assert.doesNotMatch(stdout, /FIRST RUN/);
 });

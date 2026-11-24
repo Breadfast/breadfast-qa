@@ -41,7 +41,8 @@ Any squad (growth, shopping, logistics, …) does exactly this:
 3. Delete `jira.bug.mobile` if your team doesn't test mobile. **Keep `jira.bug.web` even for a backend-only
    team** — backend (`be`) bugs use the web squad/components.
 4. Commit the file so your teammates get it.
-5. **Onboard the team once** — the doctor blocks until `teams/<team-id>/context.md` exists. Run the
+5. **Onboard the team once** — until `teams/<team-id>/context.md` exists, Claude offers onboarding at the start of
+   every run (skippable; it never blocks). Run the
    `team-onboarding` skill (`qa-workflow/skills/team-onboarding/SKILL.md`): it learns the product, surfaces,
    environments, repos and docs, and writes a confidence-tagged context (`_template/context.md` shows the
    shape). Commit `teams/<team-id>/` too.

@@ -63,17 +63,23 @@ added before running the workflow — even when the team or the credentials are 
    ```
    node scripts/doctor.mjs --json
    ```
-   It returns `{ ready, blocking[], warnings[], ok[] }`; every problem carries a `fix` saying exactly what
-   to set or run. It never prints a credential value, and neither do you.
+   **`firstRun: true`** → this machine never ran setup: run the one-time
+   [`qa-setup`](../../../.claude/skills/qa-setup/SKILL.md) workflow first (it asks for everything once), then
+   continue here. It returns `{ ready, complete, firstRun, blocking[], ask[], warnings[], ok[] }`. Every `ask` item carries a `fix`
+   saying exactly what to set or run, and `fix.when` — the step that first needs it (`start`, `import`,
+   `bug-filing`, `mobile`, `automation`). `blocking` holds only what makes the scripts impossible to run
+   (old Node, no Git, an incomplete clone, the wrong folder open): tell the user the fix; nothing else stops
+   a run. It never prints a credential value, and neither do you.
 2. **Check the connections the story needs**, with one cheap call each: Atlassian (e.g. the current-user
    lookup) always; Figma (`whoami`) when the story has a design. If a server is missing or "requires
    authentication", that is a step **only the user can do**: tell them to run `/mcp`, pick the server and
    **Authenticate** in the browser, then continue.
-3. **Pick what this story needs.** Everything in `blocking` is needed. From `warnings`, take what the
-   story's surface needs: a mobile story needs the App Automate username + access key; automation needs
-   the Java framework path and its config files; web execution needs Playwright browsers. Ignore the rest.
-4. **Ask for all of it in ONE batch** (`AskUserQuestion` for choices, plain questions for values), handling
-   each `fix.type` like this:
+3. **Pick what this run will reach.** Every `ask` item whose `fix.when` this run reaches: `start` always;
+   `import` for shift-left / full; `bug-filing` for validate / full; `mobile` for a mobile story; `automation`
+   when automation is in scope. Under `/qa-setup`, take **all** of them.
+4. **Ask for all of it in ONE batch** (`AskUserQuestion` for choices, plain questions for values). **Every
+   question offers "skip for now"**, and says what waits if it is skipped (e.g. *"skip → the BrowserStack import
+   waits; analysis, HLS and test cases still run"*). Handle each `fix.type` like this:
 
    | `fix.type` | What to do |
    |---|---|
@@ -84,13 +90,25 @@ added before running the workflow — even when the team or the credentials are 
    | `command` | Ask once ("install now?"), then run `fix.run` (`npm install`, `npm run playwright:install`, the template copy) |
    | `path` | Ask for the folder (`fix.what`), or offer to clone `fix.clone`; set `QA_FRAMEWORK_PATH` |
    | `file` | The credentials file doesn't load — show the user the error line (never the file's contents) and fix it together |
-| `team-context` | The team has never been onboarded (`teams/<team>/context.md` missing). Run [`team-onboarding`](../team-onboarding/SKILL.md) **before reading the story** — it asks about the product, surfaces, repos and docs, and writes the team context. Blocking: a story is never analysed with no product context |
+   | `install` | Offer to run `fix.run` (Homebrew / winget). If the user would rather install it themselves, give them the command |
+   | `framework-files` | The framework's gitignored config files (`fix.files`) — ask the user to get them from the QA team vault and copy them into `fix.dir`; never ask for their contents in chat |
+| `team-context` | The team has never been onboarded (`teams/<team>/context.md` missing). Offer [`team-onboarding`](../team-onboarding/SKILL.md) **before reading the story** — it asks about the product, surfaces, repos and docs, and writes the team context. Skipped → record *"no team context: product knowledge = core + the team's domains"* in `prerequisites.md` and continue; offer it again next run |
 | `team-context-invalid` | The team context fails `qa-cli.js knowledge-lint` — fix each reported fact (tag/source) with the tester, then commit |
 | `team-context-stale` | Offer a refresh via `team-onboarding` (`qa-cli.js knowledge-status` shows what changed). If the operator declines, record it in `prerequisites.md` and continue |
 
-5. **Re-run `node scripts/doctor.mjs --json` until `ready` is `true`** and the story-relevant warnings are
-   cleared — or the user has explicitly said to go on without one *for this run* (record that in
-   `prerequisites.md`). Only then continue with the story-specific checks below.
+5. **Re-run `node scripts/doctor.mjs --json` once** to confirm what was added, then **continue** — whether or
+   not everything was supplied. **Nothing the tester has not set up yet blocks the run** (operator rule
+   2026-11-24: *"if the tester did not add any step the process should ask for it, and not block the setup or
+   the execution"*). Write every skipped item into `prerequisites.md` under **Deferred**, with its `fix.when`.
+6. **Ask again just in time.** Before each step, check the Deferred list: if an item it needs is still missing,
+   ask for that one item (re-run the doctor to confirm). Skipped again → that step alone is **deferred with the
+   operator's name** (`qa-cli.js defer <storyDir> <phase> --by "<operator>" --reason "<item> not provided"`) and
+   the run moves on to the next step that does not need it. Report it as *"waiting for <item>"*, never as
+   *"blocked"*. Examples: no BrowserStack token → the cases stay approved on disk and the import waits; no Jira
+   token → defects are written to `defects/defects.md` and filed later; no Java framework → manual execution
+   still runs and automation waits.
+7. **No team selected and the user skips the question** → read core knowledge only (no domain, no team
+   context), and ask again before the first step that needs team values (`import`, `bug-filing`).
 
 Never read `credentials.local.js` aloud, print it, or copy values out of it; check keys, not values.
 

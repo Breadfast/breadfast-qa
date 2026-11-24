@@ -17,11 +17,15 @@ description: >-
 > breadfast-workflow plugin). Workflow + skills live under `qa-workflow/`.
 
 ## What to do
-0. **Readiness first — before reading the ticket.** Run `node scripts/doctor.mjs --json`, check the
+0. **Readiness first — before reading the ticket.** If the doctor reports `firstRun: true`, run the one-time
+   [`qa-setup`](../qa-setup/SKILL.md) workflow first, then come back here. Run `node scripts/doctor.mjs --json`, check the
    Atlassian/Figma connections, and ask for everything missing (team, credentials, installs — for a mobile
    story also the App Automate keys; for automation the Java framework path) in ONE batch, exactly as in the
    *Readiness* section of [`detect-prerequisites`](../../../qa-workflow/skills/detect-prerequisites/SKILL.md).
-   Re-run the doctor until `ready` is `true`. Do not start the story on a half-configured machine.
+   Re-run the doctor only to confirm what was added. **Nothing the tester hasn't done yet stops the run**:
+   anything skipped is recorded in `prerequisites.md` with the step that needs it (`fix.when`), the run carries
+   on, and it is asked for again right before that step. Only a doctor `blocking` item (old Node, no Git,
+   wrong folder) stops it.
    **Team knowledge:** the brief names the selected team. Its product knowledge is ONLY what
    `node qa-workflow/bin/qa-cli.js knowledge` lists. Never read another team's domain (`qa-workflow/domains/<d>/`)
    or `teams/<other>/` folder. A story that needs one gets an operator-approved `qa-cli.js cross-domain` first.

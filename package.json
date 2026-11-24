@@ -11,6 +11,7 @@
     "test:team": "node --test \"automation/config/*.test.js\" \"automation/*.test.js\"",
     "test:machinery": "node --test \"qa-workflow/lib/**/*.test.js\"",
     "test:visual": "node --test \"qa-workflow/capabilities/visual/**/*.test.js\"",
+    "setup": "node scripts/setup.mjs",
     "doctor": "node scripts/doctor.mjs",
     "playwright:install": "npx playwright install chromium",
     "report": "npx playwright show-report",
