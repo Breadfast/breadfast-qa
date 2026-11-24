@@ -15,7 +15,7 @@ Locale: Arabic / English   Duration: [X min]   Device: iPhone 14 / iOS 18 (or Sa
 ## Observations
 | Time | Screen | Observation | Action |
 |------|--------|-------------|--------|
-| 0:00 | Pay home | Card widget loaded | Snapped |
+| 0:00 | <screen> | <what you saw> | Snapped |
 
 ## Issues Found
 [anomalies]
@@ -39,11 +39,10 @@ For **web** stories: if no URL is provided, ask for it. Explore navigation, exis
 | Field value not in XML | `label` shows placeholder; value in `value` attr | Don't re-enter; verify next screen |
 | Loading spinner persists | API in progress | Poll 8× @ 2000ms before timeout |
 | Passcode digits ignored | Custom numpad uses Arabic-Indic | Map ASCII→Arabic-Indic (both ranges) |
-| "فتح بريدفاست باي" appears | Passcode gate for sensitive flows | Expected — enter passcode |
+| A passcode gate appears mid-flow | Sensitive-flow gate | Expected — enter the passcode (your domain's heuristics name the gate) |
 | Login OTP partial entry | `tapDigitArabic` taps filled boxes on repeated digits | Use `typeDigitsW3C` |
 | AR registration not submitted | Looks for `إنشاء الحساب` | Actual label `إنشاء حساب` (no ال) |
-| "Got it" modal not found | RN custom view, no a11y attrs | Coordinate tap (195, 810) |
-| Activation OTP after passcode | Phone verify step | Last 4 digits of phone |
+| A modal button has no locator | RN custom view, no a11y attrs | Coordinate tap — the coordinates are product knowledge (your domain's mobile flows) |
 | **Count assertion off by 1–2** (lines, cards, rows) | Reader bounded by a container rect that doesn't bound its content | **Dump the on-screen strings + the oracle and diff them — do NOT adjust the boundary and re-run.** Count by matching authored values, not geometry. [mobile-native-framework.md](automation/mobile-native-framework.md) §2.1 |
 | Element "missing" after an expand/scroll | Bounds returned **inverted** or in content space once content grows | Scroll the control into view before asserting; distrust any rect whose bottom < top |
 | Container reports **zero children** | Compose flattens the tree — content is a *sibling*, not a descendant | Read by position or by value, never by tree descent |
@@ -52,17 +51,17 @@ For **web** stories: if no URL is provided, ask for it. Explore navigation, exis
 
 ## 3. Fragile Flows
 - Passcode entry on Arabic numpad — requires Unicode mapping; ASCII search always fails.
-- BCID field — find by class chain; prefer `setValue` over key tapping.
-- Card widget "ابدأ" — accessible element tiny (33×26); coordinate tap.
-- National ID field — unique constraint; coordinate fresh NIDs with the team.
-- Pickup locations close — unlabeled top-right; hardcode `(366, 75)`.
+- Long code fields — find by class chain; prefer `setValue` over key tapping.
+- Tiny accessible elements (≈33×26) — coordinate tap.
+- Unique-constraint inputs (IDs, phone numbers) — coordinate fresh values with the team.
+- Product-specific fragile flows: your domain's exploratory heuristics (`qa-cli.js knowledge`).
 
 ---
 
 ## 4. Timing
 - Tap-triggered navigation: `sleep(2000–3000ms)`.
 - Form submit: `sleep(4000–5000ms)` (slow tunnel).
-- BCID validation: poll up to ~16s.
+- Slow server-side validation steps: poll up to ~16s.
 - Session start: `sleep(8000–12000ms)`.
 
 ---
@@ -111,7 +110,5 @@ coverage. If the exploration *does* justify narrowing the plan, that is a **cove
 states and routes actually inspected. Authoritative rule: [`QA_PROCESS.md`](QA_PROCESS.md)
 *Coverage-changing decisions*.
 
-> **Motivating failure — B10-57764.** The design's *unchecked* disabled checkbox was correctly measured
-> as byte-identical to the enabled one, and the conclusion *"'dimmed' has no visual oracle"* was applied
-> to the **whole** control. The **checked** box differed plainly in the same frames. One cell decided a
-> matrix, and two defects lived in the cells nobody looked at (B10-59276, B10-59278).
+> *Motivating failure: one measured cell (an unchecked disabled checkbox) decided a whole state matrix,
+> and two defects lived in the cells nobody looked at — lesson `card/L-04` in the card domain's history.*

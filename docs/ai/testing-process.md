@@ -24,9 +24,9 @@ Standing rules:
 - Platform differences are expected and documented — not automatically bugs.
 - Treat test-environment seeded data ("merchantperk", "test", "LOGO ENGLISH LOGO") as test data, not bugs.
 - Production safety: only the test build `com.breadfast.testing`, never production credentials/endpoints.
-- **Verify persistence/traceability ACs on the destination, not the request.** Any AC with verbs like *recorded / logged / traceable / audited / persisted / reflected / reported* must be confirmed on the actual destination surface — the audit log, report screen, transaction history, or DB — **never** inferred from "the request sent the field and returned 200." Accepting input ≠ persisting/tracing it. (Card Portal destinations: Reports → Audit Trail `POST /web/user/action/getOrganizationActions`; Reports → Audit log `wallet-audit-log`; Reports → Transaction Details.) *Lesson from B10-55570 AC4 → B10-57179: an adjustment returned 200 with the card id on the request but was never written to the Audit Trail.*
+- **Verify persistence/traceability ACs on the destination, not the request.** Any AC with verbs like *recorded / logged / traceable / audited / persisted / reflected / reported* must be confirmed on the actual destination surface — the audit log, report screen, transaction history, or DB — **never** inferred from "the request sent the field and returned 200." Accepting input ≠ persisting/tracing it. Your domain names the product's destinations (audit trail, report screens, transaction history). *(Lesson `card/L-12`: a request returned 200 with the right id but was never written to the audit trail.)*
 - **Never turn an unverified item into a ✅.** If a surface or AC was not actually checked, mark it ⚠️ not-verified (or ⛔), never PASS.
-- **Ask for missing credentials/access up front; never silently skip a step.** Known needs: BrowserStack UI login (TM CSV import), Jira API token (attachments / REST), card-panel login.
+- **Ask for missing credentials/access up front; never silently skip a step.** Known needs: BrowserStack UI login (TM CSV import), Jira API token (attachments / REST), the product's admin-portal login.
 
 ### Scope expansion (2026 update)
 This work now spans the **full QA lifecycle**, including authoring and running automation (Playwright + Appium + API/DB). This supersedes the earlier "this is NOT automated/API testing" statement. Manual visual QA remains the core; automation is a first-class deliverable when the story warrants it. See [automation/reusable-components.md](automation/reusable-components.md) — always reuse existing framework assets before writing new ones.
@@ -41,7 +41,7 @@ This work now spans the **full QA lifecycle**, including authoring and running a
 4. Cross-language consistency — every EN flow mirrored in AR (RTL, Arabic-Indic numerals, labels, direction).
 5. Production safety.
 6. UX consistency — step indicators (1/3…), back/close, error messages, success screens match spec.
-7. Edge-case validation — wrong OTP, duplicate NID, mismatched passcode, invalid BCID.
+7. Edge-case validation — wrong OTP, duplicate NID, mismatched passcode, invalid codes.
 8. Error resilience — graceful Arabic error labels, retry flows.
 9. Mobile responsiveness — all interactive elements tappable/visible on target devices.
 
@@ -85,7 +85,7 @@ Custom keypads · horizontal carousels · bottom sheets/modals (state preserved 
 Check PRD/AC → Figma → compare to other language → ask PO before classifying as bug → document as "Needs Clarification".
 
 ### 3.7 Test-case step structure — CANONICAL PROJECT STANDARD (mandatory)
-All generated test cases — for every story, every platform, every team — MUST follow the structure of the **approved BrowserStack test cases** (format reference: the card squad's canonical export `test_cases_BCard Squad (1).csv`, folder `48895703`; reference sample TC-49835). Your team's approved set — the suite folder in `teams/<team>.json` — is the **source of truth** for your test-case generation. Rules:
+All generated test cases — for every story, every platform, every team — MUST follow the structure of the **approved BrowserStack test cases** (the canonical 24-column format in [browserstack-process.md](browserstack-process.md) §10, enforced by `qa-cli.js testcase-lint`). Your team's approved set — the suite folder in `teams/<team>.json` — is the **source of truth** for your test-case generation. Rules:
 
 1. **Granular user-action steps.** Decompose the journey into one user action per step, in order: **Login → Navigate → Search → Open Details → Edit/Open form → Action → Verify**. Example sequence: "Log in to the Admin Portal with valid agent credentials" → "Navigate to Card Users > Search Cards and search for a customer by mobile number" → "Click 'More Details' to open the customer details page" → "Click 'Edit' to open the Edit Customer Details form" → "<the specific action>" → "<the verification>".
 2. **Every step has its own Expected Result.** No step may be left without a paired expected result. (A case with N steps has N expected results.)
@@ -100,7 +100,7 @@ This standard is automatic for every future story — no additional instruction 
 The automated suite is a **1:1 mirror of the imported BrowserStack test cases**: one automated test per case, **named identically to the BrowserStack title** (verbatim, no `[TC_...]` prefix — the BrowserStack case id is the traceability key), and **each assertion checks that case's expected result** (so a failure means the feature deviates from the AC, and per-case status maps straight to a defect). In generated Java automation (the default since 2026-07-27 — [automation-generation.md](automation/automation-generation.md)) the title lives in `@Test(description = "…")` and the case id in `@TmsLink("TC-xxxx")`; in legacy Playwright it is the spec title. Consequences:
 - A test that covers a persistence/traceability AC must assert against the **destination** (§1), e.g. query the audit-trail API after posting — not just that the request returned 200.
 - For ACs that can't be exercised (no role account, surface not present), use an explicit **skip with a reason** so the status is visible — never a silent pass.
-- Generate a per-test-case report so every case shows PASS / FAIL / SKIP and its mapped defect (see [release-validation.md](release-validation.md) §2). *Pattern established on B10-55570: `B10-55570_browserstack_suite.spec.js` (28 cases) + `gen_suite_report.js`.*
+- Generate a per-test-case report so every case shows PASS / FAIL / SKIP and its mapped defect (see [release-validation.md](release-validation.md) §2). *(Pattern: one per-story suite spec + `gen_suite_report.js`.)*
 - **Maintain a test-case → script mapping table** in the story's automation `README.md`: BrowserStack Case ID + Title → test class#method (or spec file) → automated? (with a reason for any non-automatable case). This makes 1:1 coverage auditable. Format + rules: [coding-standards.md](automation/coding-standards.md) "Test-case → script traceability".
 
 ---
@@ -123,7 +123,7 @@ A test case is not complete without a Figma comparison result. Three non-negotia
 > then derive the key with `FigmaExporter.fileKeyFromUrl(storyFigmaUrl)`. The node IDs are per-story
 > too (from each frame's `node-id`). **The only thing reused across stories is the API token**
 > (`automation/config/figma.js` / `FIGMA_API_TOKEN`) — never hardcode a file key or node IDs in the
-> helper or config. (`tvvGnEaxVjJvMWOTl4zjZC` is just B10-56336's key, used as an example only.)
+> helper or config. (`tvvGnEaxVjJvMWOTl4zjZC` is an example key only.)
 
 **Step 0 — mandatory session check (before opening the browser):** run
 `node qa-workflow/bin/figma-connect.js --status`. It reads the saved session `auth/figma-auth.json`
@@ -190,7 +190,7 @@ The authenticated channel has two variants, both implemented by that script:
   copies text), then in `page.evaluate` read `navigator.clipboard.read()` for `image/png` and save it
   via a blob-URL `<a download>`. Renders the node at **2× natively, no editor chrome** — genuine
   export quality, one clean file per screen. Image-heavy frame? wait ~10 s after load so lazy images
-  fill, else the mockups export **black**. (Proven end-to-end on B10-57393.)
+  fill, else the mockups export **black**. (Proven end-to-end on a real story.)
 - **Batch (`Ctrl+Shift+E → ZIP`) — the BULK VARIANT for large multi-frame sections** (dozens of
   frames at once, where one-at-a-time Copy-as-PNG is impractical). Navigate with the container frame
   pre-selected (via `?node-id=<frame>`), press `Ctrl+Shift+E`, verify "N of N selected", click
@@ -221,7 +221,7 @@ the full set (via screenshot) before exporting**, trying tactics in order until 
    context INSIDE it, then `Ctrl+A` to grab all its child frames.
 3. **Marquee** — `Shift+1` (zoom to fit), `Escape`, then rubber-band drag across the whole canvas
    from an empty-canvas corner (never start the drag on a frame — that moves it).
-Verified on B10-56729 (2026-07-13): tactic 2/3 exported the exact same **68 frames** as the
+Verified on a real story (2026-07-13): tactic 2/3 exported the exact same **68 frames** as the
 designer's manual export; naive "select the section node only" gave 1–11. Drive this select-all +
 count-verification loop via the Playwright MCP — screenshot to confirm the live selection count is
 the full set before exporting. *(Historically the now-deferred qa-platform worker automated this;
@@ -311,7 +311,7 @@ No frame found → log `[FIGMA] No frame for: <screen>` and mark `NO FIGMA REF`.
 ### 4.4 Decision tree
 No frame → `NO FIGMA REF` (functional only). Frame exists → content mismatch → `FIGMA MISMATCH` (bug, block PASS). Content OK → style mismatch → content-impacting? yes → bug; no → `STYLE NOTE`. Style OK → `MATCHES FIGMA` → visual PASS.
 
-Reference flow frames: [figma_full_flow_reference.md](../../figma_full_flow_reference.md).
+Reference flow frames: take them from the story's Figma (the old `figma_full_flow_reference.md` was never committed to this repo).
 
 ### 4.5 Figma fetch order & fallbacks (MANDATORY — never stop QA on a failure)
 Capture in this order; each step is a fallback for the one above. **Do not stop the QA process.**
@@ -341,14 +341,14 @@ Capture in this order; each step is a fallback for the one above. **Do not stop 
 5. If design access is truly impossible, record `NO FIGMA REF` and proceed on functional results —
    only after exhausting steps 1–3.
 
-*History: B10-56336 (2026-06-24) — MCP `get_screenshot` hit quota; REST API promoted to primary.
-B10-Card-Balance (2026-06-29) — REST API rate-limited (77h); Playwright MCP `Ctrl+Shift+E` batch
+*History: 2026-06-24 — MCP `get_screenshot` hit quota; REST API promoted to primary.
+2026-06-29 — REST API rate-limited (77h); Playwright MCP `Ctrl+Shift+E` batch
 export (ZIP) produced 37 named individual screens at 750×1624 px, decisively better than container
-frames, and became the documented primary. **B10-57393 (2026-07-26) — account confirmed Starter plan
+frames, and became the documented primary. **2026-07-26 — account confirmed Starter plan
 (REST PAT `429` monthly quota + MCP View-seat cap); the authenticated browser-session `Ctrl+Shift+C`
 Copy-as-PNG delivered export-grade 2× frames when both REST and MCP were down. Per user decision, the
 authenticated browser session is now the documented PRIMARY (Copy-as-PNG default; `Ctrl+Shift+E` ZIP
-for bulk); REST and MCP are fallbacks.** B10-59294 (2026-09-08) — the session gate was proved to be
+for bulk); REST and MCP are fallbacks.** 2026-09-08 — the session gate was proved to be
 guessing: it reported `FRESH` off `savedAt` arithmetic while Figma had already invalidated the jar, and
 nothing ever wrote the session back, so the tester re-logged-in every run. `--status` now probes, and
 a successful capture re-saves the jar (§4.1).
@@ -376,51 +376,27 @@ Quality gates and sign-off live in [release-validation.md](release-validation.md
 ## 7. Test Data Management (mandatory) — DYNAMIC PROVISIONING
 
 **Standard (2026-06-22): create test data per-run via API, delete it from the DB after.** No static
-sheet. This ports the canonical Java framework's idea (`cardService/adminPanel/CardAdminPanelTests`
-+ `TestExecutionHelper.registerUsingApi` + `CardServiceApiClient`) into the Playwright/JS layer.
+sheet. This ports the canonical Java framework's idea (register through the API in the test setup, clean
+up after) into the Playwright/JS layer.
 
-Shared helper `automation/helpers/CardUserFactory.js`:
-- `await factory.provision()` → registers a brand-new card user up to status **Registered** and returns
-  `{ phone, searchMobile, breadfastId, nationalId, email, firstName, lastName, localPhone }`.
-  Flow: `send-otp` → read OTP from `breadfast_testing.bf_phone_otp_verification` (DB) → `verify-otp`
-  → `register` (breadfast_id) → card-service scheme token → **invitation gate** (generate → export → consume;
-  testing is invite-only, else createCardUser 400s "Access is by invitation only") → `createCardUser`
-  (Pending; **Arabic** names required) → `createPin` (Registered).
-  Two DB connections are used: **OTP read** on the breadfast host (PropertiesReader → `config_testing.properties`),
-  **teardown** on the live card host configured in `CardConfig.cardDb` (the Java config's card DB host is stale;
-  env-overridable via `BF_CARD_SSH_*`/`BF_CARD_DB_*`). `DbHelper` supports password SSH + an explicit config object.
-  Verify teardown with `factory.existsViaApi(searchMobile)` (authoritative — uses the allWallets API, not the DB).
-  A freshly provisioned user is Registered with **no KYC details** — ideal for gate/edit tests.
-- `await factory.destroy(phone)` → deletes the user from `cards_hades_testing` (actions_logger,
-  wallet_user_sessions, cards, external_user_balances, wallet_users by `mobile_number`). Idempotent.
-- `CardUserFactory.randomPackageNumber()` → random 6-digit collect package (retry on the rare
-  `/received` 400 "already assigned" collision).
-- `searchMobile` (= phone without the `+2` prefix, e.g. `011…`) is what the admin-panel search box expects.
-
-Supporting helpers: `EncryptionHelper.js` (RSA-OAEP-SHA256 for the encrypted card endpoints, reads the
-Java `cardServiceEncryptionPublicKey.pub`), `CardConfig.js` (URLs/scheme creds/passcode/NID-expiry read
-live from the Java `.properties` — **no secrets duplicated** into this repo), `DbHelper.js` (MySQL over SSH).
+**The provisioning helpers are product knowledge**: each team's domain names its own (which entities, which
+APIs, which tables to clean), and a session reaches them through its knowledge plan
+(`node qa-workflow/bin/qa-cli.js knowledge`). The card domain's `test-data.md` is the reference
+implementation of this standard.
 
 Spec pattern:
-- **Non-destructive suites** (edit/validation, gate checks): `beforeAll` → `provision()` once; `afterAll` → `destroy()`.
-- **Destructive flow** (full collection → Received, PDF reprint): provision a dedicated user inside the
-  test, run, and `destroy()` in `finally` (so a failure still cleans up).
+- **Non-destructive suites** (edit/validation, gate checks): `beforeAll` → provision once; `afterAll` → destroy.
+- **Destructive flow** (a full lifecycle run): provision a dedicated record inside the test, run, and destroy it
+  in `finally` (so a failure still cleans up).
 
 Rules:
 - **Never hard-code phone/package/customer values, and never depend on pre-existing records.** Provision fresh.
 - **Always tear down** what you provisioned (DB delete) — leave the env clean. Use `finally` for destructive flows.
-- Reaching **Received** for the current build uses the UI (`EditCustomerPage.fillAllValid` + `CollectDialogPage`)
-  because the legacy Java `editCustomerDetails` API predates B10-56336's new KYC fields and won't satisfy the
-  new completeness gate.
-
-> **DEPRECATED:** the static `D:/BreadfastQA/test_data_inventory.csv` + `TestDataInventory.js`
-> (Available/Consumed/Reserved ledger) are superseded by the above and no longer used by the KYC specs.
-> Kept temporarily for reference; remove once dynamic provisioning is verified against a healthy env.
-> If a flow genuinely cannot be provisioned via API, fall back to requesting data from the user — never invent it.
+- If a flow genuinely cannot be provisioned via API, fall back to requesting data from the user — never invent it.
 
 ---
 
-## Transient & lazily-rendered state — verification rules (added 2026-07-26, B10-56750)
+## Transient & lazily-rendered state — verification rules (added 2026-07-26)
 
 Visual comparison assumes the captured "actual" shows what the user sees. Four states break that
 assumption, and each produced a **false finding** before being caught:

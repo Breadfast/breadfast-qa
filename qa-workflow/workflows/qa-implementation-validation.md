@@ -13,7 +13,7 @@ inputs: { ticket: required, appUrl: optional, mobileAppIds: optional }
 [`../../docs/ai/QA_PROCESS.md`](../../docs/ai/QA_PROCESS.md) Phases 4–6.
 **Reuse contract + freshness:** [`../../docs/ai/architecture/qa-artifact-contract.md`](../../docs/ai/architecture/qa-artifact-contract.md) §5.
 **Discipline:** once scope is locked (Reconcile), execution runs **end-to-end without stopping** except
-for a genuine blocker (unknown OTP/BCID, required backend status change, content not found) — or a
+for a genuine blocker (an unknown OTP or identifier, required backend status change, content not found) — or a
 **re-approval** of test cases this workflow changed (Step 3).
 
 > **Scope change 2026-08-09 — this workflow no longer generates the test suite.** Test cases, their
@@ -35,7 +35,7 @@ Enumerate every input this run needs (access, destinations, targets, test data, 
 locale scope), verify each access item with **one real authenticated call**, and **ask the operator in a
 single batch** for whatever is missing. Write `prerequisites.md` into the story folder.
 
-**Never report a step as blocked without having asked first.** Added 2026-07-26 because B10-56750
+**Never report a step as blocked without having asked first.** Added 2026-07-26 because a run (lesson `card/L-01`)
 shipped two avoidable "blocked" outcomes (a BrowserStack upload that was actually a wrong-API-version
 bug on our side, and an AC that only needed test data seeding) — both discoverable in minute one.
 A `401`/`404` from a destination is as likely to be our wrong URL/version/path as a permissions problem:
@@ -99,7 +99,7 @@ diagnose before escalating.
    excluded from automation is not excluded from testing.
    - **No artifact is recorded at this step, and no gate is bypassed.** `PHASE_DEPS = { execution: 'automation' }`
      still holds: the manual results are written to disk now, automation follows, and the automated results are
-     appended before `execution` is recorded. That gate exists because on **B10-56717** the phases were
+     appended before `execution` is recorded. That gate exists because once (lesson `card/L-02`) the phases were
      reordered and automation fell off the end of the run; manual-first must not reopen that hole.
    - Findings route to phase 2 (a coverage change → loop back through the gate) or phase 9 (a grounded defect).
 6. **`automation-gen`** → `automation` — plan gate (written reuse ladder) → reuse framework assets;
@@ -120,7 +120,7 @@ before it is encoded; `automation-gen` (6) precedes **automated** execution (7) 
 drive the runs; and recording `execution` is **blocked** while `automation` is missing or `partial`
 (`PHASE_DEPS` in `qa-cli.js`). Manual-first therefore changes the **order of work**, not the order of
 **recorded artifacts** — the manual results land in `execution-reports/manual-execution.md` at step 5 and are
-folded into the `execution` artifact at step 7. On **B10-56717** the phases were reordered, automation landed
+folded into the `execution` artifact at step 7. Once (lesson `card/L-02`) the phases were reordered, automation landed
 last, and it was never generated at all — no test class, no page objects, no story branch — while every other
 artifact reported `complete`. That is the hole the gate closes, and manual-first must not reopen it: **if the
 manual pass ends the run, `automation` is owed and needs a recorded operator deferral, not silence.**

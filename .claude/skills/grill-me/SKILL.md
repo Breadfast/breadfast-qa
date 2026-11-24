@@ -38,7 +38,7 @@ Interrogate every one of these dimensions (skip a group only if truly N/A, and s
 7. **Permissions & roles** — who can do what; unauthorized/forbidden behavior.
 8. **Dependencies** — upstream/downstream services, feature flags, backend status prerequisites.
 9. **Data requirements** — test accounts, package/card/phone/OTP state that must exist first;
-    anything the system can't derive (unknown OTP/BCID, required backend status change).
+    anything the system can't derive (an unknown OTP or identifier, required backend status change).
 10. **Localization** — en-US + ar-EG copy, RTL layout, number/currency/date formatting.
 11. **Platform scope** — iOS + Android, both locales (default all four) unless narrowed.
 12. **Error handling & empty states** — network loss, server error, no-results, loading.

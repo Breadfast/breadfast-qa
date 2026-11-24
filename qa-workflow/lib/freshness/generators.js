@@ -103,7 +103,11 @@ function loadDomains(domainsDir, repoRoot) {
     const version = readVersion(fm);
     if (!version) continue;
     const rec = { version, checksum: sha256(text) };
-    const sources = readSources(fm);
+    // The registry (qa-workflow/registry/knowledge.json) is the source of truth for a domain's files;
+    // the SKILL.md `sources:` list is the fallback for a domain the registry doesn't list.
+    const id = readName(fm) || e.name;
+    const fromRegistry = registryFiles(id);
+    const sources = fromRegistry.length ? fromRegistry : readSources(fm);
     if (sources.length && repoRoot) {
       const hashes = sources.map((s) => fileChecksum(path.join(repoRoot, s))).filter(Boolean).sort();
       if (hashes.length) rec.sourcesHash = hashes.length === 1 ? hashes[0] : sha256(hashes.join(''));
@@ -111,6 +115,15 @@ function loadDomains(domainsDir, repoRoot) {
     out[readName(fm) || e.name] = rec;
   }
   return out;
+}
+
+/** A domain's file paths from the knowledge registry (env QA_KNOWLEDGE_REGISTRY overrides the path). */
+function registryFiles(id) {
+  const file = process.env.QA_KNOWLEDGE_REGISTRY || path.join(__dirname, '..', '..', 'registry', 'knowledge.json');
+  try {
+    const d = (JSON.parse(fs.readFileSync(file, 'utf8')).domains || {})[id];
+    return d ? (d.files || []).map((f) => (typeof f === 'string' ? f : f.path)) : [];
+  } catch { return []; }
 }
 
 /** `metadata.sources: [a, b]` on a domain knowledge skill. */

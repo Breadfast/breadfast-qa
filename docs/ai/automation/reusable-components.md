@@ -24,8 +24,8 @@
 | **Pickup locations + temporary closures via API** | `CardServiceApiClient.listLocations / getLocationByName / getLocationClosures / locationIsOpenNow / getLocationClosedUntil / getWorkingHoursSlotSummaries / getLocationFieldSnapshot / createAlwaysOpenPickupLocation / createPartialHoursPickupLocation / clearLocationClosures / updateLocationClosures / activeOneTimeClosure` — `locations/list` is the **app-facing read model**: it carries `temporary_closures[]`, `open_now` and `temporarily_closed_until`, and there is no separate closure endpoint (B10-58669) | `helpers/apiClients/mobileApiClients/CardServiceApiClient.java` |
 | **Bug-repro video recording** | pattern in standalone runner | [record_bug_b10_56609.js](../../../automation/legacy/record_bug_b10_56609.js) |
 | **Ad-hoc API perk seeding** (node, no test runner) | pattern in standalone runner | [create_perks_api.js](../../../automation/legacy/create_perks_api.js) |
-| **Mobile WebDriver actions** (BrowserStack) | `bsReq, getSource, findElement(s), clickEl, typeText, tap, getAttr, screenshot, sleep` | [bs_helper.js](bs_helper.js) |
-| **Mobile session caps / OTP / lang matrix** | process doc | [docs/ai/browserstack-process.md](../browserstack-process.md), [CLAUDE.md](CLAUDE.md) |
+| **Mobile WebDriver actions** (BrowserStack) | `bsReq, getSource, findElement(s), clickEl, typeText, tap, getAttr, screenshot, sleep` | [bs_helper.js](../../../bs_helper.js) |
+| **Mobile session caps / OTP / lang matrix** | process doc | [docs/ai/browserstack-process.md](../browserstack-process.md), [CLAUDE.md](../../../CLAUDE.md) |
 
 ## Java framework (`D:\projects`) — primary/native automation
 

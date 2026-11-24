@@ -1,0 +1,103 @@
+{
+  "_doc": {
+    "what": "The machine-readable index of QA knowledge. `qa-cli.js knowledge` turns a team profile (teams/<team>.json → domains + surfaces) into the list of files a session may read. Replaces the never-parsed domains.yaml.",
+    "core": "Always loaded, for every team: methodology, gates, org-wide standards (BrowserStack, Java framework, B10 bug schema) and org-wide app facts. Must match NO domain marker (scripts/knowledge-isolation.test.mjs).",
+    "catalogs": "Always loaded: catalogs of the shared, org-mandatory Java framework (its real classes, page objects, API clients, conventions). They may NAME product classes because the framework contains them, but carry no test accounts, OTPs, passcodes or coordinates (sensitiveMarkers).",
+    "surfacePacks": "Loaded for the story's surfaces (web | mobile | backend), limited to the team's surfaces.",
+    "domains": "Business/product knowledge. Loaded only when the domain is in the team's `domains`, or an operator approved a cross-domain read for the story (qa-cli.js cross-domain). `owner` is the team that maintains it. A file with `surfaces` loads only for stories on those surfaces. JS regex sources (a leading `(?i)` = case-insensitive) identify the domain's content in two strengths: `markers` are identifiers ONLY this domain's knowledge uses (internal names, codes, tables) — no core file and no other team's context may contain them, except where a context names a dependency under 'Integrations & dependencies'; `terms` are product vocabulary other squads may legitimately use too ('cashback', 'Breadfast Pay', ticket numbers) — kept out of core files only. Create a domain with `qa-cli.js domain-init`.",
+    "sensitiveMarkers": "Test-account phone numbers, the shared passcode and coordinate taps: forbidden in core AND catalogs; they live only in a domain.",
+    "teamContext": "teams/<team>/context.md (team-onboarding output) is added to the plan of its own team only."
+  },
+  "schemaVersion": 1,
+  "core": [
+    "docs/ai/QA_PROCESS.md",
+    "docs/ai/testing-process.md",
+    "docs/ai/browserstack-process.md",
+    "docs/ai/bug-reporting.md",
+    "docs/ai/release-validation.md",
+    "docs/ai/regression-strategy.md",
+    "docs/ai/exploratory-testing.md",
+    "docs/ai/execution-engine.md",
+    "docs/ai/figma-exporter-instructions.md",
+    "docs/ai/architecture/qa-artifact-contract.md",
+    "docs/ai/visual-testing/CLAUDE_CODE_OPERATOR.md",
+    "docs/ai/business/breadfast-overview.md",
+    "docs/ai/business/user-roles.md",
+    "docs/ai/modules/customer-app.md",
+    "docs/ai/modules/control-room.md",
+    "docs/ai/modules/chatbot.md"
+  ],
+  "catalogs": [
+    "docs/ai/automation/automation-generation.md",
+    "docs/ai/automation/java-framework.md",
+    "docs/ai/automation/coding-standards.md",
+    "docs/ai/automation/reusable-components.md",
+    "docs/ai/automation/page-objects.md",
+    "docs/ai/automation/helpers.md",
+    "docs/ai/automation/fixtures.md"
+  ],
+  "surfacePacks": {
+    "mobile": ["docs/ai/automation/mobile-native-framework.md", "docs/ai/automation/appium-framework.md"],
+    "web": ["docs/ai/automation/playwright-framework.md"],
+    "backend": ["docs/ai/automation/api-clients.md"]
+  },
+  "domains": {
+    "card": {
+      "owner": "card-core",
+      "description": "BCard: application, activation, card settings, card panel, card services, subscriptions, KYC/pickup",
+      "files": [
+        { "path": "qa-workflow/domains/card/business-rules.md" },
+        { "path": "qa-workflow/domains/card/card-service.md" },
+        { "path": "qa-workflow/domains/card/test-data.md" },
+        { "path": "qa-workflow/domains/card/mobile-flows.md", "surfaces": ["mobile"] },
+        { "path": "qa-workflow/domains/card/card-panel.md", "surfaces": ["web"] },
+        { "path": "qa-workflow/domains/card/regression-playbooks.md" },
+        { "path": "qa-workflow/domains/card/exploratory-heuristics.md" },
+        { "path": "qa-workflow/domains/card/history.md" }
+      ],
+      "screens": "docs/ai/screens",
+      "markers": ["\\bB[Cc]ard\\b", "\\bBCID\\b", "Card Core|Card Ops", "(?i)card squad", "cards_hades", "wallet_user"],
+      "terms": [
+        "(?i)card[ -]panel",
+        "(?i)card (application|activation)",
+        "\\bKYC\\b",
+        "(?i)pickup location",
+        "\\bMDP\\b",
+        "(?i)cashback",
+        "MID[- ]exclusion",
+        "\\bB10-[0-9]{5}\\b",
+        "Breadfast Card",
+        "\\b48895703\\b",
+        "\\bPR-5\\b"
+      ]
+    },
+    "payment": {
+      "owner": "card-core",
+      "description": "Breadfast Pay: wallet, Pay home, funding, transactions, dual-authentication; shared Pay/card test accounts",
+      "files": [
+        { "path": "qa-workflow/domains/payment/business-rules.md" },
+        { "path": "qa-workflow/domains/payment/test-accounts.md" },
+        { "path": "qa-workflow/domains/payment/mobile-flows.md", "surfaces": ["mobile"] }
+      ],
+      "markers": [],
+      "terms": [
+        "Breadfast Pay",
+        "(?i)\\bPay home\\b",
+        "(?i)dual[- ]auth",
+        "\\bGet started\\b",
+        "Wallet Balance",
+        "فتح بريدفاست باي"
+      ]
+    },
+    "marketing": {
+      "owner": "card-core",
+      "description": "Perks marketing: perk catalogue, sections, featured perks, mobile display, copy/localization",
+      "files": [
+        { "path": "qa-workflow/domains/marketing/perks.md" }
+      ],
+      "markers": [],
+      "terms": ["(?i)\\bperks?\\b"]
+    }
+  },
+  "sensitiveMarkers": ["\\b01[0-2][0-9]{8}\\b", "\\b123321\\b", "\\(195, ?[0-9]+\\)"]
+}

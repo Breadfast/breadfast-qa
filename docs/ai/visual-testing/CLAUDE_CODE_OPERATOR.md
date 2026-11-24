@@ -67,7 +67,7 @@ Visual testing is **design-conformance only**: the Figma baseline is the source 
 rules do **not** enter the comparison. A phase that compares against a baseline depends on the baseline,
 not on the rules that produced it. Business knowledge flows *upstream* into the baseline:
 - **Requirements / Figma Analysis / Test Design** decide *what* is correct and *which* Figma frame is
-  expected for a given state (e.g. conditional sections per perk type).
+  expected for a given state (e.g. conditional sections per item type).
 - **Execution + screen identity** tag each screenshot with its `screenId` + state, so it pairs to the
   right expected frame.
 - Visual testing then compares the **paired** Expected↔Actual using only the comparison rules
@@ -136,7 +136,7 @@ Aligned to `QA_PROCESS.md` §5.5. Every confirmed deviation records:
 
 ### 7.2 Copy severity sub-class (L5) — *documented rule*
 A **pure casing / whitespace / punctuation-spacing** difference is **minor**:
-- `Card Perks` vs `Card perks`
+- `Order History` vs `Order history`
 - `ID*` vs `ID *` (asterisk spacing)
 - `Insert Arabic Text Here` vs `Insert Arabic text here`
 
@@ -168,11 +168,11 @@ Two things follow, and neither is optional:
 - If the surviving question is closed anyway, that is a **coverage-changing decision** — record and
   ratify it (`qa-cli.js coverage-change add …`, [`QA_PROCESS.md`](../QA_PROCESS.md) Principles).
 
-> **Why this exists — B10-57764 V-01.** The claim *"the disabled checkbox is `#AA0082` magenta"* was
+> **Why this exists — lesson `card/L-04` (finding V-01).** The claim *"the disabled checkbox is `#AA0082` magenta"* was
 > false; the build paints `#B0B0B0`. It was rejected on checks 3/4, with a stated CSS-cascade mechanism
 > that was also wrong. Its substance — *this is not the `#F3F4F5`/`#D8D8D8` dimmed state the design
 > specifies* — was never re-tested, and the rejection read to every later phase as settled. Four days
-> later it was filed as **B10-59276**.
+> later it was filed as a defect.
 
 ---
 

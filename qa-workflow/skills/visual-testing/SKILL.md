@@ -88,7 +88,7 @@ comparison rules (dynamic-content exclusion taxonomy + tolerances, per the opera
 
    It exits 1 on a frame that is neither compared nor excluded, on an exclusion with no reason, and on
    an `engine:` claim the engine result does not contain. `complete-check` runs it too. **A frame you
-   chose not to compare is a decision that has to be written down** — on B10-58669, six of twelve
+   chose not to compare is a decision that has to be written down** — once, six of twelve (lesson `card/L-14`)
    frames were silently left out and three real defects lived in them.
 6. Write `evidence/visual-findings.md` (+ evidence files).
 

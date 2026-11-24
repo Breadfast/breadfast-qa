@@ -18,9 +18,9 @@ metadata:
 
 # framework-conformance (gate skill)
 
-> **Why this exists.** On **B10-57393** the generated suite compiled clean, checkstyle passed and the
+> **Why this exists** (lesson `card/L-17`). The generated suite compiled clean, checkstyle passed and the
 > tests ran — and the operator still had to reject three things: private helper methods in the test
-> class, a `PerkFormData` fluent builder (the only one in the whole 663-file framework), and a new
+> class, a fluent form-data builder (the only one in the whole 663-file framework), and a new
 > model type under `modals/`. **No build gate can catch any of those.** `mvn test-compile` proves the
 > code is valid Java; it says nothing about whether it looks like code the framework's engineers
 > wrote. That is this gate's only job. (Recorded in memory `java-framework-style`.)
@@ -64,7 +64,7 @@ discipline as the Defect Grounding Gate ([bug-reporting.md](../../../docs/ai/bug
 2. **The precedent** — the **nearest HUMAN-AUTHORED framework file, opened and read in this pass**,
    that establishes the convention, cited as `path:line`, **with the authorship check recorded**
    (`git log --format='%an' -- <path> | sort -u`). Recalling a convention is not establishing it, and
-   a *generated* sibling is not a precedent — on B10-58603 this gate passed a class by comparing it
+   a *generated* sibling is not a precedent — once this gate passed a class (lesson `card/L-16`) by comparing it
    against three generated siblings in its own package (contract §4.2). A claim of the form *"the
    framework never does X"* requires the **grep that proves it**, with the command recorded verbatim.
 3. **The offence** — the generated `file:line`.
@@ -125,8 +125,8 @@ ACs never raised.
       re-packaging existing steps — search for the existing one first (`login`, `register`,
       `scrollUntilACertainElementIsFound`, `swipeElementInDirection`, …). Prefer an existing active test
       account over creating a user when the scenario needs pre-existing state.
-      (operator correction on B10-56652, memory `reuse-existing-flows` — an
-      `openPayHomeForActiveCardHolder(...)` execution helper was rejected)
+      (operator correction, lesson `card/L-19` — an execution helper that wrapped an
+      existing flow was rejected)
 
 ### C. Locators
 - [ ] Every locator was **verified against the running app**, not inferred (§9.3).
@@ -137,7 +137,7 @@ ACs never raised.
 - [ ] **Match count checked** for each locator; a >1 match is either fixed or the index is pinned with
       a stated reason.
 - [ ] Class matched as a **whole token** — `contains(concat(' ', @class, ' '), ' close-icon ')`, not
-      `contains(@class,'close')`. A loose `contains()` produced a **false PASS** on B10-56750 (§9.3).
+      `contains(@class,'close')`. A loose `contains()` produced a **false PASS** once (lesson `card/L-18`, §9.3).
 - [ ] Angular Material labels use `contains(normalize-space(.), 'Label')` — **not** `=`. Material
       prefixes labels with U+00A0, which `normalize-space()` does not strip (§9.10).
 

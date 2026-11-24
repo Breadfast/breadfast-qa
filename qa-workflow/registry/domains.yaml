@@ -1,3 +1,6 @@
+# SUPERSEDED (2026-11-24) for domains: the machine-read index is qa-workflow/registry/knowledge.json
+# (domains, owners, files, markers; resolved per team by `qa-cli.js knowledge`). The `domains:` block below is
+# kept for one release as a record only. The workflows/skills lists are still informative.
 # QA domains & index registry (seed).
 # Migrates into breadfast-workflow/registry/domains.yaml.
 # Domain rules are NOT split per-domain in docs/ai/business yet (overview/rules/products/roles);
@@ -53,4 +56,7 @@ skills:
   - { id: automation-gen,      runsAs: subagent, workflow: qa-implementation-validation }
   - { id: framework-conformance, runsAs: subagent, workflow: qa-implementation-validation }
   - { id: defect-reporting,    runsAs: inline,   workflow: qa-implementation-validation }
+  # team-scoped knowledge (2026-11-24)
+  - { id: team-onboarding,     runsAs: inline,   workflow: [qa-shift-left, qa-implementation-validation] }
+  - { id: repo-discovery,      runsAs: subagent, workflow: [qa-shift-left, qa-implementation-validation] }
   # clarification is the existing grill-me skill (inline, interactive) — not re-authored here

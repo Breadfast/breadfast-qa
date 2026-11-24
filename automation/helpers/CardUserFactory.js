@@ -439,15 +439,24 @@ class CardUserFactory {
    * @param {string} phone  e.g. "+2011XXXXXXXX"
    */
   async loginViaOtp(phone, breadfastId, deviceId = '1') {
-    const otp = phone.slice(-4);
+    let otp = phone.slice(-4);
     // 1) passcode login. If the device is already trusted it returns {message:login_success, token}.
     //    If it's a new device it returns {otpRequired:true} + sends an OTP (a fresh verification row).
     if (breadfastId) {
+      const sentAt = Date.now() - 5000;   // small allowance for clock skew vs Google Chat createTime
       const trig = encryptData(JSON.stringify({ breadfast_id: breadfastId, mpin: cfg.passcode, scheme_id: 1, device_info: { device_id: deviceId } }), cfg.pubKeyPath);
       const tr = await postJson(cfg.cardServicesBaseURL + LOGIN_PASSCODE, { data: trig }, {});
       if (tr.json?.token) return tr.json.token;   // device trusted -> token directly
+      // Since 2026-11-23 the card-service sends a RANDOM code to the Google Chat #testing-otp space
+      // ("Message for +20… is Your verification code is NNNN") instead of accepting the last 4 digits.
+      // A wrong code makes it issue a new one, so read Chat FIRST; last-4 is only the fallback.
+      if (tr.json?.otpRequired) {
+        const { fetchOtp } = require('../mobile/otp_google_chat');
+        const hit = await fetchOtp(phone, { timeoutMs: 45000, notBefore: sentAt }).catch(() => null);
+        if (hit?.otp) otp = hit.otp;
+      }
     }
-    // 2) otpRequired path: exchange the deterministic OTP (last 4 of phone) for the user token
+    // 2) otpRequired path: exchange the OTP for the user token
     //    (encrypted body, card-panel host). Must run while the verification row is fresh.
     const data = encryptData(JSON.stringify({ mobile_number: phone, scheme_id: 1, otp, device_info: { device_id: deviceId } }), cfg.pubKeyPath);
     const r = await postJson(cfg.cardServicesBaseURL + '/api/v1/mobile/wallet_users/login/otp', { data }, {});

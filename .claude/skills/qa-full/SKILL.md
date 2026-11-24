@@ -4,11 +4,11 @@ description: >-
   Full QA lifecycle (Workflow 3) — the original end-to-end QA process in one run: Pre-Development
   baseline (requirements, figma-analysis, clarifications, impact, HLS → published to Jira, test cases,
   the test-case review/approval gate, BrowserStack import) followed by Post-Development validation
-  (test-case reconciliation, automation, execution across 4 combos, visual testing, defects, QA summary).
+  (test-case reconciliation, automation, execution across the story's platform × locale combos, visual testing, defects, QA summary).
   Use when a delivered story has NO shift-left baseline, or when the user wants the whole process
   start-to-finish in a single pass. If a baseline already exists prefer qa-validate; if implementation has
   not landed yet prefer qa-shift-left. Two planned stops — clarification and test-case approval — then
-  auto-run. Takes a Jira ticket key (e.g. B10-56729).
+  auto-run. Takes a Jira ticket key (e.g. B10-XXXXX).
 ---
 
 # qa-full — entrypoint
@@ -22,7 +22,10 @@ description: >-
    story also the App Automate keys; for automation the Java framework path) in ONE batch, exactly as in the
    *Readiness* section of [`detect-prerequisites`](../../../qa-workflow/skills/detect-prerequisites/SKILL.md).
    Re-run the doctor until `ready` is `true`. Do not start the story on a half-configured machine.
-1. Determine the **ticket** (e.g. `B10-56729`) and optional `figmaUrl` / `appUrl` / `mobileAppIds`.
+   **Team knowledge:** the brief names the selected team. Its product knowledge is ONLY what
+   `node qa-workflow/bin/qa-cli.js knowledge` lists. Never read another team's domain (`qa-workflow/domains/<d>/`)
+   or `teams/<other>/` folder. A story that needs one gets an operator-approved `qa-cli.js cross-domain` first.
+1. Determine the **ticket** (e.g. `B10-XXXXX`) and optional `figmaUrl` / `appUrl` / `mobileAppIds`.
 2. Execute **[`qa-workflow/workflows/qa-full.md`](../../../qa-workflow/workflows/qa-full.md)** exactly:
    - **Phase A** = `qa-shift-left.md` Steps 0–9 (init → story-analysis → figma-analysis → **grill-me
      gate** → impact → *conditional* exploratory analysis → HLS+publish → test cases → **review +

@@ -14,7 +14,7 @@
 > findings, reports, Jira, evidence, publishing, orchestration — is **unchanged**. The
 > `automation-gen` skill still consumes `testcases` and produces the `automation` artifact under
 > the same contract; only its **how** changed. Consumed by
-> [qa-workflow/skills/automation-gen/SKILL.md](../../qa-workflow/skills/automation-gen/SKILL.md).
+> [qa-workflow/skills/automation-gen/SKILL.md](../../../qa-workflow/skills/automation-gen/SKILL.md).
 
 ---
 
@@ -32,12 +32,12 @@
 
 The framework path is **configuration, not a constant**. Resolve it before generating anything:
 
-1. `QA_FRAMEWORK_PATH` env var → 2. [`automation/config/framework.js`](../../automation/config/framework.js)
+1. `QA_FRAMEWORK_PATH` env var → 2. [`automation/config/framework.js`](../../../automation/config/framework.js)
    (`frameworkPath`, default `D:\projects`) — `require(...).resolve()` returns the first candidate whose
    **`pom.xml` exists**, else `null`.
 2. Verify it is really this framework: `pom.xml` declares `org.breadfast:QA_Framework`.
 3. **If unresolved → ASK the operator for the location** (in the Phase 0 batch — see
-   [detect-prerequisites](../../qa-workflow/skills/detect-prerequisites/SKILL.md)). Use the answer for
+   [detect-prerequisites](../../../qa-workflow/skills/detect-prerequisites/SKILL.md)). Use the answer for
    this run and offer to persist it in `framework.js`. Generation must **never fail or report
    "blocked"** just because another engineer stores the framework elsewhere ([[ask-never-block]]).
 

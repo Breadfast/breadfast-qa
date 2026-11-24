@@ -29,7 +29,7 @@ inputs: { ticket: required, figmaUrl: optional-override, appUrl: optional }
 > live in `../skills/<name>/SKILL.md`; each references `docs/ai/**`.
 
 ## Inputs
-- `ticket` (required) — Jira key, e.g. `B10-56729`.
+- `ticket` (required) — Jira key, e.g. `B10-XXXXX`.
 - `figmaUrl` (optional) — override; otherwise take **this story's** Figma link from the ticket.
 - Story folder: `D:\breadfast-qa\<ticket>\` (create if missing).
 
@@ -44,13 +44,18 @@ folder.
 
 **Never report a step as blocked without asking first.** A `401`/`404` from a destination is as likely
 to be our own wrong URL/API-version/path as a permissions problem — diagnose before escalating.
-*(Added 2026-07-26; see the skill for the B10-56750 failures that motivated it.)*
+*(Added 2026-07-26; see the skill and lesson `card/L-01` for the failures that motivated it.)*
 
 ### 0 · Initialize
 ```
-node qa-workflow/bin/qa-cli.js init "<storyDir>" <ticket>
+node qa-workflow/bin/qa-cli.js init "<storyDir>" <ticket> [--surfaces web,mobile,backend]
+node qa-workflow/bin/qa-cli.js knowledge "<storyDir>"
 ```
-Creates the story folder (with standard subfolders per `CLAUDE.md` STEP 0) + a `qa-state.json` skeleton.
+Creates the story folder (with standard subfolders per `CLAUDE.md` STEP 0) + a `qa-state.json` skeleton that
+records the **team**. Pass `--surfaces` once Phase 0 has settled the story's surfaces (re-running `init` keeps
+everything else). `knowledge` prints the **knowledge plan**: the only product knowledge this story may read.
+Every subagent brief carries that file list. Another team's domain is never read without a recorded
+`qa-cli.js cross-domain` approval.
 
 ### 1 · Story Analysis  → `requirements`
 - Run the **`story-analysis`** skill (subagent). It fetches the Jira issue (Atlassian MCP: description, **AC, comments**), writes `requirements-analysis/requirements.md`.
@@ -59,7 +64,7 @@ Creates the story folder (with standard subfolders per `CLAUDE.md` STEP 0) + a `
   echo '<issue-json>' | node qa-workflow/bin/qa-cli.js fingerprint-jira "<storyDir>"
   node qa-workflow/bin/qa-cli.js record "<storyDir>" requirements \
        --path requirements-analysis/requirements.md --generator story-analysis@1.0 \
-       --derive-sources jira --domains <domains>
+       --derive-sources jira    # --domains defaults to the story team's
   ```
 
 ### 2 · Figma Analysis  → `figma-analysis`
@@ -128,7 +133,7 @@ Creates the story folder (with standard subfolders per `CLAUDE.md` STEP 0) + a `
   ```
   node qa-workflow/bin/qa-cli.js record "<storyDir>" hls \
        --path hls/hls.md --generator test-design@2.1 \
-       --derive-artifacts requirements,figma-analysis,impact --domains <domains>
+       --derive-artifacts requirements,figma-analysis,impact    # --domains defaults to the story team's
   ```
 
 ### 7 · Test Case Generation  → `testcases`
@@ -144,7 +149,7 @@ Creates the story folder (with standard subfolders per `CLAUDE.md` STEP 0) + a `
   ```
   node qa-workflow/bin/qa-cli.js record "<storyDir>" testcases \
        --path testcases/testcases.csv --generator test-design@2.1 \
-       --derive-artifacts hls,requirements,impact --domains <domains>
+       --derive-artifacts hls,requirements,impact    # --domains defaults to the story team's
   ```
 - **Do not import yet.** Go to Step 8.
 

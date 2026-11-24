@@ -23,6 +23,8 @@ function fakeRepo(credentialsBody) {
     cpSync(path.join(repo, 'automation', 'config', f), path.join(root, 'automation', 'config', f));
   }
   cpSync(path.join(repo, 'teams'), path.join(root, 'teams'), { recursive: true });
+  // team.js validates a profile's `domains` against the knowledge registry.
+  cpSync(path.join(repo, 'qa-workflow', 'registry'), path.join(root, 'qa-workflow', 'registry'), { recursive: true });
   writeFileSync(path.join(root, 'CLAUDE.md'), '');
   if (credentialsBody != null) writeFileSync(path.join(root, 'automation', 'config', 'credentials.local.js'), credentialsBody);
   return root;
@@ -100,7 +102,7 @@ test('a team whose profile still has TODO values is a warning that lists the fie
   const { json } = doctor(root);
   const team = byName(json.warnings, 'QA team');
   assert.equal(team.fix.type, 'team-values');
-  assert.ok(team.fix.fields.includes('jira.projectKey'));
+  assert.ok(team.fix.fields.includes('browserstack.project'));
 });
 
 test('session-start brief: always exits 0, tells Claude what to ask for, never prints values', () => {
@@ -115,4 +117,64 @@ test('session-start brief: always exits 0, tells Claude what to ask for, never p
   '--session-start');
   assert.equal(filled.status, 0);
   assert.ok(!filled.stdout.includes(FAKE_TOKEN));
+});
+
+// ── Team scope: domains/surfaces decide which product knowledge a session loads (2026-11-24) ───
+const FILLED_CREDS = (teamId) => `module.exports = {
+  team: '${teamId}', jiraEmail: 'qa.person@breadfast.com', jiraApiToken: '${FAKE_TOKEN}',
+  bsTmUsername: 'qa.person@breadfast.com', bsTmApiToken: '${FAKE_TOKEN}2',
+};`;
+const ORDERS = (over = {}) => JSON.stringify({ id: 'orders', name: 'Orders',
+  jira: { projectKey: 'B10', bugIssueTypeId: '10084', bug: { web: { squad: ['Orders'], components: ['Orders Web'] } } },
+  browserstack: { project: 'PR-9', numericProject: '1', suiteFolder: 2 },
+  surfaces: ['backend'], domains: [], ...over });
+
+test('session brief names the team and its knowledge plan command', () => {
+  const root = fakeRepo(FILLED_CREDS('card-core'));
+  const { stdout } = doctor(root, '--session-start');
+  assert.match(stdout, /QA team: card-core — product knowledge for this session = `node qa-workflow\/bin\/qa-cli\.js knowledge --team card-core`/);
+  assert.match(stdout, /domains: card, payment, marketing/);
+});
+
+test('an unknown domain or surface in the team profile is blocking (it would load the wrong knowledge)', () => {
+  const root = fakeRepo(FILLED_CREDS('orders'));
+  writeFileSync(path.join(root, 'teams', 'orders.json'), ORDERS({ domains: ['fintech'] }));
+  const t = byName(doctor(root).json.blocking, 'QA team');
+  assert.ok(t, 'expected a blocking QA team problem');
+  assert.match(t.detail, /unknown domain\(s\): fintech/);
+  assert.equal(t.fix.type, 'team-values');
+});
+
+test('a valid non-card team passes, and is not asked for the Card squad\'s framework file', () => {
+  const root = fakeRepo(FILLED_CREDS('orders'));
+  writeFileSync(path.join(root, 'teams', 'orders.json'), ORDERS());
+  const fw = path.join(root, 'fw');
+  mkdirSync(path.join(fw, 'resources', 'environments'), { recursive: true });
+  writeFileSync(path.join(fw, 'pom.xml'), '<project/>');
+  for (const f of ['config_testing.properties', 'browserStackConfigs.properties']) writeFileSync(path.join(fw, 'resources', 'environments', f), 'x=1\n');
+  const env = isolatedEnv(root, fw);
+  const r = spawnSync(process.execPath, [path.join(root, 'scripts', 'doctor.mjs'), '--json'], { encoding: 'utf8', env, cwd: root });
+  const json = JSON.parse(r.stdout);
+  assert.ok(json.ok.includes('QA team'));
+  assert.ok(json.ok.includes('Framework config files'), JSON.stringify(json.warnings));
+});
+
+test('a profile without a browserstack block does not crash the team check', () => {
+  const root = fakeRepo(FILLED_CREDS('orders'));
+  const p = JSON.parse(ORDERS()); delete p.browserstack;
+  writeFileSync(path.join(root, 'teams', 'orders.json'), JSON.stringify(p));
+  const { json } = doctor(root);
+  const t = byName(json.blocking, 'QA team') || byName(json.warnings, 'QA team');
+  assert.ok(!t || !/TypeError|Cannot read properties/.test(t.detail), t && t.detail);
+});
+
+test('a team with no team context is blocked until onboarding writes one; card-core\'s context passes', () => {
+  const root = fakeRepo(FILLED_CREDS('orders'));
+  writeFileSync(path.join(root, 'teams', 'orders.json'), ORDERS());
+  const blocked = byName(doctor(root).json.blocking, 'Team context');
+  assert.ok(blocked, 'missing context must block');
+  assert.equal(blocked.fix.type, 'team-context');
+  assert.match(blocked.fix.run, /team-onboarding/);
+  const card = doctor(fakeRepo(FILLED_CREDS('card-core'))).json;
+  assert.ok(card.ok.includes('Team context'), JSON.stringify([...card.blocking, ...card.warnings].map((r) => r.name)));
 });

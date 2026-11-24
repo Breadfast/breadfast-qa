@@ -49,5 +49,5 @@ node --test qa-workflow/capabilities/visual/**/*.test.js
 the `visual-compare` bridge in [`../../bin/qa-cli.visual.test.js`](../../bin/qa-cli.visual.test.js);
 the L8 residual runner in [`../../lib/conformance/residual.test.js`](../../lib/conformance/residual.test.js).)
 
-Methodology (kept verbatim): [ADR-002 Rev.2](../../../qa-platform/docs/design/adr-002-visual-testing-redesign-rev2.md)
+Methodology (kept verbatim): [ADR-002 Rev.2](../../../docs/ai/architecture/legacy-qa-platform/adr-002-visual-testing-redesign-rev2.md)
 · [QA_PROCESS.md Phase 5](../../../docs/ai/QA_PROCESS.md).

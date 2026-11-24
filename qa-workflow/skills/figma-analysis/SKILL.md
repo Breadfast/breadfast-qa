@@ -51,7 +51,7 @@ Frame capture must always succeed or **stop-and-ask** — it is never reported a
 
 ## Frame-set COMPLETENESS — enumerate the cluster, never trust a search hit-count (added 2026-07-26)
 
-**Failure this prevents (B10-56750):** capture was driven by *layer-name search*. Two searchable names resolved to nodes,
+**Failure this prevents (lesson `card/L-18`):** capture was driven by *layer-name search*. Two searchable names resolved to nodes,
 2 frames were captured, and the remaining states were written off as "not re-capturable (MCP capped / REST 429)" and
 deferred to Workflow 2. The design cluster actually held **5** sibling frames. The user had to point this out. Worse: the
 2-frame evidence set produced a **false finding** ("no modal, no Cancel — contradicts AC-05/06/07/10") that all 5 frames

@@ -23,6 +23,8 @@ const CC_KINDS = ['removes-ac-coverage', 'narrows-ac-coverage', 'removes-state',
   'declared-not-testable', 'other'];
 const CC_STATUSES = ['proposed', 'approved', 'rejected'];
 const FIELDS = ['summary', 'description', 'ac', 'comments', 'attachments', 'links'];
+const TEAM_ID = /^[a-z0-9][a-z0-9-]*$/;
+const SURFACES = ['web', 'mobile', 'backend'];
 
 function validateQaState(s) {
   const errors = [];
@@ -119,6 +121,22 @@ function validateQaState(s) {
       if (!KEY.test(key)) err(`skips.${key}`, 'key must match ' + KEY);
       if (!isObj(k) || typeof k.decidedBy !== 'string' || !k.decidedBy) err(`skips.${key}.decidedBy`, 'required string');
       if (!isObj(k) || typeof k.reason !== 'string' || !k.reason) err(`skips.${key}.reason`, 'required string');
+    }
+  }
+
+  // team scope (optional — states written before 2026-11-24 have none)
+  if (s.team != null && (typeof s.team !== 'string' || !TEAM_ID.test(s.team))) err('team', 'must match ' + TEAM_ID);
+  if (s.storySurfaces != null) {
+    if (!Array.isArray(s.storySurfaces) || !s.storySurfaces.length || s.storySurfaces.some((x) => !SURFACES.includes(x))) {
+      err('storySurfaces', 'must be a non-empty array of ' + SURFACES.join('|'));
+    }
+  }
+  if (s.crossDomains != null) {
+    if (!isObj(s.crossDomains)) err('crossDomains', 'must be an object');
+    else for (const [id, c] of Object.entries(s.crossDomains)) {
+      if (!KEY.test(id)) err(`crossDomains.${id}`, 'domain id must match ' + KEY);
+      if (!isObj(c) || typeof c.approvedBy !== 'string' || !c.approvedBy) err(`crossDomains.${id}.approvedBy`, 'required string');
+      if (!isObj(c) || typeof c.reason !== 'string' || !c.reason) err(`crossDomains.${id}.reason`, 'required string');
     }
   }
 

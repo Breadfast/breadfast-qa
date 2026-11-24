@@ -3,7 +3,7 @@
 > **Breadfast Engineering · Quality Engineering**
 > **Status:** canonical entry point for this repository. Read this first; read ADRs for the spec.
 > **Audience:** QA engineers, SDETs, engineers joining the QA Platform — and the AI agents that run it.
-> **Accent:** Breadfast Magenta `#AA0082`, the brand colour recorded in [`docs/ai/business/products.md`](docs/ai/business/products.md). It themes every diagram here.
+> **Accent:** Breadfast Magenta `#AA0082`, the brand colour recorded in the card domain ([`business-rules.md`](qa-workflow/domains/card/business-rules.md)). It themes every diagram here.
 
 > 🟣 **THE ONE-PARAGRAPH VERSION**
 > Breadfast QA is a **story-scoped, artifact-based QA engine driven from Claude Code**. Three workflows
@@ -114,7 +114,7 @@ flowchart TD
     CAP --> LIB
     LIB --> PORTS["Ports — Validator · ExpectedModelProvider<br/>ActualCaptureProvider · Resolver · Judge"]
     PORTS -. implemented by .-> ADP["Adapters — Atlassian MCP · Figma session+REST<br/>BrowserStack v2 · Playwright · Appium · ClaudeJudge"]
-    SK --> DOM["Domains — card · payment · marketing"] --> BIZ["docs/ai/business/** — business truth"]
+    SK --> DOM["Team knowledge plan — qa-cli knowledge"] --> BIZ["qa-workflow/domains/&lt;d&gt;/ + teams/&lt;team&gt;/ — per-team product truth"]
     SK --> METH["docs/ai/** — methodology (source of truth)"]
     LIB --> STATE["<b>qa-state.json</b> — per-story ledger"]
     CAP --> FIND["Findings → Health → Reports → Jira defects"]
@@ -651,7 +651,7 @@ AI problem.
 | Something **accessibility testing would want unchanged** | `lib/` — the generic platform core |
 | Something naming **Figma, pixel, screen, or token** | `capabilities/<id>/` |
 | A phase **procedure** | `skills/<phase>/SKILL.md` (thin) + the *how* in `docs/ai/**` |
-| A **business rule** | `domains/` wrapping `docs/ai/business/**` — never inlined into a phase skill |
+| A **business rule** | the owning domain, `qa-workflow/domains/<d>/` (registered in `registry/knowledge.json`) — never inlined into a phase skill or a core doc |
 | A new **ordering of existing phases** | `workflows/` — compose, never restate |
 | A change to a **contract, boundary, or principle** | write an **ADR first** |
 
@@ -735,14 +735,14 @@ test-case name, verbatim**, one test per case — that's how results map back by
 | [`qa-workflow/`](qa-workflow/) · [`docs/ai/`](docs/ai/) | the engine + workflows + skills · all methodology, knowledge, contracts | the migration unit, kept self-contained · the **source of truth**; skills reference it, never duplicate it |
 | [`automation/`](automation/) | **shared** JS page objects, helpers, config (+ [`config/framework.js`](automation/config/framework.js) — Java framework path resolver) | lives here **once**, runnable in place; generated Java automation lives in the Java framework (default `D:\projects`); the legacy Playwright suite is in-repo at [`automation/legacy/`](automation/legacy/) — there is **no** out-of-repo mirror |
 | `<TICKET>/` | one folder per story: `requirements-analysis/ figma-analysis/ hls/ browserstack/ testcases/ automation/ execution-reports/ screenshots/ defects/ evidence/` + `qa-state.json` | all story output goes here and is reused on retest |
-| [`qa-platform/`](qa-platform/) · `.claude/skills/` | the **legacy** execution engine · the thin Claude Code entrypoints | 🗄 in-flight work, certification, critical fixes only · the only Claude-Code glue, **discarded on migration** |
+| `qa-platform/` (removed 2026-08-10) · `.claude/skills/` | the **legacy** execution engine · the thin Claude Code entrypoints | 🗄 in-flight work, certification, critical fixes only · the only Claude-Code glue, **discarded on migration** |
 
 ## 8.2 Inside `qa-workflow/`
 
 | Path | Contents | Never modify casually |
 |---|---|---|
 | [`workflows/`](qa-workflow/workflows/) · [`skills/`](qa-workflow/skills/) | the three workflows · nine thin task skills with `version:` frontmatter | W3 must stay a composition; bumping `version:` invalidates artifacts |
-| [`domains/`](qa-workflow/domains/) · [`registry/domains.yaml`](qa-workflow/registry/domains.yaml) | `card`/`payment`/`marketing` wrapping `docs/ai/business/**` · the domain + skill index | business rules are **consumed, never re-encoded**; keep the registry in sync |
+| [`domains/`](qa-workflow/domains/) · [`registry/knowledge.json`](qa-workflow/registry/knowledge.json) | per-domain product knowledge (owner team, files, markers) · the machine-read knowledge index | loaded **only** for teams that list the domain; `scripts/knowledge-isolation.test.mjs` keeps core free of product facts |
 | [`lib/freshness/`](qa-workflow/lib/freshness/) | `dag.js` · `fingerprint.js` · `reconcile.js` | ⚠️ **highest-stakes code here**: a wrong `reuse` silently ships stale analysis. Pure + fully tested — keep it so |
 | [`lib/schema/`](qa-workflow/lib/schema/) · [`lib/qa-state.js`](qa-workflow/lib/qa-state.js) · [`lib/conformance/`](qa-workflow/lib/conformance/) | ledger validation · the only ledger writer · the capability-neutral engine contract | additive only, in sync with `qa-state.schema.json`; conformance ⚠️ **must never import a capability** |
 | [`capabilities/visual/`](qa-workflow/capabilities/visual/) · [`bin/`](qa-workflow/bin/) · [`templates/`](qa-workflow/templates/) | L2–L7 validators, Figma providers, dump parsers, registry loader, pixel adapter, `ClaudeJudge` · `qa-cli.js` + `figma-connect.js` · plugin-shaped templates | visual-specific only (generic parts belong in `lib/`); the CLI is the surface skills depend on — changes are breaking |
@@ -753,7 +753,7 @@ test-case name, verbatim**, one test per case — that's how results map back by
 exit gates, DoD). [`architecture/`](docs/ai/architecture/) holds ADR-001, ADR-003, the artifact contract and
 `qa-state.schema.json`; [`screens/`](docs/ai/screens/) the Screen Registry;
 [`visual-testing/`](docs/ai/visual-testing/) the operator playbook (pairing, dynamic-vs-defect exclusions,
-finding schema, annotated evidence); [`business/`](docs/ai/business/) the single source of business truth;
+finding schema, annotated evidence); [`business/`](docs/ai/business/) the org-wide business overview (product rules live in their domain);
 [`automation/`](docs/ai/automation/) the framework catalogs (start at **reusable-components**);
 [`execution-engine.md`](docs/ai/execution-engine.md) the session/browser lifecycle; and
 `testing-process` · `browserstack-process` · `exploratory-testing` · `regression-strategy` · `bug-reporting` ·
@@ -918,7 +918,7 @@ and coordinates: [`browserstack-process.md`](docs/ai/browserstack-process.md) ·
 
 **Breadfast Magenta `#AA0082`** is the primary accent — diagram borders, connectors, emphasis — with derived
 tints Magenta Deep `#7A005E`, Wash `#FBEAF5` (fills), and Ink `#3B0030` (text on wash). `#AA0082` is the brand
-magenta recorded in [`products.md`](docs/ai/business/products.md); every Mermaid diagram here is themed with
+magenta recorded in the card domain ([`business-rules.md`](qa-workflow/domains/card/business-rules.md)); every Mermaid diagram here is themed with
 these, so the diagrams carry the brand where markdown can't. Iconography is consistent throughout — one fixed
 icon per concept (🟣 principle/callout, 🧮 conformance, 🧬 artifacts, 🔁 workflows, 🚨 never violate, …).
 

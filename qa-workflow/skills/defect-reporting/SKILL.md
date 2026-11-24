@@ -20,8 +20,8 @@ metadata:
 
 > **STOP. Before filing anything, open [`docs/ai/bug-reporting.md`](../../../docs/ai/bug-reporting.md) and
 > read §1.1 (the Defect Grounding Gate) and §4 (the B10 bug structure). Citing that document is not reading
-> it.** **v1.1 (2026-07-28)** exists because on **B10-56652 five bugs were filed without doing either — and
-> all five were rejected.** The filer had named the document in the defect log and never opened it, so the
+> it.** **v1.1 (2026-07-28)** exists because **five bugs were once filed without doing either — and
+> all five were rejected** (lesson `card/L-05`). The filer had named the document in the defect log and never opened it, so the
 > bugs carried a wrong title shape, an empty Steps/Actual/Expected set, the whole report dumped in
 > `description`, and **zero attachments**.
 
@@ -35,7 +35,7 @@ metadata:
 Take every candidate finding and write the verdict of §1.1 checks 1–8 next to it. **Do not skip this because
 the findings are your own — that is exactly when it gets skipped.**
 
-The two checks that killed all five B10-56652 bugs:
+The two checks that killed all five of those bugs:
 
 - **Check 1 — Source cited.** Name the exact **AC**, **Figma element** or **business rule** violated. If the
   sentence starts *“it should…”* and you cannot point at where it says so, it is an **observation**, not a
@@ -49,7 +49,7 @@ The two checks that killed all five B10-56652 bugs:
     asked. Real-but-out-of-scope observations belong in the report or the automation notes.
 - **Check 8 — verify the negative.** A negative read from an accessibility/DOM dump is worthless until the
   container is exhausted: **scroll a scrollable list to its end** (or query the data layer) before concluding
-  something is absent. One B10-56652 bug was a plain factual error from dumping a scrollable grid once.
+  something is absent. One of those bugs was a plain factual error from dumping a scrollable grid once.
 
 Everything that fails the gate becomes a **report-only observation** in `defects/defects.md` — the value is
 kept and Jira stays clean.
@@ -75,7 +75,7 @@ none), `caption` (step text, at the top). A change or a drift needs a **before/a
 element**; `compose_side_by_side.js` labels them into one image.
 
 **Collect the mark results and fail the capture when one did not land** — a selector that matches
-nothing returns quietly, and on B10-59832 that put out a screenshot with no mark on the only thing it
+nothing returns quietly, and once that put out a screenshot (lesson `card/L-10`) with no mark on the only thing it
 was about. Never let an overlay cover the evidence, and remember Jira does not replace an attachment:
 delete the superseded files.
 

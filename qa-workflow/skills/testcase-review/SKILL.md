@@ -10,7 +10,7 @@ metadata:
   consumes:
     sources: []
     artifacts: [testcases, hls, requirements, figma-analysis, impact, clarifications]
-    domains: [card, payment, marketing]
+    domains: team          # = the story team's domains, resolved by `qa-cli.js knowledge` — never a fixed list
   produces:
     artifacts: [testcase-review]
   methodology: docs/ai/testing-process.md
@@ -106,8 +106,8 @@ approval stop, as its own list**: id · what it removes · why · what evidence 
 longer asserted. Approving the suite and ratifying its coverage reductions are one decision, taken with
 both facts visible.
 
-> **Why this check exists.** On **B10-57764** clarification A-3 removed AC5's visual assertion. Checks
-> 1–9 all passed — the cases implemented A-3 exactly. Two defects (B10-59276, B10-59278) lived in the
+> **Why this check exists** (lesson `card/L-04`). A clarification once removed an AC's visual assertion. Checks
+> 1–9 all passed — the cases implemented A-3 exactly. Two defects lived in the
 > half nobody asserted, and no phase after clarification ever re-opened the decision.
 
 ## Steps
@@ -197,7 +197,7 @@ Two calibration rules, both from real misses:
   placement, typeface and animation are visual; a rendered string, a stored flag, a count, an order or
   a computed style are not — those are automatable even when the *screen* is what the case describes.
 - **A `yes` on a mobile case needs a signal in the accessibility tree — confirm it in a dump before
-  recommending.** The tree is not the screen. On B10-58603 a "header collapses into a centred title on
+  recommending.** The tree is not the screen. Once (lesson `card/L-16`) a "header collapses into a centred title on
   scroll" case was recommended `yes`, and only at implementation time did a dump show **both** title
   nodes present at **identical bounds in the scrolled and unscrolled states** — the collapse is a
   Compose animation with no tree representation at all, so nothing could assert it and the case had to
@@ -221,7 +221,7 @@ layer/effort values and a missing reason are warnings. The generator also prints
 `automation plan: 23 of 24 recommended (yes 23 · partial 0 · no 1)` — so a plan the page cannot read is
 visible in the terminal.
 
-> **Why the validation exists.** On **B10-57777** the plan wrote `"recommend": true` while the generator
+> **Why the validation exists** (lesson `card/L-20`). The plan once wrote `"recommend": true` while the generator
 > compared `=== 'yes'` — a predicate duplicated inline in four places. Nothing was pre-ticked, the bulk
 > button read *"Select all 0 recommended"*, the chip printed the bare string `true`, and **all 23 of the
 > operator's picks were exported as overrides of a recommendation the page never displayed**. The
@@ -232,7 +232,7 @@ Then, after approval: automate **only** the selected set, and set the CSV's `Aut
 the operator's picks before the BrowserStack import, so test management and the framework agree from the
 start rather than being reconciled later.
 
-**Why three verdicts and a comment, not a flag.** On **B10-57776** the first version of this page offered
+**Why three verdicts and a comment, not a flag.** The first version of this page (lesson `card/L-21`) offered
 only ok/flag. It could say *that* a case was wrong but not *what to change*, and it had nowhere to say
 "delete this one" — so the operator's review came back as a bare count (`24 of 24 accepted, 0 flagged`)
 with no revision instructions attached. The operator asked for the comment field and for this page to be

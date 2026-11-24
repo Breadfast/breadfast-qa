@@ -2,6 +2,8 @@
 
 > Backend for Breadfast Card perks, cashback processing, and exclusions.
 > Living document — primary source is the B10-55185 automation work.
+> **Domain `card`** · owner `card-core` · loaded only through `qa-cli.js knowledge`.
+> **Provenance:** moved from `docs/ai/modules/card-service.md` on 2026-11-24 (content unchanged except links). `[tester: card-core]`
 
 ## Purpose
 Server-side processing for the Breadfast Card: perk definitions, cashback calculation (cron-driven), MID exclusion, and card lifecycle status. Tested via the in-repo Playwright framework ([`automation/`](../../../automation/) + [`automation/legacy/`](../../../automation/legacy/)) with DB + cron + API helpers.
@@ -12,7 +14,7 @@ seed/adjust purchase (type-25, perk_processed=0)
   → trigger cron  GET {cardBackend}/test?cronJobType=cashback
   → verify type-30 cashback row (count 0|1, card_perk_id, perk_processed=1)
 ```
-Business rules (anti-stacking, winner = priority + smallest id, perk_processed flip, idempotency, negative cases, MID exclusion) are in [../business/business-rules.md](../business/business-rules.md).
+Business rules (anti-stacking, winner = priority + smallest id, perk_processed flip, idempotency, negative cases, MID exclusion) are in [business-rules.md](business-rules.md).
 
 ## Data dependencies
 - DB `cards_hades_testing` (MySQL) — reachable **only via SSH tunnel** (ssh2 `forwardOut` + mysql2). Not runnable in CI without the SSH key + bastion path.
@@ -39,11 +41,11 @@ Changes to perk priority, eligibility predicate, or MID exclusion → re-run cas
 - Bug **B10-56609** — stale 206-MID list re-submitted after correction (see [record_bug_b10_56609.js](../../../automation/legacy/record_bug_b10_56609.js)).
 
 ## Automation entry points
-[../automation/playwright-framework.md](../automation/playwright-framework.md), [../automation/helpers.md](../automation/helpers.md) (DbHelper/CronHelper/ApiHelper), [../automation/api-clients.md](../automation/api-clients.md), [../automation/page-objects.md](../automation/page-objects.md) (PerksPage).
+[../../../docs/ai/automation/playwright-framework.md](../../../docs/ai/automation/playwright-framework.md), [../../../docs/ai/automation/helpers.md](../../../docs/ai/automation/helpers.md) (DbHelper/CronHelper/ApiHelper), [../../../docs/ai/automation/api-clients.md](../../../docs/ai/automation/api-clients.md), [../../../docs/ai/automation/page-objects.md](../../../docs/ai/automation/page-objects.md) (PerksPage).
 
 ## Java framework assets (`D:\projects`)
 
-See [../automation/java-framework.md](../automation/java-framework.md) for the full catalog.
+See [../../../docs/ai/automation/java-framework.md](../../../docs/ai/automation/java-framework.md) for the full catalog.
 
 **Page objects (modals)** — `src/main/java/modals/cardsAdminPanel/`: `CardAdminPanelLoginPage`, `CardPanelDashboard`, `PerksPage`, `MerchantPerkCreatePage`, `GeneralCashbackPerkPage`, `SearchCardsUsers`, `ViewCardUsersDetails`, `EditCustomerDetailsPage`, `SetCardPinPage`, `update`.
 

@@ -156,6 +156,53 @@ function storyKeyPattern(profile) {
   return ANY_ISSUE_KEY;
 }
 
+// ── Knowledge selection: which product knowledge this team's sessions may load ────────────────
+// `domains` and `surfaces` were collected in every profile but read by nothing, so every team's
+// story-analysis loaded the card/payment rules. They now drive qa-cli.js `knowledge` (the plan),
+// `record` (domain defaults + guard) and the doctor. See qa-workflow/registry/knowledge.json.
+
+const SURFACES = ['web', 'mobile', 'backend'];
+
+function registryFile() {
+  return process.env.QA_KNOWLEDGE_REGISTRY
+    || path.join(__dirname, '..', '..', 'qa-workflow', 'registry', 'knowledge.json');
+}
+
+/** Domain ids the knowledge registry knows. */
+function knownDomains(file = registryFile()) {
+  try { return Object.keys(JSON.parse(fs.readFileSync(file, 'utf8')).domains || {}).sort(); } catch (_) { return []; }
+}
+
+/**
+ * The team's domains, validated against the registry. `[]` is valid: core knowledge + team context only.
+ * Throws TeamProfileError when the field is missing, TODO, or names a domain the registry doesn't have.
+ */
+function teamDomains(profile, known = knownDomains()) {
+  const v = profile.domains;
+  const where = `teams/${profile.id}.json: "domains"`;
+  if (!Array.isArray(v)) throw new TeamProfileError(`${where} must be a list of domain ids (use [] for none). Known: ${known.join(', ') || '(none)'}`);
+  if (v.includes(UNFILLED)) throw new TeamProfileError(`${where} is not filled in yet. Known domains: ${known.join(', ') || '(none)'} — or [] and let team onboarding create yours.`);
+  const unknown = v.filter((d) => !known.includes(d));
+  if (unknown.length) throw new TeamProfileError(`${where} names unknown domain(s): ${unknown.join(', ')}. Known: ${known.join(', ') || '(none)'} (qa-workflow/registry/knowledge.json).`);
+  return [...new Set(v)];
+}
+
+/** The team's surfaces (web | mobile | backend), at least one. Throws TeamProfileError otherwise. */
+function teamSurfaces(profile) {
+  const v = profile.surfaces;
+  const where = `teams/${profile.id}.json: "surfaces"`;
+  if (!Array.isArray(v) || !v.length) throw new TeamProfileError(`${where} must list at least one of: ${SURFACES.join(', ')}`);
+  if (v.includes(UNFILLED)) throw new TeamProfileError(`${where} is not filled in yet (any of: ${SURFACES.join(', ')}).`);
+  const bad = v.filter((s) => !SURFACES.includes(s));
+  if (bad.length) throw new TeamProfileError(`${where} has unknown value(s): ${bad.join(', ')} (allowed: ${SURFACES.join(', ')}).`);
+  return [...new Set(v)];
+}
+
+/** The folder holding the team's onboarding output (context.md, repos.json). It may not exist yet. */
+function teamContextDir(profile, dir = teamsDir()) {
+  return path.join(dir, profile.id);
+}
+
 /** Same as loadTeam, but returns null instead of throwing when no team is selected or it can't be read. */
 function tryLoadTeam(opts) {
   try {
@@ -168,15 +215,21 @@ function tryLoadTeam(opts) {
 
 module.exports = {
   ANY_ISSUE_KEY,
+  SURFACES,
   TeamProfileError,
   UNFILLED,
   availableTeams,
   bugDefaults,
+  knownDomains,
   loadTeam,
+  registryFile,
   resolveBrowserstackProject,
   selectedTeamId,
   storyKeyPattern,
   surfaceForCombo,
+  teamContextDir,
+  teamDomains,
+  teamSurfaces,
   teamValue,
   teamsDir,
   tryLoadTeam,

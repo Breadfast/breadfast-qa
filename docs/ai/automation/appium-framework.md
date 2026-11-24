@@ -4,7 +4,7 @@
 
 ## What this is
 
-[bs_helper.js](bs_helper.js) is a thin set of helper functions that speak the **WebDriver protocol over raw HTTPS REST** to **BrowserStack App Automate** (`hub-cloud.browserstack.com`). It is **NOT a Page Object Model** — there are no page classes, no fixtures, and no test runner. Each session script `require()`s these helpers and drives the device with explicit `findElement`/`tap`/`getSource` calls.
+[bs_helper.js](../../../bs_helper.js) is a thin set of helper functions that speak the **WebDriver protocol over raw HTTPS REST** to **BrowserStack App Automate** (`hub-cloud.browserstack.com`). It is **NOT a Page Object Model** — there are no page classes, no fixtures, and no test runner. Each session script `require()`s these helpers and drives the device with explicit `findElement`/`tap`/`getSource` calls.
 
 - Transport: Node `https.request` against `hub-cloud.browserstack.com:443` with Basic auth (`BS_USER:BS_KEY`).
 - Appium endpoints: standard `/wd/hub/session/{sid}/...` WebDriver routes.
@@ -93,6 +93,6 @@ const selected = await getAttr(sid, optId, 'aria-selected');
 
 ## Notes for reuse
 
-- There is **no `tapByLabel`, `tapDigit`, or OTP helper inside `bs_helper.js`** — those patterns live in per-session scripts and in the project [CLAUDE.md](CLAUDE.md) (Sections 2.4–2.6). Compose them from `getSource` + `tap`/`findElement` as needed.
-- iOS uses `XCUIElementType*` and `-ios class chain`/`accessibility id`; Android uses `android.widget.*` and `class name`/`-android uiautomator`. See [CLAUDE.md](CLAUDE.md) §11.3–11.4.
+- There is **no `tapByLabel`, `tapDigit`, or OTP helper inside `bs_helper.js`** — those patterns live in per-session scripts and in the project [CLAUDE.md](../../../CLAUDE.md) (Sections 2.4–2.6). Compose them from `getSource` + `tap`/`findElement` as needed.
+- iOS uses `XCUIElementType*` and `-ios class chain`/`accessibility id`; Android uses `android.widget.*` and `class name`/`-android uiautomator`. See [CLAUDE.md](../../../CLAUDE.md) §11.3–11.4.
 - For capabilities, session lifecycle, and the four platform × language combinations, **always** cross-reference [docs/ai/browserstack-process.md](../browserstack-process.md).

@@ -22,13 +22,13 @@ inputs: { ticket: required, figmaUrl: optional-override, appUrl: optional, mobil
 - **Phase A (analysis/design) is clarify-first** — it holds the run's **two** planned stops: the
   **Clarification gate** (A3) and the **Test-Case Approval gate** (A8).
 - **Phase B (execution) is auto-run** — after Gate A, run end-to-end without stopping, pausing only
-  for a genuine blocker (unknown OTP/BCID, required backend status change, content not found), a
+  for a genuine blocker (an unknown OTP or identifier, required backend status change, content not found), a
   handoff conflict (Step 6), or a **re-approval** of test cases Phase B changed (B2–B3).
 
 > **Two planned stops, not one (changed 2026-08-09).** Test-case generation moved into Phase A, and its
 > approval gate is an operator decision. Invoking `qa-full` authorizes the *run*; it does not
 > pre-approve the coverage the run designs. Approving your own test cases because "the operator asked
-> for the whole workflow" is exactly the self-exemption pattern that produced B10-56717.
+> for the whole workflow" is exactly the self-exemption pattern behind lesson `card/L-02`.
 
 ## When to use which workflow
 
@@ -43,7 +43,7 @@ byte-for-byte contract-compatible with a `qa-shift-left` + `qa-validate` pair, s
 re-run reconciles them identically.
 
 ## Inputs
-- `ticket` (required) — Jira key, e.g. `B10-56729`.
+- `ticket` (required) — Jira key, e.g. `B10-XXXXX`.
 - `figmaUrl` (optional) — override; otherwise take **this story's** Figma link from the ticket.
 - `appUrl` (web) / `mobileAppIds` (iOS + Android BrowserStack app IDs) — needed by Phase B execution;
   ask for them **at Step 6**, not at the start, so Phase A is never blocked on them.
@@ -78,9 +78,9 @@ Asserts **both** repos — the companion (`D:\breadfast-qa`) and the Java framew
 repo before continuing.
 
 *Why this is a gate and not a note (added 2026-07-29):* the framework's git hooks validate the branch
-**name on push only**, so they cannot catch the failure that actually happened on **B10-56717** — no
+**name on push only**, so they cannot catch the failure that actually happened (lesson `card/L-02`) — no
 story branch was ever created, both repos stayed on the **previous** story's branch
-(`…/B10-56652-…`), no automation was generated into the framework at all, and the run still reported
+(the previous story's branch), no automation was generated into the framework at all, and the run still reported
 every quality gate met. One second at Step 0 replaces that.
 
 ## Phase A — Pre-Development baseline (Workflow 1)
@@ -167,7 +167,7 @@ as written** — skipping only its Step 0 (satisfied by Step 6 above):
 
 **Step 5 records no artifact and bypasses no gate.** `PHASE_DEPS = { execution: 'automation' }` still holds:
 the manual verdicts are written to disk at 5 and folded into `execution` at 7. If a run ends after the manual
-pass, `automation` is **owed** and needs a recorded operator deferral — never silence (the B10-56717 hole).
+pass, `automation` is **owed** and needs a recorded operator deferral — never silence (lesson `card/L-02`).
 
 Phases 2–4 are **conditional**: in a `qa-full` run the suite was designed minutes ago against the same
 implementation, so it will often need no deltas at all. Record nothing and say so — an empty
@@ -199,8 +199,8 @@ There is no `qa-full`-only state, so nothing is stranded by resuming through a d
   **Exits 1** while any of the thirteen required artifacts is missing or not `complete` and has no recorded
   operator deferral — and while an **approved** test-case suite has drifted with no recorded
   `testcase-reconciliation`. **This is the completion gate — `show` is not**, because `show` prints state and
-  always exits 0, which is how a `partial` **automation** artifact sat beside eleven `complete` ones on
-  B10-56717 and never contradicted the QA summary. Run `show` for detail, `complete-check` to pass.
+  always exits 0, which is how a `partial` **automation** artifact sat beside eleven `complete` ones
+  (lesson `card/L-02`) and never contradicted the QA summary. Run `show` for detail, `complete-check` to pass.
 - A phase may only be skipped with an **operator-approved, recorded** deferral:
   ```
   node qa-workflow/bin/qa-cli.js defer "<storyDir>" automation --by "<operator>" --reason "<why>"

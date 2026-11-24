@@ -3,8 +3,8 @@
   "id": "payment",
   "name": "Payment",
   "jira": {
-    "projectKey": "TODO",
-    "bugIssueTypeId": "TODO",
+    "projectKey": "B10",
+    "bugIssueTypeId": "10084",
     "bug": {
       "web": { "squad": ["TODO"], "components": ["TODO"] },
       "mobile": { "squad": ["TODO"], "components": ["TODO"] },
