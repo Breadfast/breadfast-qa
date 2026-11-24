@@ -123,6 +123,7 @@ blob-report/
 # Card Activation Sandbox local store (per-user, not shared)
 automation/card-sandbox/created.jsonl
 automation/card-sandbox/attempts.jsonl
+automation/card-sandbox/pool.jsonl
 automation/card-sandbox/server.log
 automation/card-sandbox/profile-117-backup*.json
 

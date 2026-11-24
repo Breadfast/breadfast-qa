@@ -3,11 +3,30 @@
 Everything a QA engineer needs to go from **empty machine → running a QA workflow**, on
 **Windows** and **macOS** (Linux works the same as macOS).
 
-Follow it top to bottom. Total time: **~20 minutes**, most of it downloads.
+## Quick start — three steps
 
-> **Verify at any point with `npm run doctor`.** It checks every prerequisite below and
-> prints a fix-it hint for anything missing. If it ends with *"Environment is fully
-> ready"*, your setup is correct.
+You need **Node 20+**, **Git** and **Claude Code** installed (§1), and access to the `Breadfast` GitHub org.
+
+```bash
+git clone https://github.com/Breadfast/breadfast-qa.git
+git clone https://github.com/Breadfast/QA_Automation_Framework.git projects   # next to it
+cd breadfast-qa && npm run setup
+```
+`npm run setup` installs the packages and Chromium, switches on the secret check, creates your
+credentials file and asks which squad you're in (Enter skips). A squad with no team file gets one.
+
+Then **open the `breadfast-qa` folder in Claude Code**. The first time, Claude runs the one-time
+**`/qa-setup`** workflow by itself: it asks, in one batch, for whatever is still missing (credentials,
+Jira and Figma sign-in, your squad's Jira and BrowserStack values, the Java framework, team onboarding).
+
+**You can skip any question. Nothing blocks the setup or a story.** A skipped item is asked for again
+right before the step that needs it, and only that step waits: no BrowserStack token means the import
+waits while analysis and test design carry on; no Jira token means bugs are written locally and filed
+later; no Java framework means manual execution runs and automation waits.
+
+The rest of this guide is reference: what each piece is, where values come from, and troubleshooting.
+`npm run doctor` shows the state at any time. Items marked **ADD** are what Claude will ask for;
+only **FAIL** (old Node, no Git, an incomplete clone, the wrong folder open) stops anything.
 
 ---
 
@@ -123,7 +142,7 @@ Then fill in **your own** values:
 | `jiraApiToken` | [id.atlassian.com → Security → API tokens](https://id.atlassian.com/manage-profile/security/api-tokens) → *Create* |
 | `browserstackEmail` / `browserstackPassword` | your BrowserStack login (team vault) |
 | `browserstackUsername` / `browserstackAccessKey` | BrowserStack → Account → Settings → *Authentication & Security* (the App Automate hub key) |
-| `bsTmUsername` / `bsTmApiToken` *(optional)* | BrowserStack → Profile → **API tokens**: the *Test Management* token, **not** the App Automate key |
+| `bsTmUsername` / `bsTmApiToken` | BrowserStack → Profile → **API tokens**: the *Test Management* token, **not** the App Automate key. Needed for the BrowserStack import; `bsTmUsername` falls back to `browserstackUsername` |
 | `figmaApiToken` *(optional)* | Figma → Settings → Security → Personal access tokens (`file_content:read`). **Metadata only** |
 | `cardPanelAdminPassword` *(card squad only)* | the framework's `cardServiceConfigs_testing.properties` |
 | `cardDb*` / `cardCron*` *(card squad only)* | live card-service DB over the VPN, and the testing cron trigger. Other teams leave these out |
@@ -170,8 +189,8 @@ schema). **Product knowledge is per team**: each session reads only what its tea
 1. **`domains`** in `teams/<your-team>.json` — the product domains your stories need (ids from
    [`qa-workflow/registry/knowledge.json`](qa-workflow/registry/knowledge.json)), or `[]` if yours isn't there yet.
    **`surfaces`** — any of `web`, `mobile`, `backend`.
-2. **Onboard the team once.** Until `teams/<your-team>/context.md` exists, the doctor **blocks** with
-   *Team context*. Start Claude Code and run any `/qa-*` workflow (or ask Claude to run *team onboarding*): it
+2. **Onboard the team once.** Until `teams/<your-team>/context.md` exists, Claude offers onboarding at the
+   start of every run (skippable; it never blocks). Start Claude Code and run any `/qa-*` workflow (or ask Claude to run *team onboarding*): it
    looks at what already exists, asks only what is missing about your product, surfaces, environments, repos
    and docs, reads only the repositories you grant, and writes a context where every fact is tagged
    *confirmed / inferred / tester-provided / unknown / outdated*. Commit `teams/<your-team>/`.
@@ -369,11 +388,12 @@ on Node 22 because it resolves the path as a *module*.
 
 The skills are discovered only when the **repo root itself** is the open folder, not a
 parent directory and not a subfolder. Reopen the folder and check `npm run doctor`
-reports *"Workflow skills — 4 discovered"*.
+reports *"Workflow skills — 5 discovered"*.
 
-### `claude: command not found` (doctor reports Claude CLI FAIL)
+### `claude: command not found` (doctor NOTE on Claude CLI)
 
-Install Claude Code and make sure its binary is on `PATH`. Verify with `claude --version`.
+Fine if you use Claude Code in VS Code or the desktop app. For the terminal, install Claude Code and
+make sure its binary is on `PATH`. Verify with `claude --version`.
 
 ### "Java QA framework not located on this machine"
 

@@ -18,6 +18,18 @@ npm run bcard-user -- --stage registered --phone 01150211684
 
 Every step reads the card status back and stops if it is not the expected one.
 
+## Pool cards only (no user)
+
+```
+npm run bcard-user -- --pool-only                # one card
+npm run bcard-user -- --pool-only --count 5      # up to 50 per run
+```
+
+Issues free cards into the card pool (`POST /api/v1/web/cards/pool`) and prints each card's **package
+number**, **BCID** (`cardToken`) and **UID**, which is the MDP card id (`cards.externalId`). It also prints
+the card-service row id (`cards.id`). The cards aren't collected or linked, so a pickup location can collect
+the package. `--json` prints `{ env, cards: [...] }`. Every card is appended to `output/pool-cards.jsonl`.
+
 ## Phone
 
 - **No `--phone`** → a random EG number is registered.

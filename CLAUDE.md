@@ -81,7 +81,10 @@ When given a Jira story, follow these steps **in order**. Do **not** generate te
 ### STEP 0-pre — Prerequisite Gate (`detect-prerequisites`) ⟵ **runs before everything**
 **Readiness before the story.** Every `/qa-*` workflow starts with `node scripts/doctor.mjs --json` plus one
 check of the Atlassian/Figma connections, and asks for everything missing — team, credentials, installs — in
-ONE batch before the ticket is read. Re-run until `ready` is `true`. Tokens and passwords are never asked for
+ONE batch before the ticket is read. **Nothing the tester has not set up yet blocks a run (operator rule
+2026-11-24):** each gap is a question; anything skipped is recorded in `prerequisites.md` with the step that needs
+it (`fix.when`), the run carries on, and it is asked again right before that step. Only a doctor `blocking` item
+(old Node, no Git, wrong folder) stops a run. `/qa-setup` asks for everything up front. Tokens and passwords are never asked for
 in chat: name the key and let the user paste it into `credentials.local.js`. A SessionStart hook
 (`.claude/settings.json`) runs the same doctor in `--session-start` mode, so the gaps are known before the
 first message. ([skill — *Readiness*](qa-workflow/skills/detect-prerequisites/SKILL.md).)
@@ -91,8 +94,8 @@ squad + components, BrowserStack project and suite folder — come ONLY from the
 **Never use another team's values as a default** — the reference team's (`card-core`) included. No team
 selected, or a needed value still `TODO` → ask in the same batch below, and write the answers into the team file.
 **Then the team's knowledge (added 2026-11-24).** A team that has never been onboarded (no `teams/<team>/context.md`
-— the doctor blocks with `team-context`) runs [team-onboarding](qa-workflow/skills/team-onboarding/SKILL.md) **before
-the story is read**: it looks first, asks only what is missing, reads only repositories the tester grants, and writes
+— the doctor asks with `team-context`) is offered [team-onboarding](qa-workflow/skills/team-onboarding/SKILL.md)
+**before the story is read** (skippable — then the run uses core + the team's domains and says so): it looks first, asks only what is missing, reads only repositories the tester grants, and writes
 confidence-tagged context (`qa-cli.js knowledge-lint`). Every run then reads product knowledge **only** from its plan —
 `node qa-workflow/bin/qa-cli.js knowledge` (core + the team's `domains` + its team context). Another team's domain is
 read only after an operator-approved `qa-cli.js cross-domain`; `record` and `complete-check` enforce it.

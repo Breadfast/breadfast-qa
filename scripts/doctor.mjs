@@ -8,12 +8,20 @@
  * prints a fix-it hint for each gap instead of failing silently. Read-only: it
  * never writes files, never calls a Breadfast backend, and never needs secrets.
  *
- * Exit code 0 when nothing REQUIRED is missing (warnings are fine), 1 otherwise.
+ * NOTHING THE TESTER CAN ADD LATER BLOCKS (operator rule 2026-11-24: "if the tester did not add any step the
+ * process should ask for it, and not block the setup or the execution"). Four levels:
+ *   ok     · fine
+ *   ask    · missing, and Claude asks for it — in one batch at the start of a run, and again right before the
+ *            step that needs it (`fix.when`). The tester may skip it; the run goes on and only that step waits.
+ *   warn   · informational (line endings, a folder that will be created)
+ *   fail   · the scripts cannot run at all: Node too old, no Git, an incomplete clone, the wrong folder open.
+ * Exit code 1 only on `fail`.
  *
  * Modes:
  *   npm run doctor                      human report (default)
- *   node scripts/doctor.mjs --json      machine report for Claude: { ready, blocking[], warnings[], ok[] },
- *                                       each problem carrying a `fix` (the key/env to set or command to run)
+ *   node scripts/doctor.mjs --json      machine report for Claude: { ready, blocking[], ask[], warnings[], ok[] },
+ *                                       each problem carrying a `fix` (the key/env to set or command to run,
+ *                                       and `when` — the step that first needs it)
  *   node scripts/doctor.mjs --session-start
  *                                       the SessionStart hook (.claude/settings.json): skips the slow
  *                                       tool probes, prints a short brief into Claude's context telling it
@@ -42,6 +50,16 @@ const add = (level, name, detail, hint, fix) => results.push({ level, name, deta
 const ok = (name, detail) => add('ok', name, detail);
 const warn = (name, detail, hint, fix) => add('warn', name, detail, hint, fix);
 const fail = (name, detail, hint, fix) => add('fail', name, detail, hint, fix);
+/** Missing, but never a blocker: Claude asks for it before `when` (a key of WHEN). */
+const need = (when, name, detail, hint, fix) => add('ask', name, detail, hint, { ...(fix || {}), when });
+/** The step that first needs an item — asked for again right before it if the tester skipped it at the start. */
+const WHEN = {
+  start: 'at the start of a run',
+  import: 'before test cases are imported to BrowserStack',
+  'bug-filing': 'before a bug is filed in Jira',
+  mobile: 'before a mobile session or mobile run',
+  automation: 'before automation is generated or run',
+};
 
 /** Run a command and return trimmed stdout, or null if it isn't on PATH / fails. */
 function run(cmd, args) {
@@ -81,9 +99,11 @@ const firstLine = (s) => (s ? s.split(/\r?\n/)[0].trim() : s);
 if (!MODE_SESSION) {
   // The engine shells out to the Claude CLI; without it the workflows cannot run.
   const v = firstLine(run('claude', ['--version']));
+  // Inside the VS Code / desktop extension the `claude` command is often not on PATH, and the workflows
+  // run fine there — so this is informational, never a blocker.
   if (v) ok('Claude CLI', v);
-  else fail('Claude CLI', 'not found on PATH',
-    'Install Claude Code and sign in (per-user subscription): https://claude.com/claude-code');
+  else warn('Claude CLI', 'not found on PATH (fine if you use Claude Code in VS Code or the desktop app)',
+    'For the terminal: install Claude Code and sign in — https://claude.com/claude-code');
 }
 
 // ── 2. Optional runtimes (needed only for the mobile/Java automation path) ────
@@ -91,15 +111,17 @@ if (!MODE_SESSION) {
   // `java -version` writes to stderr on older JDKs; -version + --version both tried.
   const v = firstLine(run('java', ['--version'])) || firstLine(run('java', ['-version']));
   if (v) ok('Java JDK (mobile automation)', v);
-  else warn('Java JDK (mobile automation)', 'not found on PATH',
-    'Only needed to RUN the Java/Appium framework. Install JDK 17+ (`brew install openjdk@17` / adoptium.net)');
+  else need('automation', 'Java JDK (mobile automation)', 'not found on PATH',
+    'Only needed to RUN the Java framework. Install JDK 17+ (`brew install --cask temurin` / adoptium.net)',
+    { type: 'install', tool: 'JDK 17+', run: isWindows ? 'winget install EclipseAdoptium.Temurin.17.JDK' : 'brew install --cask temurin' });
 }
 
 if (!MODE_SESSION) {
   const v = firstLine(run('mvn', ['-v']));
   if (v) ok('Maven (mobile automation)', v);
-  else warn('Maven (mobile automation)', 'not found on PATH',
-    'Only needed to RUN the Java framework. `brew install maven`, or use IntelliJ\'s bundled Maven');
+  else need('automation', 'Maven (mobile automation)', 'not found on PATH',
+    'Only needed to RUN the Java framework. `brew install maven`, or use IntelliJ\'s bundled Maven',
+    { type: 'install', tool: 'Maven 3.9+', run: isWindows ? 'winget install Apache.Maven' : 'brew install maven' });
 }
 
 // ── 3. Repo integrity ────────────────────────────────────────────────────────
@@ -113,7 +135,7 @@ if (!MODE_SESSION) {
 
 {
   const skills = path.join(repoRoot, '.claude', 'skills');
-  const expected = ['qa-shift-left', 'qa-validate', 'qa-full', 'grill-me'];
+  const expected = ['qa-setup', 'qa-shift-left', 'qa-validate', 'qa-full', 'grill-me'];
   const missing = expected.filter((s) => !existsSync(path.join(skills, s, 'SKILL.md')));
   if (!missing.length) ok('Workflow skills', `${expected.length} discovered in .claude/skills/`);
   else fail('Workflow skills', `missing: ${missing.join(', ')}`,
@@ -123,8 +145,8 @@ if (!MODE_SESSION) {
 {
   const nm = path.join(repoRoot, 'node_modules');
   if (existsSync(nm)) ok('Root node modules', 'installed');
-  else warn('Root node modules', 'not installed',
-    'Run `npm install` in the repo root (needed for Playwright/DB automation, not for the workflows)',
+  else need('start', 'Root node modules', 'not installed',
+    'Run `npm run setup` (or `npm install`) in the repo root',
     { type: 'command', run: 'npm install' });
 }
 
@@ -150,9 +172,10 @@ if (!MODE_SESSION) {
       const needed = ['config_testing.properties', ...(needsCard ? ['cardServiceConfigs_testing.properties'] : []), 'browserStackConfigs.properties'];
       const missing = needed.filter((f) => !framework.environmentsFile(f));
       if (!missing.length) ok('Framework config files', `${needed.length} found in resources/environments`);
-      else warn('Framework config files', `missing: ${missing.join(', ')}`,
-        `These are gitignored in the framework repo. Get them from the QA team and copy them into ${framework.environmentsDir()}`);
-    } else warn('Java QA framework', 'not located on this machine',
+      else need('automation', 'Framework config files', `missing: ${missing.join(', ')}`,
+        `These are gitignored in the framework repo. Get them from the QA team and copy them into ${framework.environmentsDir()}`,
+        { type: 'framework-files', files: missing, dir: framework.environmentsDir() });
+    } else need('automation', 'Java QA framework', 'not located on this machine',
       'Only needed to GENERATE/RUN automation. Clone it, then set QA_FRAMEWORK_PATH to the folder ' +
       'containing pom.xml. Tried:\n      ' + framework.candidates().join('\n      '),
       { type: 'path', env: 'QA_FRAMEWORK_PATH', what: 'the folder containing the Java framework pom.xml',
@@ -170,23 +193,23 @@ if (!MODE_SESSION) {
 // first-run state, and it used to pass this check because only the file's existence was tested.
 const CREDENTIALS_REL = 'automation/config/credentials.local.js';
 const CREDENTIALS = [
-  { name: 'Jira email', env: 'JIRA_EMAIL', key: 'jiraEmail', level: 'fail', secret: false,
+  { name: 'Jira email', env: 'JIRA_EMAIL', key: 'jiraEmail', when: 'bug-filing', secret: false,
     needFor: 'filing bugs (Jira REST)', where: 'your @breadfast.com address' },
-  { name: 'Jira API token', env: 'JIRA_API_TOKEN', key: 'jiraApiToken', level: 'fail', secret: true,
+  { name: 'Jira API token', env: 'JIRA_API_TOKEN', key: 'jiraApiToken', when: 'bug-filing', secret: true,
     needFor: 'filing bugs and attaching evidence (Jira REST)',
     where: 'https://id.atlassian.com/manage-profile/security/api-tokens → Create API token' },
-  { name: 'BrowserStack Test Management username', env: 'BS_TM_USERNAME', key: 'bsTmUsername', level: 'fail', secret: false,
+  { name: 'BrowserStack Test Management username', env: 'BS_TM_USERNAME', key: 'bsTmUsername', when: 'import', secret: false,
     alt: { env: 'BROWSERSTACK_USERNAME', key: 'browserstackUsername' },
     needFor: 'importing/syncing test cases and runs (STEP 7, every story)', where: 'your BrowserStack login email' },
-  { name: 'BrowserStack Test Management API token', env: 'BS_TM_API_TOKEN', key: 'bsTmApiToken', level: 'fail', secret: true,
+  { name: 'BrowserStack Test Management API token', env: 'BS_TM_API_TOKEN', key: 'bsTmApiToken', when: 'import', secret: true,
     needFor: 'importing/syncing test cases and runs (STEP 7, every story)',
     where: 'BrowserStack → Profile → API tokens → the Test Management token (NOT the App Automate key)' },
   // App Automate also counts when it is in the Java framework's browserStackConfigs.properties — that is
   // where automation/mobile/session.js and the framework itself read it (env first, then that file).
-  { name: 'BrowserStack App Automate username', env: 'BROWSERSTACK_USERNAME', key: 'browserstackUsername', level: 'warn', secret: false,
+  { name: 'BrowserStack App Automate username', env: 'BROWSERSTACK_USERNAME', key: 'browserstackUsername', when: 'mobile', secret: false,
     framework: 'userName',
     needFor: 'mobile sessions and automated runs', where: 'BrowserStack → Account → Settings → Authentication & Security' },
-  { name: 'BrowserStack App Automate access key', env: 'BROWSERSTACK_ACCESS_KEY', key: 'browserstackAccessKey', level: 'warn', secret: true,
+  { name: 'BrowserStack App Automate access key', env: 'BROWSERSTACK_ACCESS_KEY', key: 'browserstackAccessKey', when: 'mobile', secret: true,
     framework: 'accessKey',
     needFor: 'mobile sessions and automated runs', where: 'BrowserStack → Account → Settings → Authentication & Security' },
 ];
@@ -220,13 +243,13 @@ const PLACEHOLDER = /your-|\.\.\.|^you@|^todo$|^<.*>$/i;
     : 'cp automation/config/credentials.local.example.js automation/config/credentials.local.js';
 
   if (localBroken) {
-    fail('Credentials file', `${CREDENTIALS_REL} does not load: ${localBroken}`,
+    need('start', 'Credentials file', `${CREDENTIALS_REL} does not load: ${localBroken}`,
       'Fix the syntax error in the file (it is plain JavaScript: module.exports = { … })',
       { type: 'file', path: CREDENTIALS_REL });
   } else if (existsSync(localFile)) {
     ok('Credentials file', `${CREDENTIALS_REL} present (gitignored)`);
   } else {
-    warn('Credentials file', `no ${CREDENTIALS_REL} — values can still come from env vars`,
+    need('start', 'Credentials file', `no ${CREDENTIALS_REL} — values can still come from env vars`,
       `Create it from the template:  ${copyCmd}`, { type: 'command', run: copyCmd });
   }
 
@@ -241,17 +264,16 @@ const PLACEHOLDER = /your-|\.\.\.|^you@|^todo$|^<.*>$/i;
     const detail = `${placeholder ? 'still the template placeholder' : 'not set'} — needed for ${c.needFor}`;
     const elsewhere = c.framework ? `, or ${c.framework} in the Java framework's resources/environments/${FRAMEWORK_BS_FILE}` : '';
     const hint = `Set ${c.key} in ${CREDENTIALS_REL} (or env ${c.env}${elsewhere}). Get it from: ${c.where}`;
-    const fix = { type: 'credential', key: c.key, env: c.env, file: CREDENTIALS_REL, secret: c.secret, where: c.where };
-    if (c.level === 'fail') fail(c.name, detail, hint, fix);
-    else warn(c.name, detail, hint, fix);
+    need(c.when, c.name, detail, hint, { type: 'credential', key: c.key, env: c.env, file: CREDENTIALS_REL, secret: c.secret, where: c.where });
   }
 
   if (existsSync(localFile)) {
     // Guard against the exact mistake this repo shipped once: a real token committed.
     const tracked = run('git', ['ls-files', '--error-unmatch', 'automation/config/credentials.local.js']);
     if (tracked) {
-      fail('Credentials safety', 'credentials.local.js is TRACKED BY GIT',
-        'Untrack it immediately: `git rm --cached automation/config/credentials.local.js` and rotate any exposed token');
+      need('start', 'Credentials safety', 'credentials.local.js is TRACKED BY GIT',
+        'Untrack it now: `git rm --cached automation/config/credentials.local.js`, and rotate any token that was pushed',
+        { type: 'command', run: 'git rm --cached automation/config/credentials.local.js', urgent: true });
     } else {
       ok('Credentials safety', 'credentials.local.js is untracked, as it must be');
     }
@@ -268,7 +290,7 @@ let teamScope = null;
     const id = team.selectedTeamId();
     const known = team.availableTeams();
     if (!id) {
-      fail('QA team', 'no team selected',
+      need('start', 'QA team', 'no team selected',
         `Pick yours: add  team: '<id>'  to automation/config/credentials.local.js (or set QA_TEAM).\n` +
         `      Teams with a profile: ${known.join(', ') || '(none)'} — new team: see teams/README.md`,
         { type: 'team', key: 'team', env: 'QA_TEAM', file: CREDENTIALS_REL, available: known,
@@ -277,7 +299,7 @@ let teamScope = null;
       const profile = team.loadTeam({ id });
       const todo = team.unfilledPaths(profile);
       if (todo.length) {
-        warn('QA team', `${id} — ${todo.length} value(s) still TODO: ${todo.join(', ')}`,
+        need('import', 'QA team', `${id} — ${todo.length} value(s) still TODO: ${todo.join(', ')}`,
           `Fill them in teams/${id}.json (ask your squad lead) and commit the file. Scripts that need a TODO value stop and name it.`,
           { type: 'team-values', team: id, file: `teams/${id}.json`, fields: todo, explained: 'teams/_template.json' });
       } else {
@@ -286,7 +308,7 @@ let teamScope = null;
         let scopeError = null;
         try { teamScope = { id, domains: team.teamDomains(profile), surfaces: team.teamSurfaces(profile), contextDir: team.teamContextDir(profile) }; } catch (e) { scopeError = e.message; }
         if (scopeError) {
-          fail('QA team', scopeError.split('\n')[0],
+          need('start', 'QA team', scopeError.split('\n')[0],
             `Fix teams/${id}.json (domains: ids from qa-workflow/registry/knowledge.json, or []; surfaces: web, mobile, backend) and commit it.`,
             { type: 'team-values', team: id, file: `teams/${id}.json`, fields: ['domains', 'surfaces'], explained: 'teams/_template.json' });
         } else {
@@ -296,7 +318,7 @@ let teamScope = null;
       }
     }
   } catch (e) {
-    fail('QA team', e.message.split('\n')[0], 'See teams/README.md',
+    need('start', 'QA team', e.message.split('\n')[0], 'See teams/README.md',
       { type: 'team', key: 'team', env: 'QA_TEAM', file: CREDENTIALS_REL });
   }
 }
@@ -309,7 +331,7 @@ if (teamScope) {
   const rel = path.relative(repoRoot, abs);
   const onboarding = 'qa-workflow/skills/team-onboarding/SKILL.md';
   if (!existsSync(abs)) {
-    fail('Team context', `${rel} missing — this team has not been onboarded`,
+    need('start', 'Team context', `${rel} missing — this team has not been onboarded`,
       `Run team onboarding (${onboarding}): it asks about the product, repos, stack and docs, and writes ${rel}. Commit it for your teammates.`,
       { type: 'team-context', team: teamScope.id, file: rel, run: onboarding });
   } else {
@@ -324,7 +346,7 @@ if (teamScope) {
       try { registry = JSON.parse(readFileSync(path.join(repoRoot, 'qa-workflow', 'registry', 'knowledge.json'), 'utf8')); } catch { /* reported elsewhere */ }
       const res = lint.lintTeamContext(path.dirname(abs), { ownDomains: teamScope.domains, registry });
       if (res.errors.length) {
-        fail('Team context', `${rel} fails knowledge-lint (${res.errors.length} error(s), first: ${res.errors[0].code})`,
+        need('start', 'Team context', `${rel} fails knowledge-lint (${res.errors.length} error(s), first: ${res.errors[0].code})`,
           `Run: node qa-workflow/bin/qa-cli.js knowledge-lint teams/${teamScope.id} — fix each fact's tag/source, then commit.`,
           { type: 'team-context-invalid', team: teamScope.id, file: rel });
       } else {
@@ -332,7 +354,7 @@ if (teamScope) {
         const s = res.stats;
         const detail = `${rel} — verified ${s.verifiedAt} · ${s.confirmed} confirmed · ${s.unknown} unknown`;
         if (st.stale) {
-          warn('Team context', `${detail} — STALE: ${st.reasons.join('; ')}`,
+          need('start', 'Team context', `${detail} — STALE: ${st.reasons.join('; ')}`,
             `Refresh it with team onboarding (${onboarding}); \`qa-cli.js knowledge-status\` shows what changed.`,
             { type: 'team-context-stale', team: teamScope.id, file: rel, run: onboarding });
         } else ok('Team context', detail);
@@ -346,8 +368,9 @@ if (teamScope) {
   const ws = process.env.QA_WORKSPACE_DIR?.trim() || path.join(os.homedir(), 'BreadfastQA', 'Workspace');
   const inside = path.resolve(ws).toLowerCase().startsWith(path.resolve(repoRoot).toLowerCase() + path.sep);
   if (inside) {
-    fail('Runtime workspace', `${ws} is INSIDE the repo`,
-      'Point QA_WORKSPACE_DIR outside the clone so runtime data is never committed');
+    need('start', 'Runtime workspace', `${ws} is INSIDE the repo`,
+      'Point QA_WORKSPACE_DIR outside the clone so runtime data is never committed',
+      { type: 'path', env: 'QA_WORKSPACE_DIR', what: 'a folder outside the repo for runtime data' });
   } else if (existsSync(ws)) {
     ok('Runtime workspace', ws);
   } else {
@@ -356,18 +379,37 @@ if (teamScope) {
   }
 }
 
+// ── 6b. First-run setup (the /qa-setup workflow runs once per machine) ───────
+// Operator idea 2026-11-24: setup is a workflow that runs ONCE, at the first install. Until its marker
+// exists, the session brief tells Claude to run /qa-setup before anything else.
+let firstRun = false;
+{
+  const ws = process.env.QA_WORKSPACE_DIR?.trim() || path.join(os.homedir(), 'BreadfastQA', 'Workspace');
+  const marker = path.join(ws, 'qa-setup.json');
+  let rec = null;
+  try { rec = JSON.parse(readFileSync(marker, 'utf8')); } catch { /* not run yet, or unreadable */ }
+  if (rec) ok('First-run setup', `done ${String(rec.completedAt || '').slice(0, 10)}`
+    + (Array.isArray(rec.deferred) && rec.deferred.length ? ` · skipped then: ${rec.deferred.join(', ')}` : ''));
+  else {
+    firstRun = true;
+    need('start', 'First-run setup', 'not run on this machine yet',
+      'Open this folder in Claude Code and type /qa-setup (it runs once, asks for everything, and you can skip any of it)',
+      { type: 'setup', run: '/qa-setup', marker });
+  }
+}
+
 // ── 7. Playwright browsers (needed for web execution + Figma browser export) ─
 {
   const pw = path.join(repoRoot, 'node_modules', '@playwright', 'test');
   if (!existsSync(pw)) {
-    warn('Playwright', 'package not installed', 'Run `npm install` first', { type: 'command', run: 'npm install' });
+    need('start', 'Playwright', 'package not installed', 'Run `npm run setup` (or `npm install`)', { type: 'command', run: 'npm install' });
   } else {
     const cacheDir = process.env.PLAYWRIGHT_BROWSERS_PATH || (
       isWindows ? path.join(os.homedir(), 'AppData', 'Local', 'ms-playwright')
         : process.platform === 'darwin' ? path.join(os.homedir(), 'Library', 'Caches', 'ms-playwright')
           : path.join(os.homedir(), '.cache', 'ms-playwright'));
     if (existsSync(cacheDir)) ok('Playwright browsers', cacheDir);
-    else warn('Playwright browsers', 'no browser cache found',
+    else need('start', 'Playwright browsers', 'no browser cache found',
       'Run `npm run playwright:install` (downloads Chromium)', { type: 'command', run: 'npm run playwright:install' });
   }
 }
@@ -391,12 +433,20 @@ if (teamScope) {
 // ── Report ───────────────────────────────────────────────────────────────────
 const problems = (level) => results.filter((r) => r.level === level)
   .map(({ name, detail, hint, fix }) => ({ name, detail, hint, fix }));
+const ORDER = Object.keys(WHEN);
+const byWhen = (list) => [...list].sort((a, b) => ORDER.indexOf(a.fix.when) - ORDER.indexOf(b.fix.when));
 
 if (MODE_JSON) {
   const blocking = problems('fail');
+  const ask = byWhen(problems('ask'));
   process.stdout.write(JSON.stringify({
+    // `ready` = a run can START. Items in `ask` never stop one: each is asked for up front and again
+    // right before the step named by its fix.when.
     ready: blocking.length === 0,
+    complete: blocking.length === 0 && ask.length === 0,
+    firstRun,
     blocking,
+    ask,
     warnings: problems('warn'),
     ok: results.filter((r) => r.level === 'ok').map((r) => r.name),
   }, null, 2) + '\n');
@@ -407,8 +457,9 @@ if (MODE_SESSION) {
   // Printed into Claude's context by the SessionStart hook. Written as an instruction to Claude, kept
   // short, and it never prints a credential value. Exit 0 always: the session must open regardless.
   const blocking = problems('fail');
-  const warnings = problems('warn');
-  const line = (r) => `- ${r.name}: ${r.detail}${r.fix && r.fix.key ? ` → set \`${r.fix.key}\` in ${r.fix.file || CREDENTIALS_REL}` : ''}`;
+  const ask = byWhen(problems('ask'));
+  const line = (r) => `- ${r.name}: ${r.detail}${r.fix && r.fix.key ? ` → \`${r.fix.key}\` in ${r.fix.file || CREDENTIALS_REL}` : ''}`
+    + (r.fix && r.fix.when ? ` (needed ${WHEN[r.fix.when]})` : '');
   // Which team this session serves, and where its product knowledge comes from — said up front so no
   // session starts by reading another team's domain.
   const scopeLine = teamScope
@@ -416,22 +467,25 @@ if (MODE_SESSION) {
       + ` (domains: ${teamScope.domains.join(', ') || 'none'}; surfaces: ${teamScope.surfaces.join(', ')}). `
       + 'Read product rules only from that plan; never from another team\'s domain or teams/<other>/ folder.'
     : null;
-  if (!blocking.length && !warnings.length) {
+  if (scopeLine) console.log(scopeLine);
+  if (firstRun && !blocking.length) {
+    console.log('FIRST RUN on this machine: before anything else — even if the user asks for a story — run the one-time '
+      + 'setup workflow (.claude/skills/qa-setup/SKILL.md, i.e. /qa-setup). Say so in one line, then start it.');
+  }
+  if (!blocking.length && !ask.length) {
     console.log('QA environment check (scripts/doctor.mjs): ready — nothing missing.');
-    if (scopeLine) console.log(scopeLine);
   } else {
-    if (scopeLine) console.log(scopeLine);
-    console.log(`QA environment check (scripts/doctor.mjs): ${blocking.length} blocking, ${warnings.length} warning(s).`);
-    if (blocking.length) console.log('Blocking — a /qa-* workflow cannot complete without these:\n' + blocking.map(line).join('\n'));
-    if (warnings.length) console.log('Warnings — only some paths need these:\n' + warnings.map(line).join('\n'));
-    console.log('Before starting any /qa-* workflow, run the Readiness step in '
-      + 'qa-workflow/skills/detect-prerequisites/SKILL.md: tell the user what is missing and ask for it in ONE batch. '
-      + 'Do not wait for a script to fail mid-run.');
+    console.log(`QA environment check (scripts/doctor.mjs): ${ask.length} item(s) to add, ${blocking.length} that stop scripts from running.`);
+    if (blocking.length) console.log('Cannot run until fixed (tell the user how):\n' + blocking.map(line).join('\n'));
+    if (ask.length) console.log('To add — NEVER a reason to stop a run:\n' + ask.map(line).join('\n'));
+    console.log('At the start of the next /qa-* run (or now, if the user asks to set up), follow the Readiness step in '
+      + 'qa-workflow/skills/detect-prerequisites/SKILL.md: ask for these in ONE batch, accept "skip", record what was '
+      + 'skipped, carry on, and ask again right before the step that needs a skipped item.');
   }
   process.exit(0);
 }
 
-const ICON = { ok: '  OK  ', warn: ' WARN ', fail: ' FAIL ' };
+const ICON = { ok: '  OK  ', ask: ' ADD  ', warn: ' NOTE ', fail: ' FAIL ' };
 const width = results.reduce((m, r) => Math.max(m, r.name.length), 0);
 
 console.log('\nBreadfast QA — environment doctor');
@@ -439,18 +493,21 @@ console.log(`${process.platform} ${os.release()} · ${os.arch()} · repo ${repoR
 
 for (const r of results) {
   console.log(`[${ICON[r.level]}] ${r.name.padEnd(width)}  ${r.detail}`);
-  if (r.hint) console.log(`${' '.repeat(width + 11)}→ ${r.hint}`);
+  if (r.level === 'ask') console.log(`${' '.repeat(width + 11)}→ needed ${WHEN[r.fix.when]}. Claude asks for it then; to add it now: ${r.hint}`);
+  else if (r.hint) console.log(`${' '.repeat(width + 11)}→ ${r.hint}`);
 }
 
 const fails = results.filter((r) => r.level === 'fail');
-const warns = results.filter((r) => r.level === 'warn');
-console.log(`\n${results.length - fails.length - warns.length} ok · ${warns.length} warning(s) · ${fails.length} blocking\n`);
+const asks = results.filter((r) => r.level === 'ask');
+const notes = results.filter((r) => r.level === 'warn');
+console.log(`\n${results.length - fails.length - asks.length - notes.length} ok · ${asks.length} to add · ${notes.length} note(s) · ${fails.length} must fix\n`);
 
 if (fails.length) {
-  console.log('Blocking issues must be fixed before running a QA workflow.');
+  console.log('The items marked FAIL stop the scripts from running at all. Fix them, then run `npm run doctor` again.');
   console.log('Setup guide: SETUP.md · Troubleshooting: SETUP.md#troubleshooting\n');
   process.exit(1);
 }
-console.log(warns.length
-  ? 'No blocking issues. Warnings only affect the optional paths noted above.\n'
+console.log(asks.length
+  ? 'Ready to start. Open this folder in Claude Code and type /qa-setup, or start a story: Claude asks for each\n'
+    + 'item marked ADD (you can skip any of them; only the step that needs it waits).\n'
   : 'Environment is fully ready.\n');

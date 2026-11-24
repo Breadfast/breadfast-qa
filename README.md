@@ -21,24 +21,19 @@ tooling belongs in `automation/`; story data does not belong in git.
 ## Quick start
 
 **New here? Follow [SETUP.md](SETUP.md)** — empty machine to first workflow, Windows and macOS.
-The short version:
+The short version — three steps:
 ```bash
 git clone https://github.com/Breadfast/breadfast-qa.git
 git clone https://github.com/Breadfast/QA_Automation_Framework.git projects   # side by side
-cd breadfast-qa
-npm install && npm run playwright:install
-cp automation/config/credentials.local.example.js automation/config/credentials.local.js
-# fill in your own values; copy the team's framework config files into ../projects/resources/environments/
-npm run doctor                    # tells you exactly what is still missing
+cd breadfast-qa && npm run setup            # installs, creates your credentials file, asks your team
 ```
+Then open this folder in Claude Code and type **`/qa-setup`**. Claude asks for everything still missing
+(credentials, Jira/Figma sign-in, your squad's values, onboarding) in one batch. **You can skip any of it**:
+nothing blocks, and a skipped item is asked for again right before the step that needs it. Or go straight to
+`/qa-shift-left`, `/qa-validate` or `/qa-full` — the same questions come first.
 
-**Another team adopting this?** The process and the org standards are shared; product knowledge is per team.
-Add `teams/<your-team>.json`, onboard once (the doctor blocks until `teams/<your-team>/context.md` exists),
-and your sessions load only your team's knowledge — [SETUP.md §4.2](SETUP.md#42-your-teams-knowledge--onboard-once-then-only-your-knowledge-loads).
-
-Then open this folder in Claude Code, approve the project MCP servers and plugins it offers
-(`.mcp.json`, `.claude/settings.json`), authenticate Atlassian and Figma with `/mcp`, and run
-`/qa-shift-left`, `/qa-validate`, or `/qa-full`.
+**Any squad** can use it: a squad with no team file gets one from `npm run setup` (or `/qa-setup`), and its
+sessions load only its own product knowledge — [SETUP.md §4.2](SETUP.md#42-your-teams-knowledge--onboard-once-then-only-your-knowledge-loads).
 
 Run the legacy Playwright suite:
 ```bash
