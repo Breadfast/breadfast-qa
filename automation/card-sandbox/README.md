@@ -48,6 +48,15 @@ The mode is passed **explicitly** (never `auto`), so there is **no silent fallba
 generating a number, or changing a field. Every attempt (success or failure) is written to
 `attempts.jsonl` with its chosen MDP mode — **no passcode or token is ever logged**.
 
+## Card pool (no user)
+
+The **Card pool** panel issues 1–50 free cards (`create_bcard_user.js --pool-only`) and shows each card's
+package number, BCID, UID (the MDP card id, `cards.externalId`) and card row id. Click any cell to copy it,
+or use **Copy all** to copy the batch. The table below the panel lists every pool card issued from this page
+(saved in `pool.jsonl`, gitignored), with its live state read from the card DB:
+**Free** (still in the pool), **Collected** (a user picked up the package) or **Linked** (bound to a wallet
+user). The holder's phone is shown once the card has one.
+
 ## Created-users table
 
 Each creation is saved to `created.jsonl` and enriched live from the card DB on load: phone, card status,

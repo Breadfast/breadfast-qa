@@ -63,6 +63,11 @@
   .b-Linked{ color:var(--warn); background:color-mix(in srgb,var(--warn) 16%,transparent); }
   .b-Received{ color:var(--accent); background:color-mix(in srgb,var(--accent) 16%,transparent); }
   .b-Closed{ color:var(--err); background:color-mix(in srgb,var(--err) 16%,transparent); }
+  .b-Free{ color:var(--ok); background:color-mix(in srgb,var(--ok) 16%,transparent); }
+  .b-Collected{ color:var(--accent); background:color-mix(in srgb,var(--accent) 16%,transparent); }
+  .b-Deleted{ color:var(--err); background:color-mix(in srgb,var(--err) 16%,transparent); }
+  input[type=number] { width:90px; padding:10px 12px; border:1px solid var(--line); border-radius:8px;
+    background:var(--field); color:var(--ink); font-size:15px; }
   .env { display:inline-block; padding:1px 8px; border-radius:6px; font-size:11.5px; font-weight:700; letter-spacing:.3px; }
   .env.real { color:#fff; background:var(--err); }
   .env.mock { color:var(--ink); background:var(--chip); }
@@ -153,6 +158,31 @@
     </div>
 
     <div class="out" id="out"></div>
+  </div>
+
+  <!-- ── card pool (no user) ───────────────────────────────────────── -->
+  <div class="panel">
+    <div class="toprow">
+      <div>
+        <strong>Card pool</strong>
+        <div class="note">Issue free cards into the pool — no user is created. Each card's package number can be
+          collected at a pickup location.</div>
+      </div>
+      <button class="btn ghost" id="poolRefresh">Refresh</button>
+    </div>
+    <div class="actions" style="margin-top:14px">
+      <label for="poolCount" style="margin:0">Cards</label>
+      <input id="poolCount" type="number" min="1" max="50" value="1">
+      <button class="btn" id="poolGo">Create pool cards</button>
+      <span class="note" id="poolBusy"></span>
+    </div>
+    <div class="out" id="poolOut"></div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Package</th><th>BCID</th><th>UID (MDP card id)</th><th>Card row id</th><th>State</th><th>Holder</th><th>Issued</th></tr></thead>
+        <tbody id="poolRows"><tr><td colspan="7" class="muted">Loading…</td></tr></tbody>
+      </table>
+    </div>
   </div>
 
   <!-- ── created users ─────────────────────────────────────────────── -->
@@ -419,8 +449,59 @@ function fmt(iso){ if(!iso) return ''; const d=new Date(iso); if (Number.isNaN(+
 function showMsg(kind, text){ $('#out').innerHTML = '<div class="msg '+kind+'">'+text+'</div>'; }
 function setBusy(on){ $('#go').disabled = on; $('#busy').innerHTML = on ? '<span class="spin"></span> working… (activation can take ~30–60s)' : ''; }
 
+// ── card pool ──────────────────────────────────────────────────────
+const POOL_COLS = [
+  { val:(c) => c.packageNumber, cls:'mono' },
+  { val:(c) => c.bcid, cls:'mono' },
+  { val:(c) => c.uid, cls:'mono' },
+  { val:(c) => c.cardId, cls:'mono' },
+  { val:(c) => (c.live && c.live.state) || null, html:(v) => badge(v) },
+  { val:(c) => (c.live && c.live.phone) || null, cls:'mono' },
+  { val:(c) => c.issuedAt, cls:'muted', show:(v) => fmt(v) },
+];
+function poolRow(c) { return '<tr>' + POOL_COLS.map((col) => cell(col, col.val(c))).join('') + '</tr>'; }
+
+$('#poolRefresh').addEventListener('click', loadPool);
+$('#poolGo').addEventListener('click', async () => {
+  const count = Number($('#poolCount').value);
+  if (!Number.isInteger(count) || count < 1 || count > 50) { $('#poolOut').innerHTML = '<div class="msg err">Enter a whole number from 1 to 50.</div>'; return; }
+  $('#poolGo').disabled = true;
+  $('#poolBusy').innerHTML = '<span class="spin"></span> issuing ' + count + ' card' + (count > 1 ? 's' : '') + '…';
+  $('#poolOut').innerHTML = '';
+  try {
+    const r = await fetch(api('/api/pool'), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ count }) }).then((x) => x.json());
+    if (r.error) { $('#poolOut').innerHTML = '<div class="msg err">' + esc(oneLine(r.error)) + '</div>'; return; }
+    const lines = r.cards.map((c) => 'package ' + c.packageNumber + ' | BCID ' + c.bcid + ' | UID ' + (c.uid || '—')).join('\n');
+    $('#poolOut').innerHTML = '<div class="msg ok"><b>' + r.cards.length + ' card' + (r.cards.length > 1 ? 's' : '') + ' issued</b>'
+      + ' <span class="muted">on ' + esc(r.env || 'testing') + '</span>'
+      + ' <button class="btn ghost" id="poolCopy" style="padding:4px 10px;font-size:13px;margin-left:8px">Copy all</button>'
+      + '<div class="tablewrap"><table><thead><tr><th>Package</th><th>BCID</th><th>UID (MDP card id)</th><th>Card row id</th></tr></thead><tbody>'
+      + r.cards.map((c) => '<tr>' + POOL_COLS.slice(0, 4).map((col) => cell(col, col.val(c))).join('') + '</tr>').join('')
+      + '</tbody></table></div></div>';
+    $('#poolCopy').addEventListener('click', () => copy(lines));
+    $('#poolOut').querySelector('tbody').addEventListener('click', (e) => { const td = e.target.closest('td.copy'); if (td) copy(td.dataset.copy); });
+    loadPool();
+  } catch (e) {
+    $('#poolOut').innerHTML = '<div class="msg err">Request failed: ' + esc(e.message) + '</div>';
+  } finally { $('#poolGo').disabled = false; $('#poolBusy').innerHTML = ''; }
+});
+$('#poolRows').addEventListener('click', (e) => { const td = e.target.closest('td.copy'); if (td) copy(td.dataset.copy); });
+
+async function loadPool() {
+  $('#poolRows').innerHTML = '<tr><td colspan="7" class="muted"><span class="spin"></span> Loading…</td></tr>';
+  try {
+    const r = await fetch(api('/api/pool')).then((x) => x.json());
+    const cards = r.cards || [];
+    $('#poolRows').innerHTML = cards.length ? cards.map(poolRow).join('')
+      : '<tr><td colspan="7" class="muted">No pool cards issued here yet.</td></tr>';
+  } catch {
+    $('#poolRows').innerHTML = '<tr><td colspan="7" class="muted">Could not load pool cards (is the server running?).</td></tr>';
+  }
+}
+
 paintHead();
 loadUsers();
+loadPool();
 </script>
 </body>
 </html>

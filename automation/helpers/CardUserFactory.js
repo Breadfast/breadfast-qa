@@ -408,17 +408,39 @@ class CardUserFactory {
     return { walletUserId, message: r.json?.message };
   }
 
-  /** Claim a valid, available card from the pool — returns BOTH packageNumber and bcid (cardToken). */
-  async claimCardFromPool(token) {
+  /**
+   * Issue `count` new non-personalized cards into the pool (one cards/pool call). Each card is free —
+   * no wallet user, not collected. Returns, per card:
+   *   packageNumber  what the pickup location collects
+   *   bcid           cards.cardToken
+   *   uid            cards.externalId — the MDP card id
+   *   cardId         cards.id — the card-service row id
+   */
+  async createPoolCards(count = 1, token) {
     token = token || await this._getCardServiceToken();
     const r = await postJson(
       cfg.cardServicesBaseURL + CARDS_POOL,
-      { cardsCount: 1, contractNumber: cfg.contractNumber, typeId: cfg.typeId, productNumber: cfg.productNumber },
+      { cardsCount: count, contractNumber: cfg.contractNumber, typeId: cfg.typeId, productNumber: cfg.productNumber },
       { Authorization: token }
     );
-    const d = r.json?.data?.[0];
-    if (!d || !d.packageNumber) throw new Error(`getCardsPool returned no package: HTTP ${r.status} ${r.text}`);
-    return { packageNumber: String(d.packageNumber), bcid: String(d.cardToken) };
+    const rows = (r.json?.data || []).filter((d) => d && d.packageNumber);
+    if (rows.length !== count) {
+      throw new Error(`cards/pool returned ${rows.length} of ${count} card(s): HTTP ${r.status} ${r.text}`);
+    }
+    return rows.map((d) => ({
+      packageNumber: String(d.packageNumber),
+      bcid: String(d.cardToken),
+      uid: d.externalId == null ? null : String(d.externalId),
+      cardId: d.id == null ? null : String(d.id),
+      type: d.type || null,
+      createdAt: d.createdAt || null,
+    }));
+  }
+
+  /** Claim a valid, available card from the pool — returns BOTH packageNumber and bcid (cardToken). */
+  async claimCardFromPool(token) {
+    const [card] = await this.createPoolCards(1, token);
+    return card;
   }
 
   /** Mobile passcode login -> user token (for link/set-pin/activate). Encrypted body, mirrors Java. */

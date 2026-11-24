@@ -31,10 +31,15 @@
  *
  * Every step reads the card status back and fails loudly when it is not the expected one.
  *
+ * --pool-only skips the user entirely: it issues --count new cards into the card pool (cards/pool) and
+ * prints each card's package number, BCID (cardToken) and UID (externalId, the MDP card id). The cards
+ * are free — not collected, not linked — so a pickup location or a later --stage received run can use them.
+ *
  * Usage:
  *   node automation/bcard-user/create_bcard_user.js --stage active
  *   node automation/bcard-user/create_bcard_user.js --stage registered --phone 01150211684 --kyc
  *   node automation/bcard-user/create_bcard_user.js --stage pending --count 5
+ *   node automation/bcard-user/create_bcard_user.js --pool-only --count 3
  *   node automation/bcard-user/create_bcard_user.js --help
  *
  * Reuses CardUserFactory for every card-service call and BreadfastUserRegistrar for the wp-json
@@ -60,6 +65,8 @@ const AR_FIRST_NAME = 'بثينة';
 const AR_LAST_NAME  = 'مصطفى';
 
 const OUTPUT_FILE = path.join(__dirname, 'output', 'created-users.jsonl');
+const POOL_FILE   = path.join(__dirname, 'output', 'pool-cards.jsonl');
+const POOL_MAX    = 50;
 
 // ── CLI ──────────────────────────────────────────────────────────────────────
 
@@ -78,6 +85,8 @@ Create a BCard test user at any card stage.
   --card-pin <pin>    4-digit card PIN entered in the webview (default: 1357; 1111 is rejected) — webview only
   --headed            show the browser while the card PIN is set — webview mode only
   --count <n>         create n users in parallel (random phones only)
+  --pool-only         no user: issue --count cards into the card pool and print each card's
+                      package number, BCID and UID (MDP card id). Max ${POOL_MAX} per run.
   --json              print only the JSON result
 `;
 
@@ -104,6 +113,7 @@ function parseArgs(argv) {
       case '--card-pin':     a.cardPin = next(); break;
       case '--headed':       a.headed = true; break;
       case '--json':         a.json = true; break;
+      case '--pool-only':    a.poolOnly = true; break;
       case '-h': case '--help': a.help = true; break;
       default: throw new Error(`unknown option ${k}`);
     }
@@ -115,6 +125,11 @@ function parseArgs(argv) {
   if (a.passcode) cfg.passcode = a.passcode;   // used for createPin and the passcode login
   if (!(a.count >= 1)) throw new Error('--count must be >= 1');
   if (a.phone && a.count > 1) throw new Error('--count cannot be combined with --phone');
+  if (a.poolOnly) {
+    if (!Number.isInteger(a.count) || a.count > POOL_MAX) throw new Error(`--pool-only takes a whole --count from 1 to ${POOL_MAX}`);
+    const userOnly = ['phone', 'breadfastId', 'nationalId', 'bcid', 'passcode'].filter((k) => a[k] !== undefined);
+    if (userOnly.length || a.kyc) throw new Error('--pool-only creates cards only — drop the user options (' + [...userOnly, ...(a.kyc ? ['kyc'] : [])].join(', ') + ')');
+  }
   if (a.phone) a.phone = normalizePhone(a.phone);
   return a;
 }
@@ -413,11 +428,49 @@ function randomAdultDob() {
   return new Date(from + Math.random() * (to - from));
 }
 
+// ── pool only ────────────────────────────────────────────────────────────────
+
+/** Issue `count` free cards into the pool and log them; no user is touched. */
+async function createPoolCards(session, count) {
+  const cards = await session.factory.createPoolCards(count, await session.token());
+  const issuedAt = new Date().toISOString();
+  const out = cards.map((c) => ({ ...c, issuedAt }));
+  fs.mkdirSync(path.dirname(POOL_FILE), { recursive: true });
+  fs.appendFileSync(POOL_FILE, out.map((c) => JSON.stringify(c)).join('\n') + '\n');
+  return out;
+}
+
+async function mainPool(args) {
+  const log = args.json ? () => {} : (m) => console.log(m);
+  const session = new Session({ log });
+  const started = Date.now();
+  let cards;
+  try {
+    log(`  · cards/pool × ${args.count}…`);
+    cards = await createPoolCards(session, args.count);
+  } finally {
+    await session.close();
+  }
+  if (args.json) {
+    // Always an object, so callers (card-sandbox) can parse the last {...} block.
+    console.log(JSON.stringify({ env: cfg.cardServicesBaseURL, cards }, null, 2));
+    return;
+  }
+  console.log('');
+  console.log(`  ${'package'.padEnd(10)} ${'BCID'.padEnd(14)} ${'UID (MDP card id)'.padEnd(18)} card row id`);
+  for (const c of cards) {
+    console.log(`  ${c.packageNumber.padEnd(10)} ${c.bcid.padEnd(14)} ${String(c.uid || '—').padEnd(18)} ${c.cardId || '—'}`);
+  }
+  log(`\n${cards.length} pool card(s) on ${cfg.cardServicesBaseURL} in ${((Date.now() - started) / 1000).toFixed(1)}s`
+    + ` — appended to ${path.relative(process.cwd(), POOL_FILE)}`);
+}
+
 // ── main ─────────────────────────────────────────────────────────────────────
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.help) { console.log(HELP); return; }
+  if (args.poolOnly) return mainPool(args);
 
   const log = args.json ? () => {} : (m) => console.log(m);
   const session = new Session({ log });
@@ -481,7 +534,7 @@ async function runLimited(thunks, limit) {
   return out;
 }
 
-module.exports = { createUser, normalizePhone, Session, STAGES };
+module.exports = { createUser, createPoolCards, normalizePhone, Session, STAGES };
 
 if (require.main === module) {
   main().catch((e) => { console.error('FAIL: ' + e.message); process.exit(1); });

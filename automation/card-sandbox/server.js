@@ -27,6 +27,8 @@ const { spawn } = require('child_process');
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const TOOL = path.join(REPO_ROOT, 'automation', 'bcard-user', 'create_bcard_user.js');
 const STORE = path.join(__dirname, 'created.jsonl');
+const POOL_STORE = path.join(__dirname, 'pool.jsonl');   // pool cards issued from this page (gitignored)
+const POOL_MAX = 50;                                       // same cap as create_bcard_user.js --pool-only
 const INDEX = path.join(__dirname, 'public', 'index.html');
 const PORT = Number(process.env.PORT || 4100);
 
@@ -120,10 +122,29 @@ async function liveUser(e164) {
   };
 }
 
+/**
+ * Where a pool card stands now: Free (in the pool), Collected (a user picked its package up) or Linked
+ * (bound to a wallet user). Read-only.
+ */
+async function livePoolCard(bcid) {
+  const card = (await query(
+    'SELECT c.id, c.walletUserId, c.packageNumber, c.externalId, c.deletedAt, w.mobile_number AS phone ' +
+    'FROM cards c LEFT JOIN wallet_users w ON w.id = c.walletUserId WHERE c.cardToken = ? LIMIT 1', [bcid]
+  ))[0];
+  if (!card) return { state: 'Unknown' };
+  if (card.deletedAt) return { state: 'Deleted' };
+  if (card.walletUserId) return { state: 'Linked', phone: card.phone || null };
+  const pickup = (await query(
+    'SELECT w.mobile_number AS phone FROM cards_pickup_package p LEFT JOIN wallet_users w ON w.id = p.wallet_user_id ' +
+    'WHERE p.package_number = ? AND p.deletedAt IS NULL ORDER BY p.createdAt DESC LIMIT 1', [card.packageNumber]
+  ))[0];
+  return pickup ? { state: 'Collected', phone: pickup.phone || null } : { state: 'Free' };
+}
+
 // ── local store of page-created users ────────────────────────────────────────
-function readStore() {
+function readStore(file = STORE) {
   let text;
-  try { text = fs.readFileSync(STORE, 'utf8'); } catch { return []; }   // no file yet → empty history
+  try { text = fs.readFileSync(file, 'utf8'); } catch { return []; }   // no file yet → empty history
   // Parse line by line and SKIP any corrupt/partial line, so one bad row never hides the whole history.
   const out = [];
   for (const line of text.split('\n')) {
@@ -288,6 +309,35 @@ async function handleCreate(res, body) {
   sendJson(res, 200, { user: rec });
 }
 
+// ── card pool (no user) ──────────────────────────────────────────────────────
+async function handlePoolList(res) {
+  const cards = readStore(POOL_STORE).sort((a, b) => new Date(b.issuedAt || 0) - new Date(a.issuedAt || 0));
+  const rows = await Promise.all(cards.map(async (c) => {
+    let live = null;
+    try { live = await livePoolCard(c.bcid); } catch { /* DB may be down; show stored values */ }
+    return { ...c, live };
+  }));
+  sendJson(res, 200, { cards: rows });
+}
+
+async function handlePoolCreate(res, body) {
+  const count = body.count == null ? 1 : Number(body.count);
+  if (!Number.isInteger(count) || count < 1 || count > POOL_MAX) {
+    return sendJson(res, 400, { error: `count must be a whole number from 1 to ${POOL_MAX}` });
+  }
+  const started = new Date().toISOString();
+  const result = await runTool(['--pool-only', '--count', String(count)]);
+  audit({ at: started, phone: null, stage: 'pool', count, ok: !result.error,
+          result: result.error ? result.error.split('\n')[0] : `${(result.cards || []).length} card(s)` });
+  if (result.error) return sendJson(res, 200, { error: result.error });
+  const cards = result.cards || [];
+  if (cards.length) {
+    fs.mkdirSync(path.dirname(POOL_STORE), { recursive: true });
+    fs.appendFileSync(POOL_STORE, cards.map((c) => JSON.stringify(c)).join('\n') + '\n');
+  }
+  sendJson(res, 200, { env: result.env, cards });
+}
+
 // ── server ───────────────────────────────────────────────────────────────────
 const server = http.createServer(async (req, res) => {
   try {
@@ -300,6 +350,8 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/api/status') return handleStatus(res, url.searchParams);
     if (req.method === 'GET' && url.pathname === '/api/users') return handleUsers(res);
     if (req.method === 'POST' && url.pathname === '/api/create') return handleCreate(res, await readBody(req));
+    if (req.method === 'GET' && url.pathname === '/api/pool') return handlePoolList(res);
+    if (req.method === 'POST' && url.pathname === '/api/pool') return handlePoolCreate(res, await readBody(req));
     sendJson(res, 404, { error: 'not found' });
   } catch (e) {
     sendJson(res, 500, { error: e.message });
